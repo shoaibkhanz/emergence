@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Links every mod in ./mods into the Herdr app home and merges ./keys.json.
-# Safe to rerun. Never replaces a mod folder or key it didn't create.
+# Safe to rerun any number of times. Never replaces a mod folder or key it didn't create.
 set -euo pipefail
 shopt -s nullglob
 
