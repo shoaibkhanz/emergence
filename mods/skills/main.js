@@ -3,7 +3,7 @@
 // Window role (props.role === "window"): SKILL.md, references and scripts of one skill.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextView, Editor, EditorState, ScrollHandle } from "gpui-base";
-import { exec, home, focused, spaces, theme, settings, props, openOverlay, closeOverlay, readTextFile, nextCommand } from "herdr";
+import { exec, home, focused, spaces, theme, settings, props, layout, run, openOverlay, closeOverlay, readTextFile, nextCommand } from "herdr";
 import { parseFrontMatter, mergeSkills, rankSkills, fileKind, parseListing, resolveLink, formatSize } from "./lib.js";
 
 const ORDER = ["Agents", "Claude", "OpenCode", "Codex", "Project"];
@@ -56,11 +56,21 @@ function quiet(t, text) {
   return div().p(16).text_size(12).text_color(t.muted).child(text);
 }
 
+function find(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) { const found = find(child, id); if (found) return found; }
+  return null;
+}
+// The panel copy lives on while its column is hidden or another panel is in front.
+const shown = () => find(layout(), "panel")?.hidden === false && find(layout(), "panel-body")?.active === "skills";
+
 export default class Skills extends View {
   init(_props, cx) {
     this.handle = cx.focus_handle();
     this.overlay = props()?.overlay;
     if (props()?.role === "window") return this.initWindow(props(), cx);
+    // Panel role (props.panel): a side panel in the layout's `panel` column; scans on show, follows the focused repo.
+    this.panel = props()?.panel === true;
     this.query = "";
     this.at = 0;
     this.lists = new Map();
@@ -68,8 +78,10 @@ export default class Skills extends View {
     this.input = InputState.new({ placeholder: "Search skills…" });
     this.input.on("change", (_e, cx) => { this.query = this.input.value(); this.at = 0; this.scroll.scroll_to_item(0); cx.notify(); });
     this.input.on("submit", (_e, cx) => this.popOut(cx, this.results()[this.at]));
+    if (this.panel) return;
     this.input.focus();
     cx.timer.after(300, () => this.input.focus());
+    this.cwd = focused()?.cwd ?? null;
     this.load(cx, false);
   }
 
@@ -78,10 +90,11 @@ export default class Skills extends View {
     this.error = null;
     this.loading = true;
     cx.spawn(async (cx) => {
+      await cx.sleep(16); // the panel scans from its first render; host calls before a copy's first frame never resolve
       try {
-        const f = focused(), machine = spaces().find((s) => s.active)?.machine ?? null;
+        const machine = spaces().find((s) => s.active)?.machine ?? null;
         // ponytail: project skills only for local panes; remote spaces would need `on:` reads everywhere.
-        const top = f?.cwd && !machine ? await exec("git", ["rev-parse", "--show-toplevel"], { cwd: f.cwd }).catch(() => null) : null;
+        const top = this.cwd && !machine ? await exec("git", ["rev-parse", "--show-toplevel"], { cwd: this.cwd }).catch(() => null) : null;
         const repo = top?.code === 0 ? top.stdout.trim() : null;
         if (fresh || !cache || cache.repo !== repo) cache = { repo, skills: await scan(repo) };
       } catch (e) {
@@ -102,10 +115,10 @@ export default class Skills extends View {
     cx.spawn(async () => {
       // Each further skill window steps 40px down-right from the centre, so none hides another.
       let n = 0;
-      try { n = JSON.parse((await exec("herdr-app", ["status"])).stdout).overlays.filter((o) => o === "skills").length - 1; } catch {}
+      try { n = JSON.parse((await exec("herdr-app", ["status"])).stdout).overlays.filter((o) => o === "skills").length - (this.overlay ? 1 : 0); } catch {}
       const at = n > 0 ? { x: Math.round((v.width - 760 * z) / 2 + 40 * n), y: Math.round(v.height * 0.1 + 40 * n) } : undefined;
       openOverlay({ kind: "window", mod: "skills", key: `skill:${s.real}`, width: 760, height: 0.8, at, props: { role: "window", path: s.real, name: s.name, sources: s.sources, file } });
-      closeOverlay(this.overlay);
+      if (this.overlay) closeOverlay(this.overlay);
     });
   }
 
@@ -114,12 +127,18 @@ export default class Skills extends View {
   }
 
   renderPalette(cx) {
+    const panel = this.panel, wide = !panel || (this.width ?? 0) >= 720;
+    if (panel && shown() && !this.loading) {
+      // Like Changes: follow the focused terminal's folder (a focused mod has none). this.cwd starts undefined, so the first show scans.
+      const f = focused(), cwd = f?.terminal ? (f.cwd ?? null) : (this.cwd ?? null);
+      if (cwd !== this.cwd) { this.cwd = cwd; this.load(cx, false); }
+    }
     const t = theme(), list = this.results();
     this.at = Math.max(0, Math.min(this.at, list.length - 1));
-    const sel = list[this.at];
+    const sel = wide ? list[this.at] : null;
     if (sel && !this.lists.has(sel.real)) {
       this.lists.set(sel.real, null);
-      cx.spawn(async (cx) => { this.lists.set(sel.real, await listing(sel.real).catch(() => [])); cx.notify(); });
+      cx.spawn(async (cx) => { await cx.sleep(16); this.lists.set(sel.real, await listing(sel.real).catch(() => [])); cx.notify(); });
     }
     const files = sel ? this.lists.get(sel.real) : null;
     const move = (d, cx) => { this.at = Math.max(0, Math.min(this.at + d, list.length - 1)); this.scroll.scroll_to_item(this.at); cx.notify(); };
@@ -128,7 +147,7 @@ export default class Skills extends View {
       const on = i === this.at, d = s.description.replace(/\s+/g, " ");
       return v_flex().id(`sk-${s.real}`).mx(6).px(12).py(10).gap(4).rounded(8).cursor_pointer()
         .when(on, (el) => el.bg(t.selected)).when(!on, (el) => el.hover((st) => st.bg(t.hover)))
-        .on_click((e, cx) => { if (e.click_count === 2) return this.popOut(cx, s); this.at = i; cx.notify(); })
+        .on_click((e, cx) => { if (e.click_count === 2 || !wide) return this.popOut(cx, s); this.at = i; cx.notify(); })
         .child(h_flex().h(20).gap(8).items_center()
           .child(div().flex_1().min_w(0).truncate().text_size(13).font_semibold().text_color(t.foreground).child(s.name))
           .child(chips(t, s.sources)))
@@ -155,27 +174,49 @@ export default class Skills extends View {
 
     const empty = this.error ?? (this.loading && !cache ? "Scanning skills…" : !cache?.skills.length ? "No skills in ~/.agents, ~/.claude, ~/.config/opencode or ~/.codex." : `No skills match “${this.query}”.`);
     const key = (k) => div().px(5).h(18).flex().items_center().rounded(4).border_1().border_color(t.border).text_size(11).text_color(t.muted).child(k);
+    const keys = (e, cx) => {
+      if (e.key === "escape" && !panel) closeOverlay(this.overlay);
+      else if (e.key === "down") move(1, cx);
+      else if (e.key === "up") move(-1, cx);
+      else if (e.key === "r" && e.modifiers.platform) this.load(cx, true);
+      else return;
+      cx.stop_propagation();
+    };
+    const body = h_flex().flex_1().min_h(0).items_stretch()
+      .child(v_flex().id("sk-list").when(wide, (el) => el.w(340).flex_none().border_r(1).border_color(t.border)).when(!wide, (el) => el.flex_1().min_w(0))
+        .min_h(0).py(6).gap(2).overflow_y_scrollbar().track_scroll(this.scroll)
+        .children(list.length ? list.map(row) : [quiet(t, empty)]))
+      .when(wide, (el) => el.child(preview));
+
+    if (panel) {
+      const button = (id, name, tip, onClick) => h_flex().id(id).flex_none().size(24).items_center().justify_center().rounded(6).cursor_pointer()
+        .text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip).on_click(onClick)
+        .child(icon(name).size(14).when(name === "refresh" && this.loading, (el) => el.spin(900)));
+      return v_flex().id("skills").track_focus(this.handle).size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
+        .text_color(t.foreground).text_size(13).on_key_down(keys)
+        .on_size_change((size, cx) => { this.width = size.width / (settings().zoom ?? 1); cx.notify(); })
+        .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
+          .child(div().text_size(13).font_semibold().child("Skills"))
+          .child(div().text_size(11).text_color(t.dim).child(!cache ? "" : this.query ? `${list.length} of ${cache.skills.length}` : `${cache.skills.length}`))
+          .child(div().flex_1())
+          .child(button("sk-rescan", "refresh", "Rescan  ⌘R", (_e, cx) => this.load(cx, true)))
+          .child(button("sk-expand", "expand", "Open as palette", () => run("mod.open", { name: "skills" }))))
+        .child(h_flex().h(40).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
+          .child(icon("search").size(14).flex_none().text_color(t.dim))
+          .child(Input.new(this.input).flex_1().h_full().text_size(13).text_color(t.foreground)))
+        .child(body);
+    }
 
     // A popup sizes to its content (up to mod.json's height), so ask for that height outright.
     const h = Math.floor((window.viewport_size().height * 0.78) / (settings().zoom ?? 1));
     return v_flex().id("skills").track_focus(this.handle).w_full().h(h).min_h(0).bg(t.surface).text_color(t.foreground)
-      .on_key_down((e, cx) => {
-        if (e.key === "escape") closeOverlay(this.overlay);
-        else if (e.key === "down") move(1, cx);
-        else if (e.key === "up") move(-1, cx);
-        else if (e.key === "r" && e.modifiers.platform) this.load(cx, true);
-        else return;
-        cx.stop_propagation();
-      })
+      .on_key_down(keys)
       .child(h_flex().h(48).flex_none().px(16).gap(10).items_center().border_b(1).border_color(t.border)
         .child(icon("search").size(16).flex_none().text_color(t.dim))
         .child(Input.new(this.input).flex_1().h_full().text_size(15).text_color(t.foreground))
         .child(div().flex_none().text_size(11).text_color(t.dim).child(cache ? `${list.length} of ${cache.skills.length}` : ""))
         .child(div().id("sk-esc").flex_none().cursor_pointer().on_click(() => closeOverlay(this.overlay)).child(key("esc"))))
-      .child(h_flex().flex_1().min_h(0).items_stretch()
-        .child(v_flex().id("sk-list").w(340).flex_none().min_h(0).py(6).gap(2).border_r(1).border_color(t.border).overflow_y_scrollbar().track_scroll(this.scroll)
-          .children(list.length ? list.map(row) : [quiet(t, empty)]))
-        .child(preview))
+      .child(body)
       .child(h_flex().h(32).flex_none().px(16).gap(16).items_center().border_t(1).border_color(t.border).text_size(11).text_color(t.dim)
         .child(h_flex().gap(6).items_center().child(key("↑")).child(key("↓")).child("move"))
         .child(h_flex().gap(6).items_center().child(key("↵")).child("open in window"))
