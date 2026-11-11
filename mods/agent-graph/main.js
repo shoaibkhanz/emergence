@@ -1,20 +1,33 @@
 // Agent graph: every live terminal as repo -> worktree (branch + PR) -> agent -> sub-agent.
 // Live data re-renders; git facts (30 s) and `gh pr list` (60 s) are cached per cwd / repo.
+// props().panel: lives in the factory layout's right panel (block "graph") instead of a popup.
 
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, setShared, home } from "herdr";
-import { buildTree, layout, parseRevParse, prsByBranch, cleanTitle, RANK } from "./lib.js";
+import { v_flex, h_flex, Scrollbar } from "gpui-base";
+import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, setShared, home, layout } from "herdr";
+import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, cleanTitle, RANK } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000;
 const MONO = "Geist Mono";
 const ZMIN = 0.3, ZMAX = 2, ZFIT = 1.15, PAD = 48;
+// A panel keeps graph text readable: narrower than this zoom it shows the tree as a list.
+const PANEL_PAD = 24, PANEL_Z = 0.6;
 const STATUS = ["blocked", "done", "working", "idle"];
 const WORD = { blocked: "Blocked", done: "Done", working: "Working", idle: "Idle" };
 const ICON = (f) => `mods/agent-graph/${f}.svg`;
 const key = (m, p) => `${m ?? ""}|${p}`;
 const alpha = (c, a) => c.slice(0, 7) + Math.round(a * 255).toString(16).padStart(2, "0");
 const clamp = (z) => Math.min(ZMAX, Math.max(ZMIN, z));
+
+function find(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) {
+    const found = find(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+const panelShows = (block) => { const p = find(layout(), "panel"); return !!p && !p.hidden && find(p, "panel-body")?.active === block; };
 
 async function facts(on, cwd) {
   try {
@@ -41,6 +54,7 @@ async function pulls(on, cwd) {
 
 export default class AgentGraph extends View {
   init(_props, cx) {
+    this.panel = props()?.panel === true;
     this.git = new Map(); // machine|cwd -> { at, v: facts | null }
     this.prs = new Map(); // machine|common -> { at, v: Map | null }
     this.busy = false;
@@ -49,10 +63,17 @@ export default class AgentGraph extends View {
     this.view = null; // { x, y, z } once the person pans or zooms; null = fitted
     this.sel = null;
     this.h = cx.focus_handle();
-    this.h.focus();
-    cx.timer.after(300, () => this.h.focus());
-    cx.timer.every(GIT_TTL, (cx) => this.refresh(cx));
-    this.refresh(cx);
+    if (!this.panel) {
+      this.h.focus();
+      cx.timer.after(300, () => this.h.focus());
+    }
+    // The first render refreshes (and again whenever a hidden panel comes back).
+    cx.timer.every(GIT_TTL, (cx) => { if (this.shown()) this.refresh(cx); });
+  }
+
+  // A panel copy stays alive while hidden; it skips git / gh work until shown.
+  shown() {
+    return !this.panel || panelShows("graph");
   }
 
   // Every live terminal, flattened from agents / panes / spaces.
@@ -79,11 +100,13 @@ export default class AgentGraph extends View {
   }
 
   refresh(cx, force = false) {
-    if (this.busy) return;
-    this.busy = true;
+    // busy = start time; a refresh hung past a minute no longer blocks the next one.
+    if (this.busy && Date.now() - this.busy < 60000) return;
+    const me = this.busy = Date.now();
     const items = this.items();
     cx.spawn(async (cx) => {
       try {
+        await cx.sleep(16); // host calls made before a copy's first frame never resolve
         const now = Date.now(), stale = (c, ttl) => force || !c || now - c.at >= ttl;
         const cwds = new Map(items.filter((i) => i.cwd).map((i) => [key(i.machine, i.cwd), i]));
         await Promise.all([...cwds].filter(([k]) => stale(this.git.get(k), GIT_TTL))
@@ -98,14 +121,14 @@ export default class AgentGraph extends View {
         await Promise.all([...repos].filter(([k]) => stale(this.prs.get(k), PR_TTL))
           .map(async ([k, r]) => this.prs.set(k, { at: now, v: await pulls(r.on, r.top) })));
       } finally {
-        this.busy = false;
+        if (this.busy === me) this.busy = 0;
         cx.notify();
       }
     });
   }
 
   dismiss() {
-    closeOverlay(props().overlay);
+    if (!this.panel) closeOverlay(props().overlay);
   }
 
   focusAgent(n) {
@@ -117,18 +140,23 @@ export default class AgentGraph extends View {
   openPr(w, cx) {
     setShared("pr-review.open", { repo: w.top, machine: w.machine, number: w.pr.number, at: Date.now() });
     cx.spawn(async () => {
-      const s = await exec("herdr-app", ["status"]).catch(() => null);
-      let open = false;
-      try { open = JSON.parse(s?.stdout ?? "{}").overlays?.includes("pr-review"); } catch {}
-      if (!open) run("mod.open", { name: "pr-review" });
+      // A shown pr-review panel takes the link itself (and consumes it before an overlay could).
+      if (!panelShows("prs")) {
+        const s = await exec("herdr-app", ["status"]).catch(() => null);
+        let open = false;
+        try { open = JSON.parse(s?.stdout ?? "{}").overlays?.includes("pr-review"); } catch {}
+        if (!open) run("mod.open", { name: "pr-review" });
+      }
       this.dismiss();
     });
   }
 
   fitView(L) {
-    const W = this.size.width, H = this.size.height;
-    const z = clamp(Math.min(ZFIT, (W - 2 * PAD) / Math.max(1, L.width), (H - 2 * PAD) / Math.max(1, L.height)));
-    return { z, x: (W - L.width * z) / 2, y: Math.max(PAD, (H - L.height * z) / 2) };
+    const W = this.size.width, H = this.size.height, p = this.panel ? PANEL_PAD : PAD;
+    const wz = (W - 2 * p) / Math.max(1, L.width), hz = (H - 2 * p) / Math.max(1, L.height);
+    // A panel is tall and narrow: rather than shrink text to fit the height, run off the bottom (scroll pans).
+    const z = clamp(Math.min(ZFIT, wz, this.panel ? Math.max(hz, PANEL_Z) : hz));
+    return { z, x: (W - L.width * z) / 2, y: Math.max(p, (H - L.height * z) / 2) };
   }
 
   zoomAt(f, px, py) {
@@ -139,20 +167,31 @@ export default class AgentGraph extends View {
   render(cx) {
     const t = theme();
     this.Z = Number(settings()?.zoom) > 0 ? Number(settings().zoom) : 1;
+    if (this.raw) this.size = { width: this.raw.width / this.Z, height: this.raw.height / this.Z };
+    const shown = this.shown();
+    if (shown && !this.wasShown) this.refresh(cx);
+    this.wasShown = shown;
     const items = this.items();
-    if (!this.busy && items.some((i) => i.cwd && !this.git.has(key(i.machine, i.cwd)))) this.refresh(cx);
+    if (shown && !this.busy && items.some((i) => i.cwd && !this.git.has(key(i.machine, i.cwd)))) this.refresh(cx);
     const tree = buildTree(items, (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined, { activeOnly: this.activeOnly });
-    const L = layout(tree);
-    const picks = L.nodes.filter((n) => n.kind === "agent").sort((a, b) => a.y - b.y || a.x - b.x);
+    const L = graphLayout(tree);
+    const list = this.panel && this.loaded && !!this.size && (this.size.width - 2 * PANEL_PAD) / Math.max(1, L.width) < PANEL_Z;
+    const walk = (a) => [{ data: a }, ...a.children.flatMap(walk)];
+    const picks = list ? tree.flatMap((r) => r.worktrees.flatMap((w) => w.agents.flatMap(walk)))
+      : L.nodes.filter((n) => n.kind === "agent").sort((a, b) => a.y - b.y || a.x - b.x);
     const foc = focused()?.terminal ?? null;
     if (!picks.some((n) => n.data.id === this.sel)) this.sel = (picks.find((n) => n.data.id === foc) ?? picks[0])?.data.id ?? null;
 
-    // A popup is as tall as its content (mod.json height is the cap): size to the window.
-    return v_flex().id("ag-root").w_full().h(window.viewport_size().height * 0.88 / this.Z).bg(t.surface).text_size(13).text_color(t.foreground)
+    // A popup is as tall as its content (mod.json height is the cap): size to the window. A panel fills its block.
+    const root = this.panel
+      ? v_flex().size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
+        .on_mouse_down("left", () => this.h.focus())
+      : v_flex().w_full().h(window.viewport_size().height * 0.88 / this.Z).bg(t.surface);
+    return root.id("ag-root").text_size(13).text_color(t.foreground)
       .track_focus(this.h)
       .on_key_down((e, cx) => {
         const k = e.key, i = picks.findIndex((n) => n.data.id === this.sel);
-        if (k === "escape") return this.dismiss();
+        if (k === "escape" && !this.panel) return this.dismiss();
         if (k === "f") this.view = null;
         else if ((k === "down" || k === "up") && picks.length) this.sel = picks[(i + (k === "down" ? 1 : picks.length - 1)) % picks.length].data.id;
         else if (k === "enter" && i >= 0) return this.focusAgent(picks[i].data);
@@ -161,34 +200,95 @@ export default class AgentGraph extends View {
         cx.notify();
       })
       .child(this.header(t, items))
-      .child(this.canvas(t, items, tree, L, foc));
+      .child(list ? this.list(t, tree, foc) : this.canvas(t, items, tree, L, foc));
+  }
+
+  // The body reports its size (logical px times zoom); fitting and the header's width breakpoints read it.
+  measure(el) {
+    return el.on_size_change((s, cx) => {
+      const r = this.raw;
+      if (r && Math.abs(s.width - r.width) < 0.5 && Math.abs(s.height - r.height) < 0.5) return;
+      this.raw = { width: s.width, height: s.height };
+      cx.notify();
+    });
   }
 
   header(t, items) {
-    const counts = STATUS.map((s) => [s, items.filter((i) => i.agent && i.status === s).length]).filter(([, n]) => n);
+    const W = this.panel ? this.size?.width ?? Infinity : Infinity, narrow = W < 420;
+    let counts = STATUS.map((s) => [s, items.filter((i) => i.agent && i.status === s).length]).filter(([, n]) => n);
+    if (W < 360) counts = counts.filter(([s]) => s !== "idle");
     const button = (id, tip, onClick) => h_flex().id(id).h(24).px(8).gap(6).items_center().rounded(6).flex_none()
       .border(1).border_color(t.border).text_size(12).text_color(t.muted).cursor_pointer().tooltip(tip)
       .hover((s) => s.bg(t.hover).border_color(t.input).text_color(t.foreground))
       .on_click((_e, cx) => { onClick(cx); cx.notify(); });
-    const on = this.activeOnly;
-    return h_flex().h(40).flex_none().px(16).gap(12).items_center().border_b(1).border_color(t.border)
-      .child(div().text_size(15).font_semibold().child("Agents"))
-      .child(h_flex().gap(6).items_center().children(counts.map(([s, n]) => h_flex().h(20).px(8).gap(6).items_center().rounded(6)
-        .bg(s === "blocked" ? alpha(t.blocked, 0.14) : t.raised).text_size(11).text_color(s === "blocked" ? t.blocked : t.muted)
-        .child(this.dot(t, s, 6)).child(`${n} ${s}`))))
+    const icon = (el) => el.w(24).px(0).justify_center();
+    const on = this.activeOnly, label = W >= 520;
+    const hint = !this.panel ? "↑↓ select · ↵ focus · F fit · Esc close" : W >= 1000 ? "↑↓ select · ↵ focus · F fit" : null;
+    return h_flex().flex_none().items_center().border_b(1).border_color(t.border)
+      .map((el) => this.panel ? el.h(42).px(14).gap(8) : el.h(40).px(16).gap(12))
+      .child(div().flex_none().text_size(this.panel ? 13 : 15).font_semibold().child("Agents"))
+      .child(h_flex().min_w(0).overflow_hidden().gap(narrow ? 4 : 6).items_center().children(counts.map(([s, n]) => {
+        const loud = s === "blocked";
+        const c = h_flex().h(20).px(narrow ? 6 : 8).gap(narrow ? 4 : 6).flex_none().items_center().rounded(6)
+          .bg(loud ? alpha(t.blocked, 0.14) : t.raised).text_size(11).text_color(loud ? t.blocked : t.muted).child(this.dot(t, s, 6));
+        return narrow ? c.id(`ag-count-${s}`).tooltip(`${n} ${s}`).child(String(n)) : c.child(`${n} ${s}`);
+      })))
       .child(div().flex_1())
-      .child(div().text_size(11).text_color(t.dim).child("↑↓ select · ↵ focus · F fit · Esc close"))
+      .when(!!hint, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(hint)))
       .child(button("ag-active", "Hide idle agents and terminals", () => {
         this.activeOnly = !on;
         localStorage.setItem("activeOnly", on ? "0" : "1");
         this.view = null;
-      }).when(on, (el) => el.text_color(t.foreground))
+      }).when(on, (el) => el.text_color(t.foreground)).when(!label, icon)
         .child(div().size(12).flex_none().flex().items_center().justify_center().rounded(3).border(1)
           .border_color(on ? t.accent : t.input).when(on, (el) => el.bg(t.accent))
           .when(on, (el) => el.child(svg(ICON("check")).size(10).text_color(t.accent_foreground))))
-        .child("Active only"))
-      .child(button("ag-refresh", "Refresh git and PRs", (cx) => this.refresh(cx, true)).w(24).px(0).justify_center()
-        .child(svg(ICON("refresh")).size(13).when(this.busy, (el) => el.spin(900))));
+        .when(label, (el) => el.child("Active only")))
+      .child(icon(button("ag-refresh", "Refresh git and PRs", (cx) => this.refresh(cx, true)))
+        .child(svg(ICON("refresh")).size(13).when(this.busy, (el) => el.spin(900))))
+      .when(this.panel, (el) => el.child(icon(button("ag-expand", "Open in window", () => run("mod.open", { name: "agent-graph" })))
+        .child(svg(ICON("expand")).size(13))));
+  }
+
+  // Panel too narrow for a readable graph: the same tree as an indented list.
+  list(t, tree, foc) {
+    const rows = [];
+    const row = (id, depth) => h_flex().id(id).h(28).flex_none().pl(8 + depth * 16).pr(8).gap(8).items_center().rounded(7);
+    const agent = (a, depth) => {
+      const loud = a.status === "blocked", sel = this.sel === a.id, p = a.program;
+      const ic = p?.icon ? (p.tint ? svg(p.icon).size(14).flex_none().text_color(t.foreground) : image(p.icon).w(14).h(14).flex_none()) : null;
+      rows.push(row(`l:${a.id}`, depth).border_1().border_color(foc === a.id ? t.accent : alpha(t.border, 0)).cursor_pointer()
+        .when(loud, (el) => el.bg(alpha(t.blocked, 0.08))).when(sel && !loud, (el) => el.bg(t.selected))
+        .hover((s) => s.bg(loud ? alpha(t.blocked, 0.14) : t.hover))
+        .when(!!a.tab, (el) => el.tooltip(a.tab))
+        .on_click(() => this.focusAgent(a))
+        .child(this.dot(t, a.status, 8))
+        .when(!!ic, (el) => el.child(ic))
+        .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(a.name))
+        .child(div().flex_none().text_size(11).text_color(loud ? t.blocked : t.dim).when(loud, (el) => el.font_semibold())
+          .child(a.agent ? WORD[a.status] : a.kind)));
+      for (const c of a.children) agent(c, depth + 1);
+    };
+    for (const r of tree) {
+      const none = r.kind === "none";
+      rows.push(row(`l:${r.id}`, 0).when(rows.length > 0, (el) => el.mt(8))
+        .child(svg(ICON(none ? "folder" : "repo")).size(14).flex_none().text_color(t.muted))
+        .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(none ? t.muted : t.foreground).child(r.name))
+        .when(!!r.machine, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.dim).child(r.machine))));
+      for (const w of r.worktrees) {
+        const git = w.kind === "worktree";
+        const ab = git && (w.ahead || w.behind) ? [w.ahead && `↑${w.ahead}`, w.behind && `↓${w.behind}`].filter(Boolean).join(" ") : "";
+        rows.push(row(`l:${w.id}`, 1)
+          .child(svg(ICON(git ? "branch" : "folder")).size(14).flex_none().text_color(t.muted))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).font_family(MONO).text_color(t.foreground).child(git ? w.branch ?? "detached" : w.name))
+          .when(!!ab, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.dim).child(ab)))
+          .when(!!w.pr, (el) => el.child(this.chip(t, w, 1))));
+        for (const a of w.agents) agent(a, 2);
+      }
+    }
+    return this.measure(div().id("ag-list-body").flex_1().min_h(0).relative())
+      .child(v_flex().id("ag-list").absolute().inset_0().overflow_y_scroll().p(6).children(rows))
+      .child(Scrollbar.vertical("ag-list").absolute().inset_0());
   }
 
   dot(t, s, size = 8) {
@@ -198,15 +298,8 @@ export default class AgentGraph extends View {
 
   canvas(t, items, tree, L, foc) {
     const Z = this.Z;
-    if (this.raw) this.size = { width: this.raw.width / Z, height: this.raw.height / Z };
-    const el = div().id("ag-canvas").flex_1().min_h(0).relative().overflow_hidden().bg(t.background)
+    const el = this.measure(div().id("ag-canvas").flex_1().min_h(0).relative().overflow_hidden().bg(t.background))
       .when(!!this.drag?.moved, (el) => el.cursor_grabbing())
-      .on_size_change((s, cx) => {
-        const r = this.raw;
-        if (r && Math.abs(s.width - r.width) < 0.5 && Math.abs(s.height - r.height) < 0.5) return;
-        this.raw = { width: s.width, height: s.height };
-        cx.notify();
-      })
       .on_scroll_wheel((e, cx) => {
         if (!this.fitted) return;
         const v = this.view ?? this.fitted;
@@ -235,7 +328,7 @@ export default class AgentGraph extends View {
       .on_hover((h) => { if (!h) this.drag = null; });
     if (!this.size) return el;
 
-    const quiet = (line, hint, action) => el.child(v_flex().absolute().left(0).top(0).size_full().items_center().justify_center().gap(8)
+    const quiet = (line, hint, action) => el.child(v_flex().absolute().left(0).top(0).size_full().px(16).items_center().justify_center().gap(8)
       .child(div().text_size(13).text_color(t.muted).child(line))
       .when(!!hint, (el) => el.child(div().max_w(420).text_size(12).text_color(t.dim).text_center().child(hint)))
       .when(!!action, (el) => el.child(h_flex().id("ag-empty-action").mt(4).h(24).px(10).items_center().rounded(6).border(1).border_color(t.input)
