@@ -3,7 +3,7 @@
 // Window role (props.role === "window"): SKILL.md, references and scripts of one skill.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextView, Editor, EditorState, ScrollHandle } from "gpui-base";
-import { exec, home, focused, spaces, theme, settings, props, openOverlay, closeOverlay, readTextFile } from "herdr";
+import { exec, home, focused, spaces, theme, settings, props, openOverlay, closeOverlay, readTextFile, nextCommand } from "herdr";
 import { parseFrontMatter, mergeSkills, rankSkills, fileKind, parseListing, resolveLink, formatSize } from "./lib.js";
 
 const ORDER = ["Agents", "Claude", "OpenCode", "Codex", "Project"];
@@ -41,8 +41,9 @@ async function scan(repo) {
   return skills;
 }
 
+// Resolved listings only: a window never awaits work the (closing) palette started.
 async function listing(dir) {
-  if (!listings.has(dir)) listings.set(dir, exec("sh", ["-c", LIST, "skills", dir]).then((r) => parseListing(r.stdout, ".")));
+  if (!listings.has(dir)) listings.set(dir, parseListing((await exec("sh", ["-c", LIST, "skills", dir])).stdout, "."));
   return listings.get(dir);
 }
 
@@ -191,11 +192,20 @@ export default class Skills extends View {
     this.sources = p.sources ?? [];
     this.files = null;
     cx.timer.after(50, () => this.handle.focus());
+    // `herdr-app do skills.close` closes every open skill window (scripts, agents).
+    cx.spawn(async () => { for (;;) if ((await nextCommand()) === "close") closeOverlay(this.overlay); });
     cx.spawn(async (cx) => {
+      await cx.sleep(16); // host reads started before the window's first frame never resolve (seen live)
       try { this.files = await listing(this.dir); } catch (e) { this.listError = `Couldn't list this skill: ${e?.message ?? e}`; }
       await this.read(this.files?.some((f) => f.path === p.file) ? p.file : "SKILL.md");
       cx.notify();
     });
+  }
+
+  // A link in the shown markdown: a file of this skill switches the view; anything else opens outside.
+  follow(url, cx) {
+    const f = resolveLink(url, (this.files ?? []).map((x) => x.path), this.view?.path ?? "SKILL.md");
+    if (f) this.show(f, cx); else cx.open_url(url);
   }
 
   show(path, cx) {
@@ -273,10 +283,7 @@ export default class Skills extends View {
                 .child(div().flex_none().child(`${files.length} file${files.length === 1 ? "" : "s"}`)))
             : div().text_size(11).font_family(MONO).text_color(t.dim).child(cur))
           .child(div().text_size(13).text_color(t.foreground).child(TextView.markdown(`md-${this.dir}/${cur}`, v.text).selectable(true)
-            .on_link_click((url, cx) => {
-              const f = resolveLink(url, files.map((x) => x.path), cur);
-              if (f) { this.show(f, cx); cx.notify(); } else cx.open_url(url);
-            }))));
+            .on_link_click((url, cx) => this.follow(url, cx)))));
     }
 
     return v_flex().id("skill-window").track_focus(this.handle).size_full().min_h(0).bg(t.background).text_color(t.foreground)
