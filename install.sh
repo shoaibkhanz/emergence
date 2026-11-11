@@ -27,7 +27,7 @@ done
 python3 - "$repo/keys.json" "$home/keys.json" <<'PY'
 import json, sys, os
 ours = json.load(open(sys.argv[1]))
-path = sys.argv[2]
+path = os.path.realpath(sys.argv[2])  # keys.json may be a dotfiles symlink: write through it
 theirs = json.load(open(path)) if os.path.exists(path) else {}
 changed = False
 for section, binds in ours.items():

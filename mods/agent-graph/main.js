@@ -137,16 +137,18 @@ export default class AgentGraph extends View {
   }
 
   // Cross-mod deep link: pr-review picks this up (if < 30 s old) and selects the PR.
+  // With a PRs panel in the layout (factory) that panel takes it; otherwise the pr-review window.
   openPr(w, cx) {
     setShared("pr-review.open", { repo: w.top, machine: w.machine, number: w.pr.number, at: Date.now() });
+    if (find(layout(), "prs")) {
+      if (!panelShows("prs")) run("tabs-plus.prs");
+      return this.dismiss();
+    }
     cx.spawn(async () => {
-      // A shown pr-review panel takes the link itself (and consumes it before an overlay could).
-      if (!panelShows("prs")) {
-        const s = await exec("herdr-app", ["status"]).catch(() => null);
-        let open = false;
-        try { open = JSON.parse(s?.stdout ?? "{}").overlays?.includes("pr-review"); } catch {}
-        if (!open) run("mod.open", { name: "pr-review" });
-      }
+      const s = await exec("herdr-app", ["status"]).catch(() => null);
+      let open = false;
+      try { open = JSON.parse(s?.stdout ?? "{}").overlays?.includes("pr-review"); } catch {}
+      if (!open) run("mod.open", { name: "pr-review" });
       this.dismiss();
     });
   }
