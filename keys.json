@@ -1,0 +1,7 @@
+{
+  "global": {
+    "cmd-shift-g": "mod.open:agent-graph",
+    "cmd-shift-u": "mod.open:pr-review",
+    "cmd-shift-k": "mod.open:skills"
+  }
+}
