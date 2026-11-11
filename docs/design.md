@@ -1,4 +1,4 @@
-# herdr-mods — design
+# herdr-mods — design (moved)
 
 Three native mods for the Herdr app (`herdr-app` 0.1.15, gpui-kit) that make
 multi-agent work legible: what is running where, what it shipped, and what

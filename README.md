@@ -1,6 +1,8 @@
 # herdr-mods
 
-Native mods for the [Herdr app](https://herdr.dev) for running many coding agents at once.
+Native mods for the [Herdr app](https://herdr.dev), built for running many coding agents at once.
+
+> Sample edit for the pr-review test PR.
 
 | Mod | Key | What it shows |
 |---|---|---|

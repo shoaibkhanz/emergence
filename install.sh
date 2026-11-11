@@ -2,6 +2,7 @@
 # Links every mod in ./mods into the Herdr app home and merges ./keys.json.
 # Safe to rerun. Never replaces a mod folder or key it didn't create.
 set -euo pipefail
+IFS=$'\n\t'
 shopt -s nullglob
 
 repo="$(cd "$(dirname "$0")" && pwd)"
@@ -11,7 +12,7 @@ for dir in "$repo"/mods/*/; do
   name="$(basename "$dir")"
   target="$home/mods/$name"
   if [ -L "$target" ] && [ "$(readlink "$target")" = "${dir%/}" ]; then
-    echo "ok      mods/$name"
+    echo "ok      mods/$name (already linked)"
   elif [ -e "$target" ] || [ -L "$target" ]; then
     echo "skip    mods/$name (exists and is not ours)" >&2
   else
