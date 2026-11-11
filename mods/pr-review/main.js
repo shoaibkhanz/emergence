@@ -139,8 +139,9 @@ export default class PrReview extends View {
 
   open(s, entry, cx, reload) {
     if (s.entry !== entry) { s.entry = entry; s.sel = null; this.dropDraft(); this.composeError = null; }
-    if (s.diffs.has(entry) && !reload) return;
     const d = s.diffs.get(entry) ?? {};
+    d.pr = s.prs?.find((p) => p.number === entry) ?? d.pr; // kept so the header survives filtering the PR out of the list
+    if (s.diffs.has(entry) && !reload) return;
     d.loading = true;
     s.diffs.set(entry, d);
     cx.spawn(async (cx) => {
@@ -157,7 +158,9 @@ export default class PrReview extends View {
       d.loading = false;
       cx.notify();
     });
-    if (entry !== "local") this.loadThreads(s, entry, cx);
+    if (entry === "local") return;
+    this.loadThreads(s, entry, cx);
+    if (!d.pr) cx.spawn(async (cx) => { d.pr = await gh.viewPR(s.id, entry).catch(() => null); cx.notify(); });
   }
 
   async fetchThreads(s, n) {
@@ -307,7 +310,7 @@ export default class PrReview extends View {
   }
 
   quiet(t, text, action) {
-    return v_flex().flex_1().min_w(0).items_center().justify_center().gap(12)
+    return v_flex().flex_1().min_w(0).h_full().items_center().justify_center().gap(12)
       .child(div().text_size(13).text_color(t.muted).child(text))
       .when(Boolean(action), (el) => el.child(action));
   }
@@ -394,7 +397,7 @@ export default class PrReview extends View {
     if (s.entry == null) return this.quiet(t, "Select a pull request, or this branch, to see its changes.");
     const d = s.diffs.get(s.entry);
     const local = s.entry === "local";
-    const pr = local ? null : s.prs?.find((p) => p.number === s.entry);
+    const pr = local ? null : s.prs?.find((p) => p.number === s.entry) ?? d.pr;
     const files = d.files ?? [];
     const sub = pr ? `${pr.headRefName} → ${s.info.defaultBranch}` : local ? `${s.branch} · since merge-base with ${s.info.defaultBranch} · includes uncommitted` : "";
     const head = h_flex().h(56).flex_none().px(16).gap(12).items_center().border_b(1).border_color(t.border)
@@ -414,9 +417,9 @@ export default class PrReview extends View {
           .child(icon(this.filesOpen ? "chevron-down" : "chevron-right").size(14))
           .child(`${files.length} file${files.length === 1 ? "" : "s"}`)));
     const quiet = d.loading && !d.files ? "Loading diff…" : d.error ?? (files.length ? null : "No changes.");
-    if (quiet) return v_flex().flex_1().min_w(0).child(head).child(this.quiet(t, quiet));
+    if (quiet) return v_flex().flex_1().min_w(0).h_full().child(head).child(this.quiet(t, quiet));
     const L = this.layout(s, d);
-    return v_flex().flex_1().min_w(0).child(head)
+    return v_flex().flex_1().min_w(0).h_full().child(head)
       .when(Boolean(d.threadsError), (el) => el.child(div().px(16).py(8).text_size(12).text_color(t.blocked).border_b(1).border_color(t.border).child(`Comments unavailable: ${d.threadsError}`)))
       .child(h_flex().flex_1().min_h(0)
         .when(this.filesOpen, (el) => el.child(this.fileList(t, s, d, L)))
@@ -436,7 +439,7 @@ export default class PrReview extends View {
           .on_click((_e, cx) => { s.scroll[s.entry] = L.fileTops[fi]; cx.notify(); })
           .child(div().flex_1().min_w(0).truncate().when(f.status === "deleted", (el) => el.text_color(t.muted)).child(f.path.split("/").pop()))
           .when(n > 0, (el) => el.child(h_flex().gap(4).items_center().flex_none().text_size(11).text_color(t.muted).child(icon("message").size(12)).child(String(n))))
-          .child(this.counts(t, f.additions, f.deletions));
+          .when(f.additions + f.deletions > 0, (el) => el.child(this.counts(t, f.additions, f.deletions)));
       }));
   }
 
@@ -478,10 +481,14 @@ export default class PrReview extends View {
     const shown = [];
     for (let i = firstVisible(L.tops, L.heights, scroll); i < L.items.length && L.tops[i] < scroll + view; i++) shown.push(i);
     const thumbH = Math.max(32, (view * view) / Math.max(L.total, 1));
+    // Sticky header: the current file's header pins to the top until the next file pushes it out.
+    const fi = L.fileTops.findLastIndex((y) => y <= scroll);
+    const stick = fi >= 0 && scroll > L.fileTops[fi] ? Math.min(0, (L.fileTops[fi + 1] ?? Infinity) - H.gap - H.file - scroll) : null;
     return div().id("diff").relative().flex_1().min_w(0).h_full().overflow_hidden()
       .on_size_change((size, cx) => { const h = size.height / this.zoom; if (Math.abs(h - (this.diffH ?? 0)) > 0.5) { this.diffH = h; cx.notify(); } })
       .on_scroll_wheel((e, cx) => { s.scroll[s.entry] = Math.max(0, Math.min((s.scroll[s.entry] ?? 0) - e.delta.y, max)); cx.notify(); })
       .children(shown.map((i) => this.item(t, s, d, L.items[i]).absolute().left(0).right(0).top(L.tops[i] - scroll)))
+      .when(stick != null, (el) => el.child(this.item(t, s, d, { k: "file", f: d.files[fi], h: H.file }).absolute().left(0).right(0).top(stick)))
       .when(max > 0, (el) => el.child(div().id("diff-bar").absolute().right(2).w(6).top((scroll / max) * (view - thumbH)).h(thumbH).rounded(3)
         .bg(tint(t.foreground, this.bar ? "55" : "26")).hover((x) => x.bg(tint(t.foreground, "40")))
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.bar = { y: e.position.y, scroll, k: max / (view - thumbH), entry: s.entry }; cx.notify(); })));
@@ -504,12 +511,12 @@ export default class PrReview extends View {
     if (it.k === "composer") return this.measured(it, this.composerCard(t, s, d, it.range));
     const f = it.f;
     const label = { added: "Added", deleted: "Deleted", renamed: "Renamed" }[f.status];
-    return h_flex().h(it.h).px(16).gap(8).items_center().bg(t.surface).border_t(1).border_b(1).border_color(t.border)
+    return h_flex().h(it.h).pl(16).pr(20).gap(8).items_center().bg(t.surface).border_t(1).border_b(1).border_color(t.border)
       .child(div().min_w(0).truncate().font_family(MONO).text_size(12).font_medium().child(f.path))
       .when(f.status === "renamed", (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(`from ${f.oldPath}`)))
       .child(div().flex_1())
       .when(Boolean(label), (el) => el.child(this.chip(t, label, { deleted: t.blocked, added: t.done }[f.status] ?? t.idle)))
-      .child(this.counts(t, f.additions, f.deletions));
+      .when(f.additions + f.deletions > 0, (el) => el.child(this.counts(t, f.additions, f.deletions)));
   }
 
   row(t, s, it) {
