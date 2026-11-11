@@ -63,8 +63,8 @@ export default class PrReview extends View {
 
   shown() {
     if (!this.panel) return true;
-    const root = layout();
-    return find(root, "panel")?.hidden === false && find(root, "panel-body")?.active === BLOCK;
+    const root = layout(), panel = find(root, "panel");
+    return Boolean(panel) && !panel.hidden && find(root, "panel-body")?.active === BLOCK; // a shown panel has no `hidden` key
   }
 
   poll(s, cx) {

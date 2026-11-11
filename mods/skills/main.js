@@ -62,7 +62,8 @@ function find(node, id) {
   return null;
 }
 // The panel copy lives on while its column is hidden or another panel is in front.
-const shown = () => find(layout(), "panel")?.hidden === false && find(layout(), "panel-body")?.active === "skills";
+// A shown panel node has no `hidden` key at all, so test for falsy, not `=== false`.
+const shown = () => { const p = find(layout(), "panel"); return !!p && !p.hidden && find(layout(), "panel-body")?.active === "skills"; };
 
 export default class Skills extends View {
   init(_props, cx) {
