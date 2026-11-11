@@ -26,6 +26,11 @@ terminals for no capability gain. Skipped.
 
 ## The three mods
 
+**Placement (revised after first build):** all three live as side panels in the tab
+bar beside Files and Changes (`layouts/factory.json` + `mods/tabs-plus`). ⌘⇧G / ⌘⇧U / ⌘⇧K
+toggle the panels; each panel's expand button opens the overlay described below.
+Panels remember their own width. Panel copies skip polling while not shown.
+
 ### 1. `agent-graph` — the factory floor
 
 Opened with ⌘⇧G as a large popup over the window (Esc closes).
