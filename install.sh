@@ -1,22 +1,27 @@
 #!/usr/bin/env bash
-# Links every mod in ./mods into the Herdr app home and merges ./keys.json.
-# Safe to rerun. Never replaces a mod folder or key it didn't create.
+# Links every mod in ./mods and layout in ./layouts into the Herdr app home,
+# merges ./keys.json, and switches to the `factory` layout (panels in the tab bar).
+# Safe to rerun. Never replaces a file, folder or key it didn't create.
 set -euo pipefail
 shopt -s nullglob
 
 repo="$(cd "$(dirname "$0")" && pwd)"
 home="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
 
-for dir in "$repo"/mods/*/; do
-  name="$(basename "$dir")"
-  target="$home/mods/$name"
-  if [ -L "$target" ] && [ "$(readlink "$target")" = "${dir%/}" ]; then
-    echo "ok      mods/$name"
-  elif [ -e "$target" ] || [ -L "$target" ]; then
-    echo "skip    mods/$name (exists and is not ours)" >&2
+link() { # link <repo path> <home path> <label>
+  if [ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]; then
+    echo "ok      $3"
+  elif [ -e "$2" ] || [ -L "$2" ]; then
+    echo "skip    $3 (exists and is not ours)" >&2
   else
-    ln -s "${dir%/}" "$target" && echo "linked  mods/$name"
+    ln -s "$1" "$2" && echo "linked  $3"
   fi
+}
+for dir in "$repo"/mods/*/; do
+  name="$(basename "$dir")"; link "${dir%/}" "$home/mods/$name" "mods/$name"
+done
+for file in "$repo"/layouts/*.json; do
+  name="$(basename "$file")"; link "$file" "$home/layouts/$name" "layouts/$name"
 done
 
 python3 - "$repo/keys.json" "$home/keys.json" <<'PY'
@@ -40,4 +45,7 @@ if changed:
     os.replace(tmp, path)
 PY
 
-herdr-app status >/dev/null 2>&1 && for dir in "$repo"/mods/*/; do herdr-app check "$home/mods/$(basename "$dir")"; done || true
+if herdr-app status >/dev/null 2>&1; then
+  for dir in "$repo"/mods/*/; do herdr-app check "$home/mods/$(basename "$dir")"; done
+  herdr-app do layout.switch --name factory >/dev/null && echo "layout  factory (ctrl-shift-l cycles back)"
+fi
