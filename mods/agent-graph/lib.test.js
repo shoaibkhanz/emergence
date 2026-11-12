@@ -68,6 +68,9 @@ test("parsers", () => {
   expect(parseRevParse("")).toBeNull();
   expect(prChip({ number: 9, state: "OPEN", isDraft: true }).label).toBe("#9 draft");
   expect(prChip({ number: 9, state: "MERGED", reviewDecision: "APPROVED" }).label).toBe("#9 merged");
-  expect(cleanTitle("π \u{F1049} HERDR:  Build  graph")).toBe("π HERDR: Build graph");
+  expect(cleanTitle("π \u{F1049} HERDR:  Build  graph")).toBe("HERDR: Build graph");
+  expect(cleanTitle("π > ⁂ATLAS: Find")).toBe("ATLAS: Find");
   expect(cleanTitle("✳ Claude Code")).toBe("Claude Code");
+  expect(cleanTitle("AI is great")).toBe("AI is great");
+  expect(cleanTitle("PR #42 fixes")).toBe("PR #42 fixes");
 });

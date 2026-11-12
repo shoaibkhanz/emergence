@@ -171,9 +171,11 @@ export default class AgentGraph extends View {
     return { nodes, edges, x0, y0, width: Math.max(...nodes.map((n) => n.x + n.w)) - x0, height: Math.max(...nodes.map((n) => n.y + n.h)) - y0 };
   }
 
-  // A drag ends on release or when the pointer leaves the canvas; arranged cards are remembered.
+  // A drag ends on release or when the pointer leaves the canvas; arranged cards are remembered,
+  // and a view that was fitted before the drag fits again (the drag only pinned it while moving).
   endDrag() {
     if (this.drag?.node && this.drag.moved) localStorage.setItem("offsets", JSON.stringify([...this.offsets]));
+    if (this.drag?.fitted) this.view = null;
     this.drag = null;
   }
 
@@ -311,15 +313,13 @@ export default class AgentGraph extends View {
   }
 
   dot(t, s, size = 8) {
-    return div().size(size).flex_none().rounded(size).bg(t[s] ?? t.idle)
-      .when(s === "working", (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1400 }));
+    return div().size(size).flex_none().rounded(size).bg(t[s] ?? t.idle); // still: an always-on animation redraws every frame
   }
 
   canvas(t, items, tree, L, foc) {
     const Z = this.Z;
     const el = this.measure(div().id("ag-canvas").flex_1().min_h(0).relative().overflow_hidden().bg(t.background))
-      .when(!!this.drag?.moved, (el) => el.cursor_grabbing())
-      .when(!this.drag?.moved, (el) => el.cursor_grab())
+      .map((el) => (this.drag?.moved ? el.cursor_grabbing() : el.cursor_grab()))
       .on_scroll_wheel((e, cx) => {
         if (!this.fitted) return;
         const v = this.view ?? this.fitted;
@@ -398,7 +398,7 @@ export default class AgentGraph extends View {
       .when(this.drag?.node === n.id && this.drag.moved, (el) => el.cursor_grabbing().shadow_lg())
       .on_mouse_down("left", (e, cx) => {
         cx.stop_propagation();
-        this.drag = { node: n.id, x: e.position.x, y: e.position.y, o: this.offsets.get(n.id) ?? { x: 0, y: 0 }, moved: false };
+        this.drag = { node: n.id, x: e.position.x, y: e.position.y, o: this.offsets.get(n.id) ?? { x: 0, y: 0 }, moved: false, fitted: this.view == null };
       });
   }
 

@@ -5,9 +5,11 @@ const rank = (s) => RANK[s] ?? 3;
 const byRank = (a, b) => a.rank - b.rank || a.name.localeCompare(b.name);
 const tail = (p, n = 1) => (p ?? "").split("/").filter(Boolean).slice(-n).join("/") || "/";
 
-// Private-use glyphs (nerd-font icons) and leading status marks out of a terminal title.
+// A terminal title without its harness marks: leading status glyphs and a short prompt or name before
+// one (pi's "π > ", "π ⁂"), then private-use glyphs (nerd-font icons) anywhere.
 export const cleanTitle = (s) =>
-  (s ?? "").replace(/[\u{E000}-\u{F8FF}\u{F0000}-\u{10FFFF}]/gu, "").replace(/\s+/g, " ").replace(/^[^\p{L}\p{N}\p{Ps}~/]+/u, "").trim();
+  (s ?? "").replace(/^(?:[^\p{L}\p{N}\p{Ps}~/]+|\p{L}{1,2}\s*>\s*|\p{L}{1,2}\s+(?=[\p{S}\p{Co}\u2042]))+/u, "")
+    .replace(/[\u{E000}-\u{F8FF}\u{F0000}-\u{10FFFF}]/gu, "").replace(/\s+/g, " ").trim();
 
 // `git rev-parse --path-format=absolute --show-toplevel --git-common-dir --abbrev-ref HEAD` -> facts.
 export function parseRevParse(stdout) {
