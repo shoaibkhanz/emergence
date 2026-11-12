@@ -41,7 +41,7 @@ around; the wheel zooms.
 
 ### PRs (⌘⇧U): review your agents' work without leaving Herdr
 
-![PRs panel: a pull request's files, diff and tagged review threads](docs/images/prs.png)
+![PRs window: a pull request's files, diff and tagged review threads, with Find across all files](docs/images/prs.png)
 
 The PRs of the repo you're in, plus this branch against main. Changed files form a tree, with one diff at a time and
 review threads inline. Select lines and comment, tagged Statement · Question · Nit · Minor · Major. The tag posts as a
