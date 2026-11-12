@@ -9,7 +9,7 @@ import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, cleanTitl
 
 const GIT_TTL = 30000, PR_TTL = 60000;
 const MONO = "Geist Mono";
-const ZMIN = 0.3, ZMAX = 2, ZFIT = 1.15, PAD = 48;
+const ZMIN = 0.3, ZMAX = 2, ZFIT = 1, PAD = 48;
 // A panel keeps graph text readable: narrower than this zoom it shows the tree as a list.
 const PANEL_PAD = 24, PANEL_Z = 0.6;
 const STATUS = ["blocked", "done", "working", "idle"];
@@ -219,6 +219,7 @@ export default class AgentGraph extends View {
         const k = e.key, i = picks.findIndex((n) => n.data.id === this.sel);
         if (k === "escape" && !this.panel) return this.dismiss();
         if (k === "f") this.view = null;
+        else if ((k === "-" || k === "=" || k === "+") && this.fitted && this.size) this.zoomAt(k === "-" ? 0.8 : 1.25, this.size.width / 2, this.size.height / 2);
         else if (k === "r") { this.offsets.clear(); localStorage.removeItem("offsets"); this.view = null; }
         else if ((k === "down" || k === "up") && picks.length) this.sel = picks[(i + (k === "down" ? 1 : picks.length - 1)) % picks.length].data.id;
         else if (k === "enter" && i >= 0) return this.focusAgent(picks[i].data);
@@ -395,6 +396,14 @@ export default class AgentGraph extends View {
     for (const st of [...STATUS].reverse()) if (paths.has(st)) els.push(layer(paths.get(st).build(), ink[st]));
 
     for (const n of L.nodes) els.push(this.node(t, n, X(n.x), Y(n.y), z, foc));
+    // Zoom controls (⌘/ctrl-scroll and - / = zoom too): − · the zoom (click: fit) · +.
+    const zb = (id, tip, label, onClick) => h_flex().id(id).h(24).px(8).items_center().justify_center().text_size(12).text_color(t.muted)
+      .cursor_pointer().tooltip(tip).hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { onClick(); cx.notify(); }).child(label);
+    els.push(h_flex().absolute().right(12).bottom(12).rounded(7).border(1).border_color(t.border).bg(t.surface).overflow_hidden().shadow_sm()
+      .child(zb("ag-zoom-out", "Zoom out (-)", "−", () => this.zoomAt(0.8, W / 2, H / 2)))
+      .child(zb("ag-zoom-fit", "Fit (F)", `${Math.round(z * 100)}%`, () => { this.view = null; }).min_w(52).border_l(1).border_r(1).border_color(t.border))
+      .child(zb("ag-zoom-in", "Zoom in (=)", "+", () => this.zoomAt(1.25, W / 2, H / 2))));
     return el.children(els);
   }
 

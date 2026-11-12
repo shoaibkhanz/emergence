@@ -5,7 +5,7 @@ They live as side panels in the tab bar, next to Herdr's Files and Changes.
 
 | Panel | Key | What it shows |
 |---|---|---|
-| Agents (`agent-graph`) | ⌘⇧G | Every agent on a canvas: repo → worktree/branch (with its PR) → agent → sub-agents. Click an agent to jump to it, a PR chip to review it, a repo to list every worktree it has. Drag a card to move it, empty space to pan; R resets the arrangement. |
+| Agents (`agent-graph`) | ⌘⇧G | Every agent on a canvas: repo → worktree/branch (with its PR) → agent → sub-agents. Click an agent to jump to it, a PR chip to review it, a repo to list every worktree it has. Drag a card to move it, empty space to pan; zoom with the − / + corner control (or ⌘-scroll, - / =), click the % to fit; R resets the arrangement. |
 | PRs (`pr-review`) | ⌘⇧U | Follows the focused pane's repo: PRs (open/closed, search) and the branch vs main. The changed files as a folder tree with +/− and comment counts; one file's diff at a time (↑/↓ step files). Select lines (click, shift-click, drag), then comment from the box docked under the diff, tagged Statement · Question · Nit · Minor · Major (posted as a shields.io badge). Reply, edit, delete, resolve. |
 | Library (`skills`) | ⌘⇧K | Skills: every skill across `~/.agents`, `~/.claude`, OpenCode, Codex and the current repo. Plugins: installed Claude Code plugins and the skills they ship. Open one in the skill window: SKILL.md, references, scripts (one window, reused; the corner button makes it bigger). |
 
