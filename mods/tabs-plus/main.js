@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
-import { spaces, panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, agents, focused } from "herdr";
+import { spaces, panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, agents, focused, exec, appHome } from "herdr";
 
 // Herdr's tab bar plus the Emergence panels beside Files and Changes.
 // [layout block id in panel-body, label, icon, default panel width px]
@@ -43,6 +43,23 @@ function rail() {
   run("layout.resize", { id: "sidebar", px: narrow ? (shared("sidebar.width") ?? 268) : 14 });
 }
 
+// Updates. The curl install links every mod into a clone of this repo, so this mod can find it: every 6 h it
+// fetches main, and when main has moved an Update chip pulls it, reruns install.sh (new mods, keys, layouts) and,
+// if a layout file changed, reloads the layout (switching to the shown layout is a no-op, so via main).
+// No clone (copied by hand), a fork, another branch or local commits: no chip; that clone is its owner's.
+const ORIGIN = /github\.com[:/]shoaibkhanz\/(emergence|herdr_mods)(\.git)?$/;
+async function git(dir, ...args) {
+  const r = await exec("git", ["-C", dir, ...args], { timeout: 60000 });
+  if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || `git ${args[0]} exited ${r.code}`);
+  return r.stdout.trim();
+}
+const UPDATE = `set -e; d="$1"; old="$(git -C "$d" rev-parse HEAD)"
+git -C "$d" pull --ff-only --quiet origin main
+bash "$d/install.sh" >/dev/null
+if ! git -C "$d" diff --quiet "$old" HEAD -- layouts; then
+  herdr-app do layout.switch --name main >/dev/null; sleep 1; herdr-app do layout.switch --name emergence >/dev/null
+fi`;
+
 export default class Tabs extends View {
   init(_props, cx) {
     this.pressed = null;
@@ -50,8 +67,38 @@ export default class Tabs extends View {
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
     this.widths = JSON.parse(localStorage.getItem("widths") ?? "{}");
     // keys.json: "cmd-shift-g": "tabs-plus.graph" toggles that panel; "tabs-plus.attention" jumps (⌘⇧J); "tabs-plus.rail" (⌘B);
-    // "tabs-plus.worktrees" (⌘⇧O) lists every worktree of the repo you're in, in Herdr's own dialog (Enter opens one as a space).
-    cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (c === "attention") nextAttention(); else if (c === "rail") rail(); else if (c === "worktrees") openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: focused()?.space, folder: focused()?.cwd, action: "open" } }); else if (PANELS.some(([id]) => id === c)) this.toggle(c); cx.notify(); } });
+    // "tabs-plus.worktrees" (⌘⇧O) lists every worktree of the repo you're in, in Herdr's own dialog (Enter opens one as a space);
+    // "tabs-plus.update" applies a pending update (the chip's click).
+    cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (c === "attention") nextAttention(); else if (c === "rail") rail(); else if (c === "update") this.applyUpdate(cx); else if (c === "worktrees") openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: focused()?.space, folder: focused()?.cwd, action: "open" } }); else if (PANELS.some(([id]) => id === c)) this.toggle(c); cx.notify(); } });
+    this.update = null; // { behind, busy?, error? } once main has commits this clone lacks
+    cx.spawn(async (cx) => { await cx.sleep(16); this.checkUpdate(cx); }); // host calls before the first frame never resolve
+    cx.timer.every(6 * 3600000, (cx) => this.checkUpdate(cx));
+  }
+
+  checkUpdate(cx) {
+    cx.spawn(async (cx) => {
+      try {
+        const [dir, branch] = (await git(`${appHome()}/mods/tabs-plus`, "rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD")).split("\n");
+        if (branch !== "main" || !ORIGIN.test(await git(dir, "remote", "get-url", "origin"))) return;
+        await git(dir, "fetch", "--quiet", "origin", "main");
+        const [ahead, behind] = (await git(dir, "rev-list", "--left-right", "--count", "HEAD...origin/main")).split(/\s+/).map(Number);
+        this.repo = dir;
+        if (!this.update?.busy) this.update = behind && !ahead ? { behind } : null;
+        cx.notify();
+      } catch { /* offline or no clone: the next check tries again */ }
+    });
+  }
+
+  // One shell, so the pull, relink and reload finish even if the pull reloads this mod mid-way.
+  applyUpdate(cx) {
+    const u = this.update;
+    if (!u || u.busy || !this.repo) return;
+    this.update = { behind: u.behind, busy: true };
+    cx.spawn(async (cx) => {
+      const r = await exec("bash", ["-c", UPDATE, "update", this.repo], { timeout: 300000 }).catch((e) => ({ code: 1, stderr: String(e?.message ?? e) }));
+      this.update = r.code === 0 ? null : { behind: u.behind, error: r.stderr.trim().split("\n").pop() || `exited ${r.code}` };
+      cx.notify();
+    });
   }
 
   // Each panel keeps its own width: what the person last dragged it to, else its default.
@@ -165,6 +212,13 @@ export default class Tabs extends View {
         .children(shown.map(item)))
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
       .children(PANELS.filter(([id]) => enabled.includes(id)).map(panelButton))
+      .when(Boolean(this.update), (el) => {
+        const u = this.update, ink = u.error ? t.blocked : t.accent;
+        return el.child(h_flex().id("emergence-update").h(26).px(8).gap(6).flex_none().items_center().rounded(6).text_size(12).text_color(ink)
+          .hover((s) => s.bg(t.hover)).on_mouse_down("left", stop).on_click((_e, cx) => { this.applyUpdate(cx); cx.notify(); })
+          .tooltip(u.busy ? "Pulling Emergence and relinking its mods…" : u.error ? `Update failed: ${u.error}. Click to try again.` : `Emergence has ${u.behind} new commit${u.behind === 1 ? "" : "s"} on GitHub. Click to update.`)
+          .child(div().size(6).rounded(3).flex_none().bg(ink)).child(u.busy ? "Updating…" : u.error ? "Update failed" : "Update"));
+      })
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs-plus/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs-plus/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs-plus/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));
