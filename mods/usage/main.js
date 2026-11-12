@@ -102,9 +102,9 @@ export default class Usage extends View {
   }
 
   // What the work delivered: commits, lines, PRs, worktrees, and what agent spend each of them cost.
-  outputView(t, r, p) {
-    if (!output) return [div().p(12).text_size(12).text_color(t.dim).child(this.busy ? "Reading git and gh in your repos…" : "No git or gh data yet: rescan (↻).")];
-    const o = outputOf(output, { from: p.from, to: p.to, step: r.step }), base = (path) => path.split("/").filter(Boolean).pop();
+  outputView(t, r, p, o) {
+    if (!o) return [div().p(12).text_size(12).text_color(t.dim).child(this.busy ? "Reading git and gh in your repos…" : "No git or gh data yet: rescan (↻).")];
+    const base = (path) => path.split("/").filter(Boolean).pop();
     const tiles = this.tileRow(t, [
       ["Commits", String(o.commits), o.activeDays ? `${(o.commits / o.activeDays).toFixed(1)} per day you committed` : "none"],
       ["Lines changed", `+${short(o.add)} −${short(o.del)}`, `net ${o.add - o.del >= 0 ? "+" : "−"}${short(Math.abs(o.add - o.del))} · lockfiles left out`],
@@ -214,10 +214,7 @@ export default class Usage extends View {
     ]);
   }
 
-  heatmap(t, sessions) {
-    // Weekday labels 31 + 14 per week must fit inside the body and card padding.
-    const weeks = Math.max(8, Math.min(53, Math.floor((this.width - 32 - 28 - 31 - 12) / 14)));
-    const cells = heat(sessions, { weeks, metric: this.metric });
+  heatmap(t, cells, weeks) {
     const cols = [];
     for (let i = 0; i < cells.length; i += 7) cols.push(cells.slice(i, i + 7));
     const ink = t.done;
@@ -256,7 +253,7 @@ export default class Usage extends View {
       .child(div().flex_1())
       .child(h_flex().gap(3).items_center().text_size(11).text_color(t.dim).child(div().mr(4).child("Less"))
         .children(LEVEL.map((a, i) => div().size(11).rounded(3).bg(i ? alpha(ink, a) : t.raised))).child(div().ml(4).child("More")));
-    const metrics = [["sessions", "Sessions"], ["tokens", "Tokens"], ...(sessions.some((s) => s.cost) ? [["cost", "Cost"]] : [])];
+    const metrics = [["sessions", "Sessions"], ["tokens", "Tokens"], ...(cells.some((d) => d.cost) ? [["cost", "Cost"]] : [])];
     return this.card(t, `Activity, last ${weeks} weeks`, this.segmented(t, "metric", metrics, this.metric, (v) => { this.metric = v; }),
       v_flex().gap(10).child(grid).child(readout));
   }
@@ -514,7 +511,7 @@ export default class Usage extends View {
       .when(rows.length > 0, (el) => el.child(this.anatomy(t, r)));
   }
 
-  render() {
+  render(cx) {
     const t = theme();
     const root = (this.panel
       ? v_flex().size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
@@ -533,13 +530,28 @@ export default class Usage extends View {
         .child(div().max_w(420).text_size(12).text_color(t.dim).child(this.busy ? "omp, Claude Code, Codex, OpenCode and pi, on this machine. The first scan takes a while; later ones only read what changed." : this.error ?? "")));
     }
     const on = new Set(present.filter((h) => !this.off.has(h)));
-    const key = `${data.scanned_at}|${p.from}|${p.to === now ? startOfDay(now) : p.to}|${[...on]}|${this.same}|${this.kind}`;
-    if (this.memoKey !== key) { this.memo = summarize(sessions, { from: p.from, to: p.to, harnesses: on, sameRepos: this.same, kind: this.kind }); this.memoKey = key; }
-    const r = this.memo, shown = present.filter((h) => on.has(h));
+    // Weekday labels 31 + 14 per week must fit inside the body and card padding.
+    const weeks = Math.max(8, Math.min(53, Math.floor((this.width - 32 - 28 - 31 - 12) / 14)));
+    const key = `${data.scanned_at}|${p.from}|${p.to === now ? startOfDay(now) : p.to}|${[...on]}|${this.same}|${this.kind}|${weeks}|${this.metric}`;
+    // The sums run after this frame: Herdr interrupts a render after ~100 ms, and a heavy year of sessions takes
+    // longer than that (async work has no limit). Until they land, the last ones show.
+    if (this.memoKey !== key || this.memoOut !== output) {
+      this.memoKey = key;
+      const out = (this.memoOut = output);
+      cx.spawn(async (cx) => {
+        await cx.sleep(0);
+        if (this.memoKey !== key || this.memoOut !== out) return; // superseded
+        const r = summarize(sessions, { from: p.from, to: p.to, harnesses: on, sameRepos: this.same, kind: this.kind });
+        this.memo = { r, cells: heat(sessions.filter((s) => on.has(s.h)), { weeks, metric: this.metric }), o: out && outputOf(out, { from: p.from, to: p.to, step: r.step }) };
+        cx.notify();
+      });
+    }
+    if (!this.memo) return root.child(v_flex().flex_1().items_center().justify_center().text_size(12).text_color(t.dim).child("Adding up…"));
+    const { r, cells, o } = this.memo, shown = present.filter((h) => on.has(h));
     const empty = div().p(12).text_size(12).text_color(t.dim).child(`No sessions in ${p.label} for the harnesses shown.`);
     const view = this.tab === "harnesses" ? (r.tiles.sessions ? [this.over(t, r, shown), this.models(t, r), this.effort(t, r, shown)] : [empty])
       : this.tab === "compare" ? [this.compare(t, r)]
-      : this.tab === "output" ? this.outputView(t, r, p)
+      : this.tab === "output" ? this.outputView(t, r, p, o)
       : this.tab === "rhythm" ? (r.tiles.sessions ? (() => {
         // A two-column dashboard: the tall hour grid (stretched to the column's height, the day split filling its
         // foot) beside the agents-at-once strip and the two bar cards stacked.
@@ -551,7 +563,7 @@ export default class Usage extends View {
             .child(v_flex().flex_1().min_w(0).gap(12).child(this.parallel(t, r)).child(lengths).child(days))
           : v_flex().gap(12).child(this.punch(t, r)).child(this.parallel(t, r)).child(lengths).child(days)];
       })() : [empty])
-      : [this.tiles(t, r), this.heatmap(t, sessions.filter((s) => on.has(s.h))), ...(r.tiles.sessions ? [this.pair(this.tokensCard(t, r), this.workCard(t, r))] : [])];
+      : [this.tiles(t, r), this.heatmap(t, cells, weeks), ...(r.tiles.sessions ? [this.pair(this.tokensCard(t, r), this.workCard(t, r))] : [])];
     return root.child(v_flex().id("usage-body").flex_1().min_h(0).p(16).gap(12).overflow_y_scrollbar().children(view));
   }
 }

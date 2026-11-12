@@ -13,8 +13,9 @@ test("file tree: folders first, single-folder chains fold, indices kept", () => 
 
 test("review tags: badge round-trips, untagged and look-alike bodies stay text", () => {
   const body = tagBody("major", "Leaks the token.\n![nit](https://img.shields.io/badge/x) later");
-  expect(body.startsWith("![major](https://img.shields.io/badge/major-red) ")).toBe(true);
+  expect(body.startsWith("![major](https://img.shields.io/badge/major-red)\nLeaks")).toBe(true);
   expect(splitTag(body)).toEqual({ tag: "major", text: "Leaks the token.\n![nit](https://img.shields.io/badge/x) later" });
+  expect(splitTag("![nit](https://img.shields.io/badge/nit-purple) posted before the line break")).toEqual({ tag: "nit", text: "posted before the line break" });
   expect(tagBody(null, "plain")).toBe("plain");
   expect(splitTag("![nit](https://evil.example/x) hi")).toEqual({ tag: null, text: "![nit](https://evil.example/x) hi" });
 });

@@ -113,11 +113,11 @@ export function fileTree(files) {
   return rows;
 }
 
-/** Review labels, sent as a shields.io badge ahead of the comment so GitHub shows it:
+/** Review labels, sent as a shields.io badge on its own line above the comment so GitHub shows it:
  *  [key, label, badge colour, the theme colour that matches it]. */
 export const TAGS = [["statement", "Statement", "green", "ansi2"], ["question", "Question", "blue", "ansi4"], ["nit", "Nit", "purple", "ansi5"], ["minor", "Minor", "yellow", "ansi3"], ["major", "Major", "red", "ansi1"]];
-const BADGE = /^!\[(statement|question|nit|minor|major)\]\(https:\/\/img\.shields\.io\/badge\/[^)\s]*\)[ \t]*/;
-export const tagBody = (tag, text) => (tag ? `![${tag}](https://img.shields.io/badge/${tag}-${TAGS.find(([k]) => k === tag)[2]}) ${text}` : text);
+const BADGE = /^!\[(statement|question|nit|minor|major)\]\(https:\/\/img\.shields\.io\/badge\/[^)\s]*\)\s*/;
+export const tagBody = (tag, text) => (tag ? `![${tag}](https://img.shields.io/badge/${tag}-${TAGS.find(([k]) => k === tag)[2]})\n${text}` : text);
 export function splitTag(body) {
   const m = BADGE.exec(body ?? "");
   return m ? { tag: m[1], text: body.slice(m[0].length) } : { tag: null, text: body ?? "" };

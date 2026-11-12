@@ -72,7 +72,7 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - Changed files form a folder tree with +/− and comment counts; one file's diff shows at a time; ↑/↓ steps files.
   - Select lines by click, shift-click or drag. The comment box then docks under the diff with tag chips: Statement
     (green), Question (blue), Nit (purple), Minor (yellow), Major (red). A tag posts as
-    `![tag](https://img.shields.io/badge/<tag>-<color>)`.
+    `![tag](https://img.shields.io/badge/<tag>-<color>)` on its own line, then the comment.
   - Reply, edit, delete and resolve threads. Esc steps back out.
 - **Library panel.**
   - Skills and Plugins tabs. Plugins are the installed Claude Code plugins; open one to see the skills it ships.

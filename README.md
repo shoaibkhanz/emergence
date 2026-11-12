@@ -26,16 +26,80 @@ The fonts (Geist, Geist Mono) ship with Herdr.
 
 ## What you get
 
-**Panels**, as buttons in the tab bar (each opens large from its corner button):
+Four panels open from buttons in the tab bar (each also opens large from its corner button), and the sidebar becomes
+an inbox. Every screenshot below uses made-up data.
 
-| Panel | Key | |
-|---|---|---|
-| Agents | ⌘⇧G | Every agent as a graph: repo → worktree (with its PR) → agent → sub-agents. Click an agent to jump to it, a PR to review it, a repo for its worktrees. Drag cards; the wheel zooms. |
-| PRs | ⌘⇧U | The repo you're in: its PRs and this branch vs main. Changed files as a tree, one diff at a time. Select lines, then comment, tagged Statement · Question · Nit · Minor · Major. Reply, edit, delete, resolve. |
-| Library | ⌘⇧K | Every agent skill on this machine and in the repo, and your installed Claude Code plugins with the skills they ship. Opens one in a reusable window. |
-| Usage | ⌘⇧M | How you work across omp, Claude Code, Codex, OpenCode and pi, from their logs and your git history on this machine. See below. |
+### Agents (⌘⇧G): who's running, where, and who needs you
 
-**Sidebar**
+![Agents panel: repos, worktrees with their PRs, and agents](docs/images/agents.png)
+
+Every agent on the machine in one picture: repo → worktree, with the PR it has open → agent → its sub-agents. With a
+dozen agents running, the one that's blocked shows in red and the finished one in green, so you see where to look
+without visiting each tab. Click an agent to jump to it, a PR to review it, a repo to list its worktrees. Drag cards
+around; the wheel zooms.
+
+### PRs (⌘⇧U): review your agents' work without leaving Herdr
+
+![PRs panel: a pull request's files, diff and tagged review threads](docs/images/prs.png)
+
+The PRs of the repo you're in, plus this branch against main. Changed files form a tree, with one diff at a time and
+review threads inline. Select lines and comment, tagged Statement · Question · Nit · Minor · Major. The tag posts as a
+coloured badge on GitHub, so whoever picks up the review (you, or the agent) can tell a nit from a blocker at a glance.
+Reply, edit, delete and resolve threads here too.
+
+### Library (⌘⇧K): every skill your agents can load
+
+![Library panel: skills from every harness folder, with where each lives](docs/images/library.png)
+
+Skills from `~/.agents`, `~/.claude`, `~/.codex`, `~/.config/opencode` and the repo, plus your installed Claude Code
+plugins and the skills they ship. It's one searchable list that shows where each skill lives, so you can check what's
+already installed before writing or copying another. Each skill opens in a reusable window.
+
+### Usage (⌘⇧M): what your agents cost, and what they deliver
+
+How you work across omp, Claude Code, Codex, OpenCode and pi, read from their own logs and your git history. Pick 7,
+30 or 90 days, a year, or two dates. Nothing leaves your machine.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/usage-overview.png" alt="Usage overview"></td>
+<td width="50%"><img src="docs/images/usage-compare.png" alt="Usage compare"></td>
+</tr>
+<tr>
+<td valign="top"><b>Overview.</b> Sessions, active days, tokens and spend, against the period before. A calendar shows
+every day, and the breakdowns show where tokens go (fresh input, cache writes, cache reads, output) and what kind of
+work it was. Agents re-read their context on every step, so the cache share tells you whether long runs are cheap or
+expensive.</td>
+<td valign="top"><b>Compare.</b> For each harness and model: the share of runs that went cleanly (no abort, API error
+or compaction, few failed tools) with its 95% range, what one clean run costs, tool calls per run, and how often a run
+led to a commit. A winner is only named when the ranges don't overlap, so you switch tools on evidence.</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/usage-harnesses.png" alt="Usage harnesses"></td>
+<td width="50%"><img src="docs/images/usage-output.png" alt="Usage output"></td>
+</tr>
+<tr>
+<td valign="top"><b>Harnesses.</b> Tokens by harness over time, the models that carry the load, and the effort level each
+harness runs at. A move from one harness or model to another shows up week by week.</td>
+<td valign="top"><b>Output.</b> What the spend produced: commits, lines changed, pull and merge requests, worktrees. Then
+what that delivery cost, per commit, per merged PR and per 1K lines.</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/usage-rhythm.png" alt="Usage rhythm"></td>
+<td valign="top"><b>Rhythm.</b> When you start work, how many agents run at once on each day, and how long runs last.
+Find the hours you run the most agents, and the runs that drag on.<br><br>
+Hover any bar or square for its numbers. Cost is what each harness recorded, at API prices (Codex records none). The
+kind of work comes from each run's mix of tool calls, never from your prompts.</td>
+</tr>
+</table>
+
+**Usage only sees what's on this machine.** It reads the session logs each harness keeps locally and the git repos
+those sessions ran in. Work done on another computer isn't counted, and neither is history a harness already deleted.
+Claude Code deletes transcripts after 30 days by default (`cleanupPeriodDays` in `~/.claude/settings.json`), so a first
+scan sees about a month of Claude Code. From then on, Usage keeps every session it has read, even after Claude Code
+prunes it. Raise `cleanupPeriodDays` to keep more.
+
+### Sidebar
 
 - **Inbox** (after [T3 Inbox](https://github.com/JinJieBeWater/herdr-t3-inbox)): a card for every agent waiting on you
   (blocked, finished, or idle for its next prompt). Working agents fold into one row that opens the graph. Settle puts
@@ -44,23 +108,6 @@ The fonts (Geist, Geist Mono) ship with Herdr.
 - **⌘B** folds it to a thin strip: one coloured line per agent that needs you, nothing else.
 
 **Keys**: ⌘⇧J jumps to the next agent that needs you. ⌘⇧O lists every worktree of the repo you're in.
-
-## Usage, in detail
-
-Pick 7, 30 or 90 days, a year, or two dates (both included). Nothing leaves your machine.
-
-- **Overview**: sessions, active days, tokens, cost; a year calendar; where the tokens go (fresh input, cache, output);
-  what the work was (build, investigate, run and debug, research, orchestrate).
-- **Compare**: for each harness and model, the share of runs that went cleanly (with its 95% range), what one clean
-  run costs, and how many tool calls it takes; a success-against-cost chart; the cost anatomy ($ per 1M tokens, per 1K
-  output tokens, per run that led to a commit). Filter by kind of work, or to repos you used several harnesses in.
-- **Output**: your commits, lines changed, pull and merge requests, worktrees, and what the agent spend came to per
-  commit, per merged PR and per 1K lines.
-- **Harnesses**: tokens over time, the models you use, and effort levels.
-- **Rhythm**: when you start work, how many agents run at once, how long runs last.
-
-Cost is what each harness recorded, at API prices (Codex records none). The kind of work is read from each run's mix of
-tools, never from your prompts.
 
 ## What it runs
 

@@ -40,6 +40,11 @@ These are the Herdr 0.1.15 behaviours we hit that the manual gets wrong or leave
 - `.tooltip()` on tiny cells (an 11 px heatmap square) never showed for the person; an `on_hover` that sets state
   and a readout line under the chart works every time (the Usage panel does this throughout).
 - `run("<mod>.<command>")` reaches another mod's `nextCommand()` (inbox → `tabs-plus.rail`, agent-graph → `tabs-plus.prs`).
+- `render()` is interrupted after about 100 ms ("This view could not be re-rendered; interrupted"); work inside
+  `cx.spawn` isn't. Do heavy sums in a task, keep the result keyed on its inputs, and `cx.notify()` when it lands
+  (Usage's `memo`).
+- After a couple of dozen reloads of a panel holding several MB of data, `JSON.parse` of a 3 MB string threw
+  `null` until Herdr was restarted. [Likely the engine running out of memory; not proven.]
 
 ## Verifying UI
 
