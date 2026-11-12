@@ -10,6 +10,7 @@ const PANELS = [
   ["graph", "Agents", "mods/tabs-plus/graph.svg", 620],
   ["prs", "PRs", "mods/tabs-plus/pr.svg", 860],
   ["skills", "Library", "mods/tabs-plus/skills.svg", 440],
+  ["usage", "Usage", "mods/tabs-plus/usage.svg", 760],
 ];
 const OURS = PANELS.slice(2).map(([id]) => id);
 

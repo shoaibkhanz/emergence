@@ -5,9 +5,10 @@ They live as side panels in the tab bar, next to Herdr's Files and Changes.
 
 | Panel | Key | What it shows |
 |---|---|---|
-| Agents (`agent-graph`) | ⌘⇧G | Every agent on a canvas: repo → worktree/branch (with its PR) → agent → sub-agents. Click an agent to jump to it, a PR chip to review it, a repo to list every worktree it has. Drag a card to move it, empty space to pan; zoom with the − / + corner control (or ⌘-scroll, - / =), click the % to fit; R resets the arrangement. |
+| Agents (`agent-graph`) | ⌘⇧G | Every agent on a canvas: repo → worktree/branch (with its PR) → agent → sub-agents. Click an agent to jump to it, a PR chip to review it, a repo to list every worktree it has. Drag a card to move it, empty space to pan; zoom with the mouse wheel, the − / + corner control, ⌘-scroll or - / = (a trackpad scroll pans), click the % to fit; R resets the arrangement. |
 | PRs (`pr-review`) | ⌘⇧U | Follows the focused pane's repo: PRs (open/closed, search) and the branch vs main. The changed files as a folder tree with +/− and comment counts; one file's diff at a time (↑/↓ step files). Select lines (click, shift-click, drag), then comment from the box docked under the diff, tagged Statement · Question · Nit · Minor · Major (posted as a shields.io badge). Reply, edit, delete, resolve. |
 | Library (`skills`) | ⌘⇧K | Skills: every skill across `~/.agents`, `~/.claude`, OpenCode, Codex and the current repo. Plugins: installed Claude Code plugins and the skills they ship. Open one in the skill window: SKILL.md, references, scripts (one window, reused; the corner button makes it bigger). |
+| Usage (`usage`) | ⌘⇧M | How you work across omp, Claude Code, Codex, OpenCode and pi, read from their own session logs and your git history on this machine (nothing leaves it). Last 7/30/90 days, a year, or two dates of your choice. **Overview**: sessions, active days, tokens, cost, a year calendar, where the tokens go, what the work was. **Harnesses**: tokens over time, models, effort. **Compare**: per harness × model, success rate (with its 95% interval), cost per clean run and tool loops, a success-vs-cost chart, and the cost anatomy (token mix, $ per 1M tokens and per 1K output, context read per token written, $ per run that led to a commit), filterable by kind of work. **Output**: your commits, lines changed, pull/merge requests (GitHub via `gh`, GitLab via `glab`), worktrees, and what agent spend each of them cost. **Rhythm**: when you start work, run lengths, agents at once. |
 
 Each panel has an expand button that opens the same mod as a large overlay/window, and remembers its width.
 
@@ -93,7 +94,7 @@ and remove the `tabs-plus.*` keys from `~/.config/herdr-app/keys.json` and the `
 ## Requirements
 
 - Herdr app ≥ 0.1.15 (built and tested on macOS).
-- `git`; `gh` signed in for the PRs panel; `python3` and `bash` for `install.sh`.
+- `git`; `gh` signed in for the PRs panel (and `glab` for GitLab merge requests in Usage); `python3` and `bash` for `install.sh` and the Usage panel's scanners.
 - Fonts: Geist and Geist Mono, which ship with Herdr.
 - Optional: Claude Code plugins (`~/.claude/plugins`) for the Library's Plugins tab.
 

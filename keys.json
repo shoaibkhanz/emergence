@@ -4,7 +4,8 @@
     "cmd-shift-u": "tabs-plus.prs",
     "cmd-shift-k": "tabs-plus.skills",
     "cmd-shift-j": "tabs-plus.attention",
-    "cmd-shift-o": "tabs-plus.worktrees"
+    "cmd-shift-o": "tabs-plus.worktrees",
+    "cmd-shift-m": "tabs-plus.usage"
   },
   "layout:factory": {
     "cmd-b": "tabs-plus.rail"

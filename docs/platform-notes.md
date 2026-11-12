@@ -37,12 +37,17 @@ These are the Herdr 0.1.15 behaviours we hit that the manual gets wrong or leave
 - `props()` is `null` under `herdr-app check`. A View method named `close` collides with the lifecycle
   `async close(cx)`: use another name (`dismiss`).
 - `InputState.set_value` doesn't fire `change`.
+- `.tooltip()` on tiny cells (an 11 px heatmap square) never showed for the person; an `on_hover` that sets state
+  and a readout line under the chart works every time (the Usage panel does this throughout).
+- `run("<mod>.<command>")` reaches another mod's `nextCommand()` (inbox → `tabs-plus.rail`, agent-graph → `tabs-plus.prs`).
 
 ## Verifying UI
 
 - Never synthesize OS mouse or keyboard events: Herdr usually isn't frontmost and they land in another app.
 - Drive the real handlers through a temporary `nextCommand()` loop (`herdr-app do <mod>.<cmd>`), check with
-  `herdr-app shot` and `herdr-app status`, then delete the loop before committing.
+  `herdr-app shot` and `herdr-app status`, then delete the loop before committing. Right after a `layout.switch`,
+  commands can land in a copy that isn't the shown one; a temporary default in `init` (a tab, a range) plus
+  one `layout.switch` is the reliable way to screenshot a particular view.
 - To learn whether pointer events arrive at all, log from the handlers into memory and flush it with
   `fs.writeFile` under `~/.config/herdr-app/data/`, then ask the person to click.
 - A synthetic agent for a test: a terminal that prints `\033]7501;state=<working|blocked|done|idle>:app=<claude|codex|pi|…>\033\\`

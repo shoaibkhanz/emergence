@@ -190,6 +190,16 @@
                           "panel": true
                         }
                       }
+                    },
+                    {
+                      "id": "usage",
+                      "type": "block",
+                      "content": {
+                        "mod": "usage",
+                        "props": {
+                          "panel": true
+                        }
+                      }
                     }
                   ]
                 }
