@@ -1,4 +1,4 @@
-# herdr-mods: platform notes
+# Emergence: platform notes
 
 Herdr's manual is `~/.config/herdr-app/AGENTS.md`; types are `herdr.d.ts` and `gpui-kit.d.ts` (800 KB: grep it).
 These are the Herdr 0.1.15 behaviours we hit that the manual gets wrong or leaves out. Each was seen live.
@@ -17,7 +17,7 @@ These are the Herdr 0.1.15 behaviours we hit that the manual gets wrong or leave
 - A shown panel node has no `hidden` key: test `!node.hidden`, never `node.hidden === false`.
 - A collapsed column counts as not shown, and `<mod>.<command>` only reaches shown copies ("unknown command").
   A block that must always get commands (nav-keys) belongs in the `work` column, never the sidebar.
-- Panel copies and windows don't pick up file edits: restart them with `layout.switch` main → factory.
+- Panel copies and windows don't pick up file edits: restart them with `layout.switch` main → emergence.
 
 ## Windows
 

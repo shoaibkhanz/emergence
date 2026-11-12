@@ -1,6 +1,6 @@
 // Agent graph: every live terminal as repo -> worktree (branch + PR) -> agent -> sub-agent.
 // Live data re-renders; git facts (30 s) and `gh pr list` (60 s) are cached per cwd / repo.
-// props().panel: lives in the factory layout's right panel (block "graph") instead of a popup.
+// props().panel: lives in the emergence layout's right panel (block "graph") instead of a popup.
 
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
@@ -138,7 +138,7 @@ export default class AgentGraph extends View {
   }
 
   // Cross-mod deep link: pr-review picks this up (if < 30 s old) and selects the PR.
-  // With a PRs panel in the layout (factory) that panel takes it; otherwise the pr-review window.
+  // With a PRs panel in the layout (emergence) that panel takes it; otherwise the pr-review window.
   openPr(w, cx) {
     setShared("pr-review.open", { repo: w.top, machine: w.machine, number: w.pr.number, at: Date.now() });
     if (find(layout(), "prs")) {

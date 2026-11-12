@@ -1,6 +1,6 @@
 // Usage: how you work across coding-agent harnesses (omp, Claude Code, Codex, OpenCode, pi), read from their
 // own session logs on this machine. scan.py boils the logs down (cached); everything here is drawn natively.
-// props().panel: the factory layout's side panel (block "usage"); otherwise a popup (mod.open:usage).
+// props().panel: the emergence layout's side panel (block "usage"); otherwise a popup (mod.open:usage).
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";

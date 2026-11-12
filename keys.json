@@ -7,7 +7,7 @@
     "cmd-shift-o": "tabs-plus.worktrees",
     "cmd-shift-m": "tabs-plus.usage"
   },
-  "layout:factory": {
+  "layout:emergence": {
     "cmd-b": "tabs-plus.rail"
   }
 }

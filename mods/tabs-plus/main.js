@@ -2,7 +2,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, agents, focused } from "herdr";
 
-// Herdr's tab bar plus the herdr-mods panels beside Files and Changes.
+// Herdr's tab bar plus the Emergence panels beside Files and Changes.
 // [layout block id in panel-body, label, icon, default panel width px]
 const PANELS = [
   ["files", "Files", "mods/files/file.svg", 368],
@@ -31,7 +31,7 @@ function nextAttention() {
   if (want.length) run("agent.focus", { terminal: want[(i + 1) % want.length].address });
 }
 
-// ⌘B (factory only): the sidebar folds to a 14px strip where the inbox shows only a dot per agent that
+// ⌘B (emergence only): the sidebar folds to a 14px strip where the inbox shows only a dot per agent that
 // needs you (brand, Spaces and footer hide), and back. Herdr's ⌘B hides it outright. A hidden one comes back.
 function rail() {
   const s = find(layout(), "sidebar");

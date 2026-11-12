@@ -1,22 +1,28 @@
-# herdr-mods
+# Emergence
 
-Mods for the [Herdr app](https://herdr.dev), for running many coding agents at once: an agent graph, a pull request
-reviewer, a skills and plugins library, a usage dashboard, and a calmer sidebar.
+A layout for the [Herdr app](https://herdr.dev) for running many coding agents at once: every agent as a graph, a
+pull request reviewer, a skills and plugins library, usage analytics across harnesses, and an inbox for the agents
+that need you.
+
+![Emergence](preview.png)
 
 ## Install
 
+Tell your Herdr agent:
+
+> Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/shoaibkhanz/emergence
+
+Or run one command (run it again to update):
+
 ```sh
-curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr_mods/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/emergence/main/install.sh | bash
 ```
 
-It clones this repo to `~/code/herdr-mods`, links every mod into Herdr, adds the keys below without replacing any you
-have, and switches Herdr to the `factory` layout (`ctrl-shift-l` cycles back to Herdr's own). Run it again to update.
+It clones this repo to `~/code/emergence`, links every mod into Herdr, adds the keys below without replacing any you
+have, and switches to the `emergence` layout (`ctrl-shift-l` cycles back to Herdr's own).
 
-Or tell your Herdr agent: *"Install https://github.com/shoaibkhanz/herdr_mods by running its install.sh, then check
-that `herdr-app status` shows no errors."*
-
-Needs Herdr 0.1.15 or newer, `git` and `python3`. `gh` signed in for pull requests; `glab` for GitLab merge requests
-in Usage. The fonts (Geist, Geist Mono) ship with Herdr.
+Needs Herdr 0.1.15 or newer, `git` and `python3`; `gh` signed in for pull requests, `glab` for GitLab merge requests.
+The fonts (Geist, Geist Mono) ship with Herdr.
 
 ## What you get
 
@@ -56,12 +62,23 @@ Pick 7, 30 or 90 days, a year, or two dates (both included). Nothing leaves your
 Cost is what each harness recorded, at API prices (Codex records none). The kind of work is read from each run's mix of
 tools, never from your prompts.
 
+## What it runs
+
+- **Agents**: `git rev-parse` in each agent's folder, and `gh pr list` once a minute per repo.
+- **PRs**: `git` and `gh` in the focused repo; posting a comment, reply, edit, delete or resolve calls the GitHub API.
+- **Library**: lists skill folders under `~/.agents`, `~/.claude`, `~/.config/opencode`, `~/.codex` and the repo, and
+  reads `~/.claude/plugins/installed_plugins.json`.
+- **Usage**: `python3 mods/usage/scan.py` reads the harnesses' session logs (omp, Claude Code, Codex, OpenCode, pi) and
+  keeps a cache in Herdr's `data/usage/`; `python3 mods/usage/output.py` runs `git log`, `gh pr list` or `glab mr list`
+  and `git worktree list` in the repos those sessions name. Only counts, models and timestamps are read, never prompts.
+- **Inbox, Spaces, tab bar**: nothing outside Herdr.
+
 ## Update or remove
 
-Update: run the install command again, then `herdr-app do layout.switch --name main` and `--name factory` to reload.
+Update: run the install command again, then `herdr-app do layout.switch --name main` and `--name emergence` to reload.
 
 Remove: switch back with `herdr-app do layout.switch --name main`, delete the links
-(`find ~/.config/herdr-app/mods ~/.config/herdr-app/layouts -maxdepth 1 -lname "$HOME/code/herdr-mods/*" -delete`),
+(`find ~/.config/herdr-app/mods ~/.config/herdr-app/layouts -maxdepth 1 -lname "$HOME/code/emergence/*" -delete`),
 then take the `tabs-plus.*` keys out of `~/.config/herdr-app/keys.json` and the `omp` entry out of `programs.json`.
 
 ## Optional: ctrl-h/j/k/l between panes
@@ -80,16 +97,17 @@ then take the `tabs-plus.*` keys out of `~/.config/herdr-app/keys.json` and the 
 | `mods/agent-graph`, `pr-review`, `skills`, `usage` | the four panels |
 | `mods/inbox`, `spaces-plus` | the sidebar |
 | `mods/tabs-plus` | Herdr's tab bar with the panel buttons |
-| `layouts/factory.json` | Herdr's `main` layout with all of the above |
+| `layouts/emergence.json` | Herdr's `main` layout with all of the above |
+| `RECIPE.md` | the brief to rebuild it from scratch |
 
-`spaces-plus`, `tabs-plus` and `factory` are copies of Herdr 0.1.15's own; Herdr updates don't flow into them.
+`spaces-plus`, `tabs-plus` and the layout are copies of Herdr 0.1.15's own; Herdr updates don't flow into them.
 
 ```sh
 herdr-app check ~/.config/herdr-app/mods/<name>   # loads and renders once
 (cd mods/<name> && bun test)                      # logic tests; Usage also: python3 mods/usage/test_scan.py
 ```
 
-Edits don't reach open panels: switch layouts (`main`, then `factory`) to restart them. Read
+Edits don't reach open panels: switch layouts (`main`, then `emergence`) to restart them. Read
 [`docs/platform-notes.md`](docs/platform-notes.md) before changing anything.
 
 MIT licensed (see [`LICENSE`](LICENSE)). Icons from [Lucide](https://lucide.dev) (ISC); omp's icon is its own (MIT).
