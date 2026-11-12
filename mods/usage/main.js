@@ -108,7 +108,7 @@ export default class Usage extends View {
     const tiles = this.tileRow(t, [
       ["Commits", String(o.commits), o.activeDays ? `${(o.commits / o.activeDays).toFixed(1)} per day you committed` : "none"],
       ["Lines changed", `+${short(o.add)} −${short(o.del)}`, `net ${o.add - o.del >= 0 ? "+" : "−"}${short(Math.abs(o.add - o.del))} · lockfiles left out`],
-      ["Pull requests", `${o.opened} opened`, o.merged ? `${o.merged} merged · ${o.mergeHours < 48 ? `${Math.round(o.mergeHours)}h` : `${Math.round(o.mergeHours / 24)}d`} to merge (median)` : "none merged"],
+      ["Pull requests", `${o.opened} opened`, o.merged ? `${o.merged} merged · median ${mins(o.mergeHours * 60)} to merge` : "none merged"],
       ["Worktrees", String(o.worktrees), `across ${o.treeRepos} repos, now`],
     ]);
     // Lines added above the axis, removed below, one bar per day (week, past a month); hover for the day's numbers.
@@ -138,7 +138,7 @@ export default class Usage extends View {
       .child(div().w(44).flex_none().font_family(MONO).text_color(t.muted).child(`#${x.n}`)).child(div().flex_1().min_w(0).truncate().font_family(MONO).child(base(x.repo)))
       .child(h_flex().h(18).px(6).flex_none().items_center().rounded(5).text_size(11)
         .bg(alpha(x.state === "merged" ? t.done : x.state === "open" ? t.accent : t.dim, 0.16)).text_color(x.state === "merged" ? t.done : x.state === "open" ? t.accent : t.dim).child(x.state))
-      .child(div().w(90).text_size(11).text_color(t.dim).child(x.merged ? `merged in ${mins((x.merged - x.created) / 60000)}` : date(x.created)))))) : null;
+      .child(div().w(130).flex_none().whitespace_nowrap().text_size(11).text_color(t.dim).child(x.merged ? `merged in ${mins((x.merged - x.created) / 60000)}` : date(x.created)))))) : null;
     return [tiles, lines, this.pair(where, cost), ...(prs ? [prs] : [])];
   }
 
