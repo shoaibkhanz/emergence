@@ -69,6 +69,18 @@ export function mergeSkills(rows, order) {
   return out;
 }
 
+/** installed_plugins.json `plugins` → one {id, name, marketplace, root, version} per plugin whose folder
+ *  exists (`exists(path)`); a user install wins over a project one. */
+export function pickPlugins(installed, exists) {
+  const out = [];
+  for (const [id, entries] of Object.entries(installed ?? {})) {
+    const e = [].concat(entries).sort((a, b) => (b?.scope === "user") - (a?.scope === "user")).find((x) => x?.installPath && exists(x.installPath));
+    const at = id.lastIndexOf("@");
+    if (e) out.push({ id, name: at > 0 ? id.slice(0, at) : id, marketplace: at > 0 ? id.slice(at + 1) : "", root: e.installPath, version: e.version ?? "" });
+  }
+  return out;
+}
+
 const subsequence = (w, s) => { let i = 0; for (const c of s) if (c === w[i]) i++; return i === w.length; };
 const byName = (a, b) => a.name.localeCompare(b.name);
 

@@ -1,5 +1,18 @@
 import { test, expect } from "bun:test";
-import { parseFrontMatter, mergeSkills, rankSkills, sortFiles, parseListing, resolveLink } from "./lib.js";
+import { parseFrontMatter, mergeSkills, rankSkills, sortFiles, parseListing, resolveLink, pickPlugins } from "./lib.js";
+
+test("plugins: the user install wins, missing folders are skipped", () => {
+  const installed = {
+    "ctx7@official": [{ scope: "project", installPath: "/p/ctx7", version: "unknown" }, { scope: "user", installPath: "/u/ctx7", version: "1.2" }],
+    "gone@official": [{ scope: "project", installPath: "/missing" }],
+    "solo": { scope: "project", installPath: "/p/solo" },
+  };
+  const have = new Set(["/p/ctx7", "/u/ctx7", "/p/solo"]);
+  expect(pickPlugins(installed, (p) => have.has(p))).toEqual([
+    { id: "ctx7@official", name: "ctx7", marketplace: "official", root: "/u/ctx7", version: "1.2" },
+    { id: "solo", name: "solo", marketplace: "", root: "/p/solo", version: "" },
+  ]);
+});
 
 test("front matter: plain, quoted, colons, comments", () => {
   const { meta, body } = parseFrontMatter(`---

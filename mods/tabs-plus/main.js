@@ -9,7 +9,7 @@ const PANELS = [
   ["changes", "Changes", "mods/changes/changes.svg", 368],
   ["graph", "Agents", "mods/tabs-plus/graph.svg", 620],
   ["prs", "PRs", "mods/tabs-plus/pr.svg", 860],
-  ["skills", "Skills", "mods/tabs-plus/skills.svg", 440],
+  ["skills", "Library", "mods/tabs-plus/skills.svg", 440],
 ];
 const OURS = PANELS.slice(2).map(([id]) => id);
 

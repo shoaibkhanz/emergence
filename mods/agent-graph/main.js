@@ -61,6 +61,7 @@ export default class AgentGraph extends View {
     this.loaded = false;
     this.activeOnly = localStorage.getItem("activeOnly") === "1";
     this.view = null; // { x, y, z } once the person pans or zooms; null = fitted
+    this.offsets = new Map(JSON.parse(localStorage.getItem("offsets") || "[]")); // node id -> { x, y } the person dragged it by
     this.sel = null;
     this.h = cx.focus_handle();
     if (!this.panel) {
@@ -158,7 +159,22 @@ export default class AgentGraph extends View {
     const wz = (W - 2 * p) / Math.max(1, L.width), hz = (H - 2 * p) / Math.max(1, L.height);
     // A panel is tall and narrow: rather than shrink text to fit the height, run off the bottom (scroll pans).
     const z = clamp(Math.min(ZFIT, wz, this.panel ? Math.max(hz, PANEL_Z) : hz));
-    return { z, x: (W - L.width * z) / 2, y: Math.max(p, (H - L.height * z) / 2) };
+    return { z, x: (W - L.width * z) / 2 - L.x0 * z, y: Math.max(p, (H - L.height * z) / 2) - L.y0 * z };
+  }
+
+  // Cards the person dragged keep their offset (graph px) on top of the automatic layout; edges follow.
+  moved(L) {
+    const nodes = L.nodes.map((n) => { const o = this.offsets.get(n.id); return o ? { ...n, x: n.x + o.x, y: n.y + o.y } : n; });
+    const by = new Map(nodes.map((n) => [n.id, n]));
+    const edges = L.edges.map((e) => { const a = by.get(e.from), b = by.get(e.to); return { ...e, a: { x: a.x + a.w, y: a.y + a.h / 2 }, b: { x: b.x, y: b.y + b.h / 2 } }; });
+    const x0 = Math.min(...nodes.map((n) => n.x)), y0 = Math.min(...nodes.map((n) => n.y));
+    return { nodes, edges, x0, y0, width: Math.max(...nodes.map((n) => n.x + n.w)) - x0, height: Math.max(...nodes.map((n) => n.y + n.h)) - y0 };
+  }
+
+  // A drag ends on release or when the pointer leaves the canvas; arranged cards are remembered.
+  endDrag() {
+    if (this.drag?.node && this.drag.moved) localStorage.setItem("offsets", JSON.stringify([...this.offsets]));
+    this.drag = null;
   }
 
   zoomAt(f, px, py) {
@@ -195,6 +211,7 @@ export default class AgentGraph extends View {
         const k = e.key, i = picks.findIndex((n) => n.data.id === this.sel);
         if (k === "escape" && !this.panel) return this.dismiss();
         if (k === "f") this.view = null;
+        else if (k === "r") { this.offsets.clear(); localStorage.removeItem("offsets"); this.view = null; }
         else if ((k === "down" || k === "up") && picks.length) this.sel = picks[(i + (k === "down" ? 1 : picks.length - 1)) % picks.length].data.id;
         else if (k === "enter" && i >= 0) return this.focusAgent(picks[i].data);
         else return;
@@ -225,7 +242,7 @@ export default class AgentGraph extends View {
       .on_click((_e, cx) => { onClick(cx); cx.notify(); });
     const icon = (el) => el.w(24).px(0).justify_center();
     const on = this.activeOnly, label = W >= 520;
-    const hint = !this.panel ? "↑↓ select · ↵ focus · F fit · Esc close" : W >= 1000 ? "↑↓ select · ↵ focus · F fit" : null;
+    const hint = !this.panel ? "↑↓ select · ↵ focus · F fit · R reset · Esc close" : W >= 1000 ? "↑↓ select · ↵ focus · F fit · R reset" : null;
     return h_flex().flex_none().items_center().border_b(1).border_color(t.border)
       .map((el) => this.panel ? el.h(42).px(14).gap(8) : el.h(40).px(16).gap(12))
       .child(div().flex_none().text_size(this.panel ? 13 : 15).font_semibold().child("Agents"))
@@ -302,6 +319,7 @@ export default class AgentGraph extends View {
     const Z = this.Z;
     const el = this.measure(div().id("ag-canvas").flex_1().min_h(0).relative().overflow_hidden().bg(t.background))
       .when(!!this.drag?.moved, (el) => el.cursor_grabbing())
+      .when(!this.drag?.moved, (el) => el.cursor_grab())
       .on_scroll_wheel((e, cx) => {
         if (!this.fitted) return;
         const v = this.view ?? this.fitted;
@@ -320,14 +338,17 @@ export default class AgentGraph extends View {
         const dx = (e.position.x - d.x) / Z, dy = (e.position.y - d.y) / Z;
         if (!d.moved && Math.hypot(dx, dy) < 3) return;
         d.moved = true;
-        this.view = { ...d.v, x: d.v.x + dx, y: d.v.y + dy };
+        if (d.node) {
+          const v = (this.view ??= this.fitted); // pin the view: refitting mid-drag would slide everything
+          this.offsets.set(d.node, { x: d.o.x + dx / v.z, y: d.o.y + dy / v.z });
+        } else this.view = { ...d.v, x: d.v.x + dx, y: d.v.y + dy };
         cx.notify();
       })
       .on_mouse_up("left", (_e, cx) => {
-        this.drag = null;
+        this.endDrag();
         cx.notify();
       })
-      .on_hover((h) => { if (!h) this.drag = null; });
+      .on_hover((h) => { if (!h) this.endDrag(); });
     if (!this.size) return el;
 
     const quiet = (line, hint, action) => el.child(v_flex().absolute().left(0).top(0).size_full().px(16).items_center().justify_center().gap(8)
@@ -340,6 +361,7 @@ export default class AgentGraph extends View {
     if (!this.loaded) return quiet("Reading repositories…");
     if (!tree.length) return quiet("Nothing active right now.", null, ["Show idle", () => { this.activeOnly = false; localStorage.setItem("activeOnly", "0"); }]);
 
+    L = this.moved(L);
     this.fitted = this.fitView(L);
     const v = this.view ?? this.fitted, z = v.z, W = this.size.width, H = this.size.height;
     const X = (x) => x * z + v.x, Y = (y) => y * z + v.y;
@@ -369,11 +391,15 @@ export default class AgentGraph extends View {
     return el.children(els);
   }
 
-  // A card at the canvas position, every length scaled by the view's zoom.
+  // A card at the canvas position, every length scaled by the view's zoom. Dragging a card moves just that card.
   card(t, n, x, y, z, loud) {
     return v_flex().id(n.id).absolute().left(x).top(y).w(n.w * z).h(n.h * z).px(12 * z).justify_center().gap(4 * z)
       .rounded(10 * z).border(1).border_color(loud ? alpha(t.blocked, 0.8) : t.border).bg(loud ? alpha(t.blocked, 0.08) : t.surface)
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation());
+      .when(this.drag?.node === n.id && this.drag.moved, (el) => el.cursor_grabbing().shadow_lg())
+      .on_mouse_down("left", (e, cx) => {
+        cx.stop_propagation();
+        this.drag = { node: n.id, x: e.position.x, y: e.position.y, o: this.offsets.get(n.id) ?? { x: 0, y: 0 }, moved: false };
+      });
   }
 
   node(t, n, x, y, z, foc) {
@@ -411,7 +437,7 @@ export default class AgentGraph extends View {
       .when(isFoc, (el) => el.border_color(t.accent))
       .cursor_pointer()
       .hover((s) => s.bg(loud ? alpha(t.blocked, 0.14) : sel ? t.selected : t.raised).border_color(isFoc ? t.accent : loud ? t.blocked : t.input).shadow_sm())
-      .on_click((_e) => this.focusAgent(d))
+      .on_click(() => { if (!this.drag?.moved) this.focusAgent(d); }) // a pan that started on the card isn't a click
       .when(isFoc, (el) => el.child(div().absolute().left(-4 * z).top(-4 * z).w(n.w * z + 8 * z).h(n.h * z + 8 * z)
         .rounded(13 * z).border(2).border_color(alpha(t.accent, 0.3))))
       .child(h_flex().gap(8 * z).items_center()
