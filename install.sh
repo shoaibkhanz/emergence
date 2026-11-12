@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Links every mod in ./mods and layout in ./layouts into the Herdr app home,
-# merges ./keys.json, and switches to the `factory` layout (panels in the tab bar).
+# merges ./keys.json and ./programs.json (omp's icon), and switches to the `factory` layout.
 # Safe to rerun. Never replaces a file, folder or key it didn't create.
 set -euo pipefail
 shopt -s nullglob
@@ -24,25 +24,27 @@ for file in "$repo"/layouts/*.json; do
   name="$(basename "$file")"; link "$file" "$home/layouts/$name" "layouts/$name"
 done
 
-python3 - "$repo/keys.json" "$home/keys.json" <<'PY'
+python3 - "$repo" "$home" <<'PY'
 import json, sys, os
-ours = json.load(open(sys.argv[1]))
-path = os.path.realpath(sys.argv[2])  # keys.json may be a dotfiles symlink: write through it
-theirs = json.load(open(path)) if os.path.exists(path) else {}
-changed = False
-for section, binds in ours.items():
-    current = theirs.setdefault(section, {})
-    for key, action in binds.items():
-        if key not in current:
-            current[key] = action; changed = True
-            print(f"bound   {key} -> {action}")
-        elif current[key] != action:
-            print(f"skip    {key} (already bound to {current[key]})", file=sys.stderr)
-if changed:
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(theirs, f, indent=2); f.write("\n")
-    os.replace(tmp, path)
+for name in ("keys.json", "programs.json"):
+    ours = json.load(open(os.path.join(sys.argv[1], name)))
+    path = os.path.realpath(os.path.join(sys.argv[2], name))  # may be a dotfiles symlink: write through it
+    theirs = json.load(open(path)) if os.path.exists(path) else {}
+    changed = False
+    for section, entries in ours.items():
+        current = theirs.setdefault(section, {})
+        for key, value in entries.items():
+            shown = f"{key} -> {value}" if name == "keys.json" else f"{name} {key}"
+            if key not in current:
+                current[key] = value; changed = True
+                print(f"added   {shown}")
+            elif current[key] != value:
+                print(f"skip    {name} {key} (already set to {current[key]})", file=sys.stderr)
+    if changed:
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(theirs, f, indent=2); f.write("\n")
+        os.replace(tmp, path)
 PY
 
 if herdr-app status >/dev/null 2>&1; then

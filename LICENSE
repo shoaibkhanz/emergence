@@ -22,3 +22,8 @@ SOFTWARE.
 
 The SVG icons in mods/*/ are Lucide icons (https://lucide.dev) or drawn after them;
 Lucide is ISC licensed, Copyright (c) Lucide Contributors.
+
+mods/inbox/omp.svg is the unchanged OMP (oh-my-pi) favicon from
+https://github.com/can1357/oh-my-pi (packages/collab-web/public/favicon.svg), MIT licensed,
+Copyright (c) 2025 Mario Zechner, (c) 2025-2026 Can Bölük, (c) 2026 Stencil Labs, Inc.
+It identifies omp; no affiliation or endorsement is implied.

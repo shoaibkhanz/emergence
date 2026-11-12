@@ -22,7 +22,7 @@
       "size": {
         "px": 268
       },
-      "min": 44,
+      "min": 14,
       "max": 480,
       "background": "chrome",
       "resizable": false,
@@ -46,22 +46,22 @@
               "id": "spaces",
               "type": "block",
               "size": {
-                "weight": 1
+                "px": 75
               },
-              "min": 90,
+              "min": 60,
               "content": {
                 "mod": "spaces"
               }
             },
             {
-              "id": "agents",
+              "id": "inbox",
               "type": "block",
               "size": {
                 "weight": 1
               },
               "min": 90,
               "content": {
-                "mod": "agents"
+                "mod": "inbox"
               }
             }
           ]

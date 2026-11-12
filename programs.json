@@ -1,0 +1,5 @@
+{
+  "programs": {
+    "omp": { "name": "omp", "icon": "mods/inbox/omp.svg", "tint": false }
+  }
+}

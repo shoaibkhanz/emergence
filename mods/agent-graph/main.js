@@ -4,7 +4,7 @@
 
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
-import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, setShared, home, layout } from "herdr";
+import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, home, layout } from "herdr";
 import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, cleanTitle, RANK } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000;
@@ -154,6 +154,12 @@ export default class AgentGraph extends View {
     });
   }
 
+  // Every checkout of a repo in Herdr's own Open worktree dialog: filter, then Enter goes to it (a space).
+  worktrees(r) {
+    openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { folder: r.worktrees[0].top, machine: r.machine, action: "open" } });
+    this.dismiss();
+  }
+
   fitView(L) {
     const W = this.size.width, H = this.size.height, p = this.panel ? PANEL_PAD : PAD;
     const wz = (W - 2 * p) / Math.max(1, L.width), hz = (H - 2 * p) / Math.max(1, L.height);
@@ -293,6 +299,7 @@ export default class AgentGraph extends View {
     for (const r of tree) {
       const none = r.kind === "none";
       rows.push(row(`l:${r.id}`, 0).when(rows.length > 0, (el) => el.mt(8))
+        .when(!none, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).tooltip(`Every worktree of ${r.name}`).on_click(() => this.worktrees(r)))
         .child(svg(ICON(none ? "folder" : "repo")).size(14).flex_none().text_color(t.muted))
         .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(none ? t.muted : t.foreground).child(r.name))
         .when(!!r.machine, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.dim).child(r.machine))));
@@ -408,6 +415,7 @@ export default class AgentGraph extends View {
       const none = d.kind === "none";
       const meta = d.machine ?? `${d.worktrees.length} ${none ? (d.worktrees.length > 1 ? "folders" : "folder") : d.worktrees.length > 1 ? "worktrees" : "worktree"}`;
       return this.card(t, n, x, y, z)
+        .when(!none, (el) => el.cursor_pointer().tooltip(`Every worktree of ${d.name}`).on_click(() => { if (!this.drag?.moved) this.worktrees(d); }))
         .child(h_flex().gap(8 * z).items_center()
           .child(svg(ICON(none ? "folder" : "repo")).size(14 * z).flex_none().text_color(t.muted))
           .child(div().min_w(0).truncate().text_size(15 * z).font_semibold().text_color(none ? t.muted : t.foreground).child(d.name)))

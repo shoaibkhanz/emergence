@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
-import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings, nextCommand, agents, focused } from "herdr";
+import { spaces, panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, agents, focused } from "herdr";
 
 // Herdr's tab bar plus the herdr-mods panels beside Files and Changes.
 // [layout block id in panel-body, label, icon, default panel width px]
@@ -30,14 +30,27 @@ function nextAttention() {
   if (want.length) run("agent.focus", { terminal: want[(i + 1) % want.length].address });
 }
 
+// ⌘B (factory only): the sidebar folds to a 14px strip where the inbox shows only a dot per agent that
+// needs you (brand, Spaces and footer hide), and back. Herdr's ⌘B hides it outright. A hidden one comes back.
+function rail() {
+  const s = find(layout(), "sidebar");
+  if (!s) return;
+  if (s.hidden) return run("layout.show", { id: "sidebar" });
+  const narrow = (s.size?.px ?? Infinity) < 160;
+  if (!narrow) setShared("sidebar.width", s.size?.px);
+  for (const id of ["brand", "spaces", "sidebar-footer"]) run(narrow ? "layout.show" : "layout.hide", { id });
+  run("layout.resize", { id: "sidebar", px: narrow ? (shared("sidebar.width") ?? 268) : 14 });
+}
+
 export default class Tabs extends View {
   init(_props, cx) {
     this.pressed = null;
     this.scroll = ScrollHandle.new();
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
     this.widths = JSON.parse(localStorage.getItem("widths") ?? "{}");
-    // keys.json: "cmd-shift-g": "tabs-plus.graph" toggles that panel; "tabs-plus.attention" jumps (⌘⇧J).
-    cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (c === "attention") nextAttention(); else if (PANELS.some(([id]) => id === c)) this.toggle(c); cx.notify(); } });
+    // keys.json: "cmd-shift-g": "tabs-plus.graph" toggles that panel; "tabs-plus.attention" jumps (⌘⇧J); "tabs-plus.rail" (⌘B);
+    // "tabs-plus.worktrees" (⌘⇧O) lists every worktree of the repo you're in, in Herdr's own dialog (Enter opens one as a space).
+    cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (c === "attention") nextAttention(); else if (c === "rail") rail(); else if (c === "worktrees") openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: focused()?.space, folder: focused()?.cwd, action: "open" } }); else if (PANELS.some(([id]) => id === c)) this.toggle(c); cx.notify(); } });
   }
 
   // Each panel keeps its own width: what the person last dragged it to, else its default.
@@ -95,7 +108,7 @@ export default class Tabs extends View {
   render() {
     const t = theme();
     const space = spaces().find(p => p.active);
-    const shown = space?.tabs ?? [];
+    const shown = (space?.tabs ?? []).filter(tab => !tab.settled || tab.active); // settled: on the inbox's shelf (the shown one stays)
     const active = shown.findIndex(tab => tab.active);
     const selected = shown[active]?.id;
     if (selected !== this.selected || active !== this.selectedIndex) {
