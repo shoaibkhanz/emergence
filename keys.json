@@ -2,6 +2,7 @@
   "global": {
     "cmd-shift-g": "tabs-plus.graph",
     "cmd-shift-u": "tabs-plus.prs",
-    "cmd-shift-k": "tabs-plus.skills"
+    "cmd-shift-k": "tabs-plus.skills",
+    "cmd-shift-j": "tabs-plus.attention"
   }
 }
