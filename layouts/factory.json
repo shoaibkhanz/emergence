@@ -78,19 +78,6 @@
               "footer": true
             }
           }
-        },
-        {
-          "id": "nav-keys",
-          "type": "block",
-          "size": {
-            "px": 0
-          },
-          "content": {
-            "mod": "nav-keys",
-            "props": {
-              "resident": true
-            }
-          }
         }
       ]
     },
@@ -218,6 +205,19 @@
           },
           "content": {
             "mod": "workspace-status"
+          }
+        },
+        {
+          "id": "nav-keys",
+          "type": "block",
+          "size": {
+            "px": 0
+          },
+          "content": {
+            "mod": "nav-keys",
+            "props": {
+              "resident": true
+            }
           }
         }
       ]
