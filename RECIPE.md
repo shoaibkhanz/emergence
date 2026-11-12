@@ -7,6 +7,9 @@ agent waiting on you and folds working ones away. For herdr-app 0.1.15.
 
 ![Emergence](preview.png)
 
+To add it, run this repo's `install.sh` rather than copying the files: it links the mods to a git clone, so the tab
+bar's Update chip can keep them current. A copy works but never updates.
+
 ## What you see
 
 Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` dividers:
@@ -24,7 +27,9 @@ Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` div
     - With nothing waiting: a circle-check and "All caught up".
   - The footer (69px, `workspace-chrome {footer: true}`).
 - **Tab bar** (42px, `tabs-plus`, Herdr's tab bar): the space's tabs (settled ones hidden unless shown), `+`, then
-  buttons for Files, Changes, Agents, PRs, Library and Usage.
+  buttons for Files, Changes, Agents, PRs, Library and Usage. When the Emergence clone is behind GitHub's `main`, an
+  "Update" chip (`accent` dot and text; "Update failed" in `blocked`) follows; clicking it pulls and reruns
+  `install.sh`.
 - **Main**: the active tab's panes.
 - **Side panel** (368px, 280–1400, hidden until a button opens it; each panel keeps its own width: Agents 620, PRs
   860, Library 440, Usage 760): a stack of Files, Changes, `agent-graph`, `pr-review`, `skills`, `usage`, each with
@@ -102,7 +107,11 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
     files, changes, graph, prs, skills, usage; `status` workspace-status; `nav-keys` 0px `{resident: true}`).
 - **`mods/tabs-plus`** (clone of `tabs`):
   - PANELS `[id, label, icon, width]`; remembers each panel's width and per-space choice; hides settled tabs.
-  - `nextCommand` handles `graph`, `prs`, `skills`, `usage`, `attention`, `rail` and `worktrees`.
+  - `nextCommand` handles `graph`, `prs`, `skills`, `usage`, `attention`, `rail`, `worktrees` and `update`.
+  - Updates: finds the clone with `git -C <appHome>/mods/tabs-plus rev-parse --show-toplevel` (the mod is a link into
+    it), only on `main` with this repo as `origin`; `git fetch` at start and every 6 h; behind with no local commits
+    shows the chip. Its click runs one `bash -c`: `git pull --ff-only`, `install.sh`, and `layout.switch` main →
+    emergence when `layouts/` changed.
 - **`mods/inbox`**: `agents()`, `terminals()` (parent), `panes()` (cwd, branch), `spaces()` (tabs, settled,
   changed_at), `keys()`, `setAgentOrder`, `run("agent.focus" | "tab.settle" | "tab.select" | "tabs-plus.rail" |
   "tabs-plus.graph")`, and `layout.resize` for the Spaces block.
