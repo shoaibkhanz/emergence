@@ -74,6 +74,7 @@ and remove the `tabs-plus.*` keys from `~/.config/herdr-app/keys.json` and the `
 
 - `mods/agent-graph`, `mods/pr-review`, `mods/skills`: the three panels.
 - `mods/inbox`: the sidebar's Inbox, in place of Herdr's Agents list.
+- `mods/spaces-plus`: Herdr's Spaces list (0.1.15) with soft avatars (the space's colour as a light tile, its letter in the colour).
 - `mods/tabs-plus`: Herdr's tab bar (0.1.15) with the Agents / PRs / Library buttons; hides settled tabs.
 - `layouts/factory.json`: Herdr's `main` layout (0.1.15) with the three panels in the side panel stack and the Inbox in the sidebar.
   Herdr updates to its own `tabs` mod and `main` layout don't flow into these copies.
