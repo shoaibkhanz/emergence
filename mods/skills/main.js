@@ -3,7 +3,7 @@
 // Window role (props.role === "window"): SKILL.md, references and scripts of one skill (or a plugin's files).
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextView, Editor, EditorState, ScrollHandle } from "gpui-base";
-import { exec, home, focused, spaces, theme, settings, props, layout, run, openOverlay, closeOverlay, readTextFile, nextCommand } from "herdr";
+import { exec, home, focused, spaces, theme, settings, props, layout, run, openOverlay, closeOverlay, readTextFile, nextCommand, shared, setShared } from "herdr";
 import { parseFrontMatter, mergeSkills, pickPlugins, rankSkills, fileKind, parseListing, resolveLink, formatSize } from "./lib.js";
 
 const ORDER = ["Agents", "Claude", "OpenCode", "Codex", "Project"];
@@ -54,14 +54,14 @@ async function scanPlugins() {
   const paths = Object.values(installed ?? {}).flat().map((e) => e?.installPath).filter(Boolean);
   const found = new Set((await exec("sh", ["-c", EXISTS, "skills", ...paths])).stdout.split("\n"));
   const plugins = pickPlugins(installed, (p) => found.has(p));
-  const r = await exec("sh", ["-c", SCAN, "skills", ...plugins.flatMap((p) => [p.id, `${p.root}/skills`])], { timeout: 20000 });
+  const r = await exec("sh", ["-c", SCAN, "skills", ...plugins.flatMap((p) => [p.id, `${p.real}/skills`])], { timeout: 20000 });
   const skills = await describe(mergeSkills(rows(r.stdout), plugins.map((p) => p.id)));
   await Promise.all(plugins.map(async (p) => {
     let meta = {};
-    try { meta = JSON.parse(await readTextFile(`${p.root}/.claude-plugin/plugin.json`)) ?? {}; } catch {} // a missing file reads as null
+    try { meta = JSON.parse(await readTextFile(`${p.real}/.claude-plugin/plugin.json`)) ?? {}; } catch {} // a missing file reads as null
     p.description = meta.description ?? "";
     p.version = meta.version || p.version;
-    p.real = p.root;
+    p.sources = [p.marketplace].filter(Boolean); // the skill window's chips when it opens the plugin's own folder
     p.skills = skills.filter((s) => s.sources[0] === p.id).map((s) => ({ ...s, sources: [p.name] }));
   }));
   return plugins;
@@ -73,8 +73,13 @@ async function listing(dir) {
   return listings.get(dir);
 }
 
-// A plugin's own folder, opened in the skill window (its README first).
-const rootOf = (p) => ({ real: p.root, name: p.name, sources: [p.marketplace].filter(Boolean) });
+// The one skill window: opening another skill (or resizing) replaces it in place (same key).
+// Its size follows the person's last pick, shared by every copy.
+function openWindow(p) {
+  const big = shared("skills.big") === true, v = window.viewport_size();
+  const size = big ? { width: 0.94, height: 0.9, at: { x: Math.round(v.width * 0.03), y: Math.round(v.height * 0.05) } } : { width: 760, height: 0.8 };
+  openOverlay({ kind: "window", mod: "skills", key: "skill", ...size, props: { role: "window", ...p } });
+}
 
 function chips(t, sources) {
   return h_flex().flex_none().gap(4).children(sources.map((s) =>
@@ -137,16 +142,14 @@ export default class Skills extends View {
     });
   }
 
-  // Skills tab: every skill. Plugins tab: the plugins, or one plugin's skills once opened.
-  results() {
-    if (!cache) return [];
-    if (this.tab === "skills") return rankSkills(cache.skills, this.query);
-    return rankSkills(this.openPlugin()?.skills ?? cache.plugins, this.query);
+  // What the list shows. Skills tab: every skill. Plugins tab: the plugins, or one plugin's skills once opened.
+  pool() {
+    return !cache ? [] : this.tab === "skills" ? cache.skills : this.openPlugin()?.skills ?? cache.plugins;
   }
 
-  openPlugin() {
-    return this.tab === "plugins" && this.plugin ? cache?.plugins.find((p) => p.id === this.plugin) ?? null : null;
-  }
+  results() { return rankSkills(this.pool(), this.query); }
+
+  openPlugin() { return this.plugin ? cache?.plugins.find((p) => p.id === this.plugin) : null; } // set only on the Plugins tab
 
   // Moves between tabs and into / out of a plugin; the search starts over at each place.
   goto(tab, plugin) {
@@ -160,16 +163,15 @@ export default class Skills extends View {
     this.scroll.scroll_to_item(this.at);
   }
 
-  // A plugin with skills lists them; one without (hooks, MCP, LSP only) opens its files; a skill opens its window.
+  // A plugin with skills lists them; one without (hooks, MCP, LSP only) opens its own folder; a skill opens its window.
   open(item) {
     if (item?.skills?.length) this.goto("plugins", item.id);
-    else this.popOut(item?.skills ? rootOf(item) : item);
+    else this.popOut(item);
   }
 
-  // One skill window: opening another skill replaces it in place (same key).
   popOut(s, file) {
     if (!s) return;
-    openOverlay({ kind: "window", mod: "skills", key: "skill", width: 760, height: 0.8, props: { role: "window", path: s.real, name: s.name, sources: s.sources, file } });
+    openWindow({ path: s.real, name: s.name, sources: s.sources, file });
     if (this.overlay) closeOverlay(this.overlay);
   }
 
@@ -193,37 +195,22 @@ export default class Skills extends View {
     }
     const files = sel ? this.lists.get(sel.real) : null;
     const move = (d, cx) => { this.at = Math.max(0, Math.min(this.at + d, list.length - 1)); this.scroll.scroll_to_item(this.at); cx.notify(); };
-    const total = !cache ? 0 : this.tab === "skills" ? cache.skills.length : (plugin?.skills ?? cache.plugins).length;
     const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-    // Rows: a click selects (wide) or opens (narrow); a double click always opens.
-    const pick = (el, i, item) => el.mx(6).px(12).py(10).gap(4).rounded(8).cursor_pointer()
-      .when(i === this.at, (el) => el.bg(t.selected)).when(i !== this.at, (el) => el.hover((st) => st.bg(t.hover)))
-      .on_click((e, cx) => { if (e.click_count === 2 || !wide) this.open(item); else this.at = i; cx.notify(); });
-    const blurb = (text) => { const d = text.replace(/\s+/g, " ").trim(); return div().max_h(34).overflow_hidden().text_size(12).line_height("17px").text_color(t.muted).child(d.length > 104 ? `${d.slice(0, 100).trimEnd()}…` : d); };
-    const row = (s, i) => pick(v_flex().id(`sk-${s.real}`), i, s)
-      .child(h_flex().h(20).gap(8).items_center()
-        .child(div().flex_1().min_w(0).truncate().text_size(13).font_semibold().text_color(t.foreground).child(s.name))
-        .child(chips(t, plugin ? [] : s.sources)))
-      .when(Boolean(s.description.trim()), (el) => el.child(blurb(s.description)));
-    const pluginRow = (p, i) => pick(v_flex().id(`pl-${p.id}`), i, p)
-      .child(h_flex().h(20).gap(8).items_center()
-        .child(icon("plugin").size(14).flex_none().text_color(t.muted))
-        .child(div().flex_1().min_w(0).truncate().text_size(13).font_semibold().text_color(t.foreground).child(p.name))
-        .child(chips(t, [p.skills.length ? plural(p.skills.length, "skill") : "no skills"])))
-      .when(Boolean(p.description.trim()), (el) => el.child(blurb(p.description)))
-      .child(div().truncate().text_size(11).font_family(MONO).text_color(t.dim).child([/^\d/.test(p.version) ? `v${p.version}` : p.version, p.marketplace].filter(Boolean).join(" · ")));
-
-    // Wide: the selected skill's SKILL.md, or the selected plugin and its skills.
-    const head = (title, action) => h_flex().flex_none().px(20).pt(16).pb(12).gap(16).items_start().border_b(1).border_color(t.border)
-      .child(v_flex().flex_1().min_w(0).gap(4)
-        .child(div().truncate().text_size(15).font_semibold().text_color(t.foreground).child(title))
-        .child(h_flex().gap(8).text_size(11).text_color(t.dim)
-          .child(div().min_w(0).text_ellipsis_start().whitespace_nowrap().overflow_hidden().font_family(MONO).child(tilde(sel.real)))
-          .child(div().flex_none().child(files ? plural(files.length, "file") : "…"))))
-      .child(h_flex().id("sk-open").flex_none().h(28).px(12).gap(6).items_center().rounded(6).bg(t.accent).text_color(t.accent_foreground)
-        .text_size(12).cursor_pointer().hover((st) => st.opacity(0.9)).on_click((_e, cx) => { this.open(sel); cx.notify(); })
-        .child(icon("open").size(13)).child(action).child(div().text_size(11).opacity(0.7).child("↵")));
+    // One row for a skill or a plugin: a click selects (wide) or opens (narrow); a double click always opens.
+    const row = (s, i) => {
+      const d = s.description.replace(/\s+/g, " ").trim();
+      return v_flex().id(`sk-${s.real}`).mx(6).px(12).py(10).gap(4).rounded(8).cursor_pointer()
+        .when(i === this.at, (el) => el.bg(t.selected)).when(i !== this.at, (el) => el.hover((st) => st.bg(t.hover)))
+        .on_click((e, cx) => { if (e.click_count === 2 || !wide) this.open(s); else this.at = i; cx.notify(); })
+        .child(h_flex().h(20).gap(8).items_center()
+          .when(Boolean(s.skills), (el) => el.child(icon("plugin").size(14).flex_none().text_color(t.muted)))
+          .child(div().flex_1().min_w(0).truncate().text_size(13).font_semibold().text_color(t.foreground).child(s.name))
+          .child(chips(t, s.skills ? [s.skills.length ? plural(s.skills.length, "skill") : "no skills"] : plugin ? [] : s.sources)))
+        .when(Boolean(d), (el) => el.child(div().max_h(34).overflow_hidden().text_size(12).line_height("17px").text_color(t.muted).child(d.length > 104 ? `${d.slice(0, 100).trimEnd()}…` : d)))
+        .when(Boolean(s.skills), (el) => el.child(div().truncate().text_size(11).font_family(MONO).text_color(t.dim)
+          .child([/^\d/.test(s.version) ? `v${s.version}` : s.version, s.marketplace].filter(Boolean).join(" · "))));
+    };
     const skillBody = (s) => s.body === null ? quiet(t, "SKILL.md is unreadable or larger than 1 MB.") :
       v_flex().id("sk-preview").flex_1().min_h(0).overflow_y_scrollbar().px(20).py(16).text_size(13).text_color(t.foreground)
         .child(TextView.markdown(`pv-${s.real}`, s.body).selectable(true).on_link_click((url, cx) => {
@@ -239,7 +226,15 @@ export default class Skills extends View {
         .child(div().flex_none().text_size(13).text_color(t.foreground).child(s.name))
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(s.description.replace(/\s+/g, " "))))));
     const preview = !sel ? v_flex().flex_1() : v_flex().flex_1().min_w(0).min_h(0).bg(t.background)
-      .child(head(sel.name, sel.skills?.length ? "Open" : sel.skills ? "Files" : "Open"))
+      .child(h_flex().flex_none().px(20).pt(16).pb(12).gap(16).items_start().border_b(1).border_color(t.border)
+        .child(v_flex().flex_1().min_w(0).gap(4)
+          .child(div().truncate().text_size(15).font_semibold().text_color(t.foreground).child(sel.name))
+          .child(h_flex().gap(8).text_size(11).text_color(t.dim)
+            .child(div().min_w(0).text_ellipsis_start().whitespace_nowrap().overflow_hidden().font_family(MONO).child(tilde(sel.real)))
+            .child(div().flex_none().child(files ? plural(files.length, "file") : "…"))))
+        .child(h_flex().id("sk-open").flex_none().h(28).px(12).gap(6).items_center().rounded(6).bg(t.accent).text_color(t.accent_foreground)
+          .text_size(12).cursor_pointer().hover((st) => st.opacity(0.9)).on_click((_e, cx) => { this.open(sel); cx.notify(); })
+          .child(icon("open").size(13)).child(sel.skills?.length === 0 ? "Files" : "Open").child(div().text_size(11).opacity(0.7).child("↵"))))
       .child(sel.skills ? pluginBody(sel) : skillBody(sel));
 
     const tabs = h_flex().flex_none().px(10).py(8).border_b(1).border_color(t.border).child(h_flex().flex_1().h(28).p(2).gap(2).rounded(8).bg(t.raised)
@@ -256,7 +251,7 @@ export default class Skills extends View {
       .child(div().text_color(t.dim).child("/"))
       .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).child(plugin.name))
       .child(h_flex().id("pl-files").h(26).px(8).gap(6).items_center().rounded(6).cursor_pointer().text_color(t.muted).tooltip("The plugin's own files")
-        .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => this.popOut(rootOf(plugin)))
+        .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => this.popOut(plugin))
         .child(icon("doc").size(13)).child("Files"));
 
     const empty = this.error ?? (this.loading && !cache ? "Scanning…" : this.query ? `Nothing matches “${this.query}”.`
@@ -271,13 +266,12 @@ export default class Skills extends View {
       else return;
       cx.stop_propagation();
     };
-    const rowOf = this.tab === "plugins" && !plugin ? pluginRow : row;
     const body = h_flex().flex_1().min_h(0).items_stretch()
       .child(v_flex().id("sk-list").when(wide, (el) => el.w(340).flex_none().border_r(1).border_color(t.border)).when(!wide, (el) => el.flex_1().min_w(0))
         .min_h(0).py(6).gap(2).overflow_y_scrollbar().track_scroll(this.scroll)
-        .children(list.length ? list.map(rowOf) : [quiet(t, empty)]))
+        .children(list.length ? list.map(row) : [quiet(t, empty)]))
       .when(wide, (el) => el.child(preview));
-    const count = cache && this.query ? `${list.length} of ${total}` : "";
+    const count = cache && this.query ? `${list.length} of ${this.pool().length}` : "";
 
     if (panel) {
       const button = (id, name, tip, onClick) => h_flex().id(id).flex_none().size(24).items_center().justify_center().rounded(6).cursor_pointer()
@@ -373,7 +367,7 @@ export default class Skills extends View {
 
   renderWindow(cx) {
     const t = theme(), files = this.files ?? [], cur = this.view?.path;
-    const close = () => closeOverlay(this.overlay);
+    const close = () => closeOverlay(this.overlay), big = shared("skills.big") === true;
     const step = (d, cx) => {
       const i = files.findIndex((f) => f.path === cur);
       const next = files[Math.max(0, Math.min(i + d, files.length - 1))];
@@ -435,6 +429,10 @@ export default class Skills extends View {
         .child(div().min_w(0).truncate().text_size(15).font_semibold().child(this.name))
         .child(chips(t, this.sources))
         .child(div().flex_1())
+        .child(h_flex().id("skw-size").flex_none().size(24).items_center().justify_center().rounded(6).cursor_pointer().text_color(t.dim)
+          .tooltip(big ? "Smaller window" : "Bigger window").hover((s) => s.bg(t.hover).text_color(t.foreground)).on_mouse_down("left", stop)
+          .on_click(() => { setShared("skills.big", !big); openWindow({ path: this.dir, name: this.name, sources: this.sources, file: cur }); })
+          .child(icon(big ? "shrink" : "expand").size(14)))
         .child(h_flex().id("skw-close").flex_none().size(24).items_center().justify_center().rounded(6).cursor_pointer().text_color(t.dim)
           .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_mouse_down("left", stop).on_click(close)
           .child(icon("close").size(14))))

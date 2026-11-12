@@ -9,8 +9,8 @@ test("plugins: the user install wins, missing folders are skipped", () => {
   };
   const have = new Set(["/p/ctx7", "/u/ctx7", "/p/solo"]);
   expect(pickPlugins(installed, (p) => have.has(p))).toEqual([
-    { id: "ctx7@official", name: "ctx7", marketplace: "official", root: "/u/ctx7", version: "1.2" },
-    { id: "solo", name: "solo", marketplace: "", root: "/p/solo", version: "" },
+    { id: "ctx7@official", name: "ctx7", marketplace: "official", real: "/u/ctx7", version: "1.2" },
+    { id: "solo", name: "solo", marketplace: "", real: "/p/solo", version: "" },
   ]);
 });
 
