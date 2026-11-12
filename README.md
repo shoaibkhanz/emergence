@@ -37,15 +37,20 @@ Install herdr-mods (https://github.com/shoaibkhanz/herdr_mods) into my Herdr app
 1. Check the prerequisites and stop to tell me what's missing:
    - `herdr-app status` prints JSON (Herdr app 0.1.15 or newer, running).
    - `git`, `python3` and `bash` exist.
-   - `gh auth status` says logged in (the PRs panel needs it; ask me to run `gh auth login` if not).
+   - `gh auth status` says logged in (the PRs panel and Usage's pull requests need it; ask me to run `gh auth login` if not).
+   - Optional, just report them: `glab auth status` (GitLab merge requests in Usage) and `zstd --version` (Codex's older
+     logs in Usage).
 2. Clone it: `git clone https://github.com/shoaibkhanz/herdr_mods ~/code/herdr-mods` (or pull if it's there).
 3. Run `~/code/herdr-mods/install.sh`. It links every mod and layout into ~/.config/herdr-app
    (or $HERDR_APP_HOME), adds key bindings and omp's program icon without replacing anything I
    already have, checks each mod with `herdr-app check`, and switches Herdr to the `factory` layout.
 4. Verify:
    - `herdr-app status` shows "layout": "factory" and "errors": [].
-   - `herdr-app do tabs-plus.graph`, then `tabs-plus.prs`, then `tabs-plus.skills` each show a panel;
+   - `python3 ~/code/herdr-mods/mods/usage/scan.py | head -c 300` prints JSON starting `{"scanned_at":` (the first run
+     reads every harness log on this machine and can take a minute; later runs only read what changed).
+   - `herdr-app do tabs-plus.graph`, then `tabs-plus.prs`, `tabs-plus.skills` and `tabs-plus.usage` each show a panel;
      take `herdr-app shot /tmp/herdr-mods.png` after each and look at it. Run the last one again to hide it.
+   - The sidebar shows Spaces and an Inbox; `herdr-app do tabs-plus.rail` folds it to a thin strip and back.
 5. Report any `skip` line install.sh printed: something with that name already existed and was left alone.
 
 Never edit or delete files in ~/.config/herdr-app that install.sh did not create.
