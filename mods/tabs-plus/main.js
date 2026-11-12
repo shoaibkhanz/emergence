@@ -45,7 +45,8 @@ function rail() {
 
 // Updates. The curl install links every mod into a clone of this repo, so this mod can find it: every 6 h it
 // fetches main, and when main has moved an Update chip pulls it, reruns install.sh (new mods, keys, layouts) and,
-// if a layout file changed, reloads the layout (switching to the shown layout is a no-op, so via main).
+// if a mod or layout changed, reloads the layout: a pull into the clone isn't a save Herdr sees (the mods are links),
+// and switching to the shown layout is a no-op, so via main.
 // No clone (copied by hand), a fork, another branch or local commits: no chip; that clone is its owner's.
 // Fetches use the public URL into origin/main, so an ssh origin never asks for a key passphrase.
 const ORIGIN = /github\.com[:/]shoaibkhanz\/(emergence|herdr_mods)(\.git)?$/;
@@ -62,7 +63,7 @@ old="$(git -C "$d" rev-parse HEAD)"
 git -C "$d" ${FETCH.join(" ")}
 git -C "$d" merge --ff-only --quiet origin/main
 EMERGENCE_UPDATE=1 bash "$d/install.sh" >/dev/null
-if ! git -C "$d" diff --quiet "$old" HEAD -- layouts && herdr-app status 2>/dev/null | grep -q '"layout": "emergence"'; then
+if ! git -C "$d" diff --quiet "$old" HEAD -- mods layouts && herdr-app status 2>/dev/null | grep -q '"layout": "emergence"'; then
   herdr-app do layout.switch --name main >/dev/null; sleep 1; herdr-app do layout.switch --name emergence >/dev/null
 fi`;
 
@@ -175,19 +176,25 @@ export default class Tabs extends View {
       if (tb.named) keep[tb.id] = tb.name;
       const p = all.find((x) => x.tab === tb.id && x.terminal && x.cwd);
       const name = p && (p.branch && !/^(main|master|trunk|develop)$/.test(p.branch) ? p.branch : this.repoOf(p.cwd, s.machine, cx));
-      if (name && name !== tb.name && this.asked[tb.id] !== name) run("tab.rename", { id: tb.id, name: (this.asked[tb.id] = name) }); // once, not every frame until it lands
+      if (name && name !== tb.name && this.asked[tb.id] !== name) {
+        run("tab.rename", { id: tb.id, name: (this.asked[tb.id] = name) }); // once, not every frame until it lands
+        // run() can't say it failed: unlanded after 10 s, ask again (landed, tabs.auto has it, so `asked` is spent).
+        cx.spawn(async (cx) => { await cx.sleep(10000); if (this.asked[tb.id] === name) { delete this.asked[tb.id]; cx.notify(); } });
+      }
     }
     if (JSON.stringify(keep) !== JSON.stringify(auto)) setShared("tabs.auto", keep);
   }
 
-  // A folder's repo name (its checkout's folder), else the folder's own name, "~" at home; looked up once.
+  // A folder's repo name (its checkout's folder), else the folder's own name, "~" at home; looked up once (again 30 s
+  // after a lookup that couldn't run, e.g. its machine unreachable).
   repoOf(cwd, machine, cx) {
     const k = `${machine ?? ""}\n${cwd}`;
     if (!this.repos.has(k)) {
       this.repos.set(k, null);
       cx.spawn(async (cx) => {
         const r = await exec("sh", ["-c", 'git rev-parse --show-toplevel 2>/dev/null || { [ "$PWD" = "$HOME" ] && echo "~" || pwd; }'], { cwd, on: machine ?? undefined }).catch(() => null);
-        this.repos.set(k, r?.code === 0 ? r.stdout.trim().split("/").pop() || null : null);
+        if (r?.code === 0) this.repos.set(k, r.stdout.trim().split("/").pop() || null);
+        else { await cx.sleep(30000); this.repos.delete(k); } // null till then, so not a lookup a frame
         cx.notify();
       });
     }

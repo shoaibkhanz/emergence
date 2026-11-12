@@ -62,5 +62,9 @@ PY
 
 if [ -z "${EMERGENCE_UPDATE:-}" ] && herdr-app status >/dev/null 2>&1; then
   for dir in "$repo"/mods/*/; do herdr-app check "$home/mods/$(basename "$dir")"; done
-  herdr-app do layout.switch --name emergence >/dev/null && echo "layout  emergence (ctrl-shift-l cycles back)"
+  # Switching to the shown layout is a no-op, and a pull into the clone isn't a save Herdr sees (the mods are links),
+  # so an emergence already showing goes via main to load the new mod code.
+  if herdr-app status | grep -q '"layout": "emergence"'; then herdr-app do layout.switch --name main >/dev/null && sleep 1; fi
+  if herdr-app do layout.switch --name emergence >/dev/null; then echo "layout  emergence, reloaded (ctrl-shift-l cycles back)"
+  else echo "reload  couldn't switch layouts: switch to another layout and back (ctrl-shift-l) to load the new mods" >&2; fi
 fi

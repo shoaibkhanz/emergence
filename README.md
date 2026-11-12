@@ -20,7 +20,7 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/emergence/main/install.
 
 It clones this repo to `~/code/emergence`, links every mod into Herdr, adds the keys below without replacing any you
 have, and switches to the `emergence` layout (`ctrl-shift-l` cycles back to Herdr's own). When this repo changes, an
-**Update** chip appears in the tab bar; click it to pull and relink.
+**Update** chip appears in the tab bar; click it to pull, relink and reload.
 
 Needs Herdr 0.1.15 or newer, `git` and `python3`; `gh` signed in for pull requests, `glab` for GitLab merge requests.
 The fonts (Geist, Geist Mono) ship with Herdr.
@@ -146,6 +146,7 @@ give a tab stays.
 ## Update or remove
 
 Update: click **Update** in the tab bar when it shows (it checks every 6 hours), or run the install command again.
+Either one reloads the layout, so the new mods run straight away.
 If you installed by copying the files, run the install command once to switch to a clone.
 
 Remove: switch back with `herdr-app do layout.switch --name main`, delete the links
