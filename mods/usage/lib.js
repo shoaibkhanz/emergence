@@ -58,11 +58,12 @@ export function heat(sessions, { weeks, metric, now = Date.now() }) {
   return days.map((d) => ({ ...d, wd: weekday(d.t), level: lvl(d[metric]) }));
 }
 
-// Everything else the panel draws, for sessions started in [from, to) by the chosen harnesses.
-export function summarize(all, { from, to, harnesses, sameRepos = false, kind = null }) {
-  const pick = (a, b) => all.filter((s) => s.start >= a && s.start < b && harnesses.has(s.h));
+// Everything else the panel draws, for sessions started in [from, to) by the chosen harnesses (and, with a
+// selection, only those `keep(start)` accepts; `days` is then how many days it covers).
+export function summarize(all, { from, to, harnesses, sameRepos = false, kind = null, keep = () => true, days: n = null }) {
+  const pick = (a, b) => all.filter((s) => s.start >= a && s.start < b && harnesses.has(s.h) && keep(s.start));
   const ss = pick(from, to), top = ss.filter((s) => !s.sub);
-  const days = Math.max(1, Math.round((startOfDay(to - 1) - startOfDay(from)) / DAY) + 1);
+  const days = n ?? Math.max(1, Math.round((startOfDay(to - 1) - startOfDay(from)) / DAY) + 1);
 
   // Tiles. Active days and the streak count top-level sessions; the streak may end yesterday.
   const active = new Set(top.map((s) => dayKey(s.start)));
@@ -156,10 +157,10 @@ export function summarize(all, { from, to, harnesses, sameRepos = false, kind = 
 }
 
 // What the work delivered in [from, to): your commits and lines, PRs, worktrees, per day or week, per repo.
-export function outputOf(out, { from, to, step }) {
-  const commits = (out?.commits ?? []).filter((c) => c.t >= from && c.t < to);
-  const prs = (out?.prs ?? []).filter((p) => p.created >= from && p.created < to);
-  const merged = (out?.prs ?? []).filter((p) => p.merged && p.merged >= from && p.merged < to);
+export function outputOf(out, { from, to, step, keep = () => true }) {
+  const commits = (out?.commits ?? []).filter((c) => c.t >= from && c.t < to && keep(c.t));
+  const prs = (out?.prs ?? []).filter((p) => p.created >= from && p.created < to && keep(p.created));
+  const merged = (out?.prs ?? []).filter((p) => p.merged && p.merged >= from && p.merged < to && keep(p.merged));
   const buckets = [];
   for (let t = startOfDay(from); t < to; t = startOfDay(t + step + 3600000)) buckets.push({ t, commits: 0, add: 0, del: 0, merged: 0 });
   const into = (ms) => { let b = null; for (const x of buckets) if (x.t <= ms) b = x; else break; return b; };
@@ -203,3 +204,16 @@ export function rhythmOf(top, from = null, to = null) {
     peakParallel: peaks.length ? Math.max(...peaks) : 0, typicalParallel: median(peaks) ?? 0, daily,
   };
 }
+
+// A selection: days (local midnights) or slots of the week (weekday * 24 + hour). A target is what one press
+// covers: days [first, last]; slots [[weekday, weekday], [hour, hour]] (a cell, an hour row, a weekday column).
+// span(a, b): everything between two targets, as a drag or shift-click draws it.
+export function span(kind, a, b) {
+  const out = [];
+  if (kind === "days") for (let t = Math.min(a[0], b[0]); t <= Math.max(a[1], b[1]); t = addDays(t, 1)) out.push(t);
+  else for (let d = Math.min(a[0][0], b[0][0]); d <= Math.max(a[0][1], b[0][1]); d++)
+    for (let h = Math.min(a[1][0], b[1][0]); h <= Math.max(a[1][1], b[1][1]); h++) out.push(d * 24 + h);
+  return out;
+}
+// Whether a moment falls in the selection.
+export const keepOf = ({ kind, keys }) => (kind === "days" ? (ms) => keys.has(startOfDay(ms)) : (ms) => keys.has(weekday(ms) * 24 + new Date(ms).getHours()));

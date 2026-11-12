@@ -79,6 +79,10 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
     (green), Question (blue), Nit (purple), Minor (yellow), Major (red). A tag posts as
     `![tag](https://img.shields.io/badge/<tag>-<color>)` on its own line, then the comment.
   - Reply, edit, delete and resolve threads. Esc steps back out.
+  - Room: the panel-left button left of the PR title hides the PR list (and brings it back); the header's « widens
+    the panel to its 1400px max and » restores the width it had; ⤢ opens the same PR in a window.
+  - The window (frameless, at 260,56 unless dragged elsewhere; it draws its own 10px border and shadow) resizes from
+    its right edge, bottom edge or corner, min 640×420; the size is kept in `shared("pr-review.size")`.
 - **Library panel.**
   - Skills and Plugins tabs. Plugins are the installed Claude Code plugins; open one to see the skills it ships.
   - A skill opens in one reusable window (SKILL.md, references, scripts) with a bigger/smaller toggle.
@@ -97,6 +101,11 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
       agents at once, run lengths, days of the week.
   - Hovering any bar or square writes its numbers into a line under the chart. Tooltips on tiny cells don't show in
     Herdr.
+  - Picking narrows every other number (tiles, cards, harness chip counts, every tab) until cleared. Press a day on the
+    calendar (not in Custom, where clicks set the range) or a bar (Tokens by harness, Agents at once, Commits and
+    lines) for days; press an hour-grid square, an hour label (that hour every day) or a weekday letter for hours of
+    the week. Drag or shift-click spans, cmd-click adds or removes, pressing the whole pick again clears it. The chart
+    picked on stays whole with the rest dimmed to 30%; an accent chip right of the tabs names the pick (✕ clears).
 
 ## Built from
 

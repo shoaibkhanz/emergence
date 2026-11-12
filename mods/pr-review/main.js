@@ -42,6 +42,8 @@ export default class PrReview extends View {
     this.heights = new Map(); // measured thread heights
     this.expanded = new Set(); // resolved threads opened by hand
     this.filesOpen = true; // the file tree beside the diff, where there is room for both
+    this.railOpen = true; // the PR list beside the open PR; hide it to give the diff the room
+    [this.W, this.H] = shared("pr-review.size") ?? [1100, 760]; // the window's size, dragged by its edges
     this.treeScroll = ScrollHandle.new(); // keeps the arrow-key file in view
     this.handle = cx.focus_handle();
     this.search = InputState.new({ placeholder: "Search pull requests" });
@@ -93,6 +95,13 @@ export default class PrReview extends View {
       setShared("pr-review.open", { repo: s.id.repo, machine: s.id.machine, number: s.entry, at: this.handledAt });
     }
     run("mod.open", { name: "pr-review" });
+  }
+
+  // Panel: widen to the layout's max (1400) for reading, and back to the width it had.
+  widen() {
+    if (this.wideFrom) { run("layout.resize", { id: "panel", px: this.wideFrom }); this.wideFrom = null; return; }
+    this.wideFrom = find(layout(), "panel")?.size?.px ?? 860;
+    run("layout.resize", { id: "panel", px: 1400 });
   }
 
   back(s) { s.level = s.level === "diff" ? "pr" : "list"; }
@@ -325,7 +334,7 @@ export default class PrReview extends View {
   }
 
   // Room for the file tree beside a readable diff (rail 280 + tree 260 + diff ≥ 500).
-  side() { return !this.narrow && (this.width ?? Infinity) >= 1040; }
+  side() { return !this.narrow && (this.width ?? Infinity) - (this.railOpen ? 280 : 0) >= 760; }
 
   // Shows file fi's diff: where the tree stands alone (stacked, drill-down), that swaps it for the diff.
   pickFile(s, d, fi) {
@@ -345,6 +354,7 @@ export default class PrReview extends View {
 
   mouseUp(cx) {
     this.bar = null;
+    if (this.rs) { this.rs = null; setShared("pr-review.size", [this.W, this.H]); cx.notify(); }
     if (!this.dragging) return;
     this.dragging = false;
     this.reveal = true; // the comment box docks under the diff: keep the selection's last line above it
@@ -356,6 +366,20 @@ export default class PrReview extends View {
     const s = this.cur, b = this.bar;
     if (!b || s?.entry !== b.entry) return;
     s.scroll[s.entry] = b.scroll + ((e.position.y - b.y) / this.zoom) * b.k;
+    cx.notify();
+  }
+
+  // The window's edges: a press records where it started; moves (see render's halo) grow or shrink it.
+  grip(id, ax, ay, place) {
+    return place(div().id(id).absolute())[ax && ay ? "cursor_nwse_resize" : ax ? "cursor_ew_resize" : "cursor_ns_resize"]()
+      .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.rs = { x: e.position.x, y: e.position.y, w: this.W, h: this.H, ax, ay }; cx.notify(); });
+  }
+
+  resizeMove(e, cx) {
+    const r = this.rs;
+    if (!r) return;
+    if (r.ax) this.W = Math.max(640, Math.round(r.w + (e.position.x - r.x) / this.zoom));
+    if (r.ay) this.H = Math.max(420, Math.round(r.h + (e.position.y - r.y) / this.zoom));
     cx.notify();
   }
 
@@ -371,6 +395,7 @@ export default class PrReview extends View {
     const s = this.cur;
     const ready = Boolean(s?.info);
     this.zoom = settings().zoom ?? 1;
+    if (!this.panel) this.width = this.W;
     this.narrow = this.panel && (this.width ?? NARROW) < NARROW;
     const view = this.narrow && ready ? (s.entry == null ? "list" : s.level ?? "list") : null;
     // The body first: it reads the scroll the diff clamps.
@@ -378,23 +403,43 @@ export default class PrReview extends View {
       : view === "list" ? this.rail(t, s, true)
       : view === "pr" ? this.detail(t, s)
       : view === "diff" ? this.main(t, s, true)
-      : [this.rail(t, s), this.main(t, s)];
-    return v_flex().id("pr-review").track_focus(this.handle).size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(13)
-      .when(this.panel, (el) => el.rounded(10).overflow_hidden().border_1().border_color(t.border)
+      : [this.railOpen || s.entry == null ? this.rail(t, s) : null, this.main(t, s)].filter(Boolean);
+    const ui = v_flex().id("pr-review").track_focus(this.handle).min_h(0).bg(t.background).text_color(t.foreground).text_size(13)
+      .rounded(10).overflow_hidden().border_1().border_color(t.border)
+      .when(this.panel, (el) => el.size_full()
         .on_size_change((size, cx) => { const w = size.width / this.zoom; if (Math.abs(w - (this.width ?? 0)) > 0.5) { this.width = w; cx.notify(); } }))
+      .when(!this.panel, (el) => el.relative().w(this.W).h(this.H).shadow_lg())
       .on_key_down((e, cx) => this.key(e, cx))
       .on_mouse_up("left", (_e, cx) => this.mouseUp(cx))
       .on_mouse_move((e, cx) => this.barMove(e, cx))
       .child(this.header(t, s, view))
       // The window drags by any press nobody stops: only the header bar drags it.
-      .child(h_flex().flex_1().min_h(0).on_mouse_down("left", (_e, cx) => cx.stop_propagation()).children([body].flat()));
+      .child(h_flex().flex_1().min_h(0).on_mouse_down("left", (_e, cx) => cx.stop_propagation()).children([body].flat()))
+      .when(!this.panel, (el) => el
+        .child(this.grip("grip-r", true, false, (g) => g.top(0).bottom(14).right(0).w(3)))
+        .child(this.grip("grip-b", false, true, (g) => g.left(0).right(14).bottom(0).h(4)))
+        .child(this.grip("grip-rb", true, true, (g) => g.right(0).bottom(0).size(14))));
+    if (this.panel) return ui;
+    // Herdr windows are as big as their content and don't resize themselves. While an edge is held, a
+    // transparent halo (frame "none") grows the window to the screen's edges so the pointer stays on it.
+    // ponytail: a release outside Herdr is missed; the next press anywhere ends the resize instead.
+    return div().when(Boolean(this.rs), (el) => el.pr(4000).pb(4000).cursor_nwse_resize()
+      .on_mouse_move((e, cx) => this.resizeMove(e, cx))
+      .on_mouse_up("left", (_e, cx) => this.mouseUp(cx))
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.mouseUp(cx); }))
+      .child(ui);
   }
 
-  header(t, s, view) {
-    const btn = (id, name, tip, onClick, spin) => h_flex().id(id).size(28).flex_none().items_center().justify_center().rounded(6).cursor_pointer()
+  iconBtn(id, name, tip, onClick, spin) {
+    const t = theme();
+    return h_flex().id(id).size(28).flex_none().items_center().justify_center().rounded(6).cursor_pointer()
       .text_color(t.muted).hover((x) => x.bg(t.hover).text_color(t.foreground)).tooltip(tip)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { onClick(cx); cx.notify(); })
       .child(spin ? icon("spinner").size(14).spin(900) : icon(name).size(15));
+  }
+
+  header(t, s, view) {
+    const btn = (...a) => this.iconBtn(...a);
     const busy = Boolean(s?.loading || s?.prsLoading || s?.diffs?.get(s.entry)?.loading);
     const where = (el) => el
       .when(Boolean(s?.branch), (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(12).text_color(t.muted).child(s.branch)))
@@ -408,6 +453,7 @@ export default class PrReview extends View {
         .when(!back, (el) => where(el.child(div().flex_none().font_semibold().child(s?.id ? s.name : "Pull requests"))))
         .child(div().flex_1())
         .child(refresh)
+        .child(btn("pr-widen", this.wideFrom ? "chevrons-right" : "chevrons-left", this.wideFrom ? "Narrow the panel" : "Widen the panel", () => this.widen()))
         .child(btn("pr-expand", "maximize-2", "Open in window", () => this.expand()));
     }
     return where(h_flex().h(40).flex_none().pl(16).pr(6).gap(8).items_center().bg(t.surface).border_b(1).border_color(t.border)
@@ -530,7 +576,8 @@ export default class PrReview extends View {
     const { d, local, pr, files, title, sub, quiet } = this.entryInfo(s);
     const side = !bare && this.side();
     const treeOn = side ? this.filesOpen : !bare && d.view !== "diff";
-    const head = bare ? null : h_flex().h(56).flex_none().px(16).gap(12).items_center().border_b(1).border_color(t.border)
+    const head = bare ? null : h_flex().h(56).flex_none().pl(8).pr(16).gap(12).items_center().border_b(1).border_color(t.border)
+      .child(this.iconBtn("rail-toggle", this.railOpen ? "panel-left-close" : "panel-left-open", this.railOpen ? "Hide pull requests" : "Show pull requests", () => (this.railOpen = !this.railOpen)))
       .child(v_flex().flex_1().min_w(0).gap(4)
         .child(h_flex().gap(8).items_center()
           .when(!local, (el) => el.child(div().flex_none().font_family(MONO).text_size(13).text_color(t.dim).child(`#${s.entry}`)))

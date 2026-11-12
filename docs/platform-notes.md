@@ -28,7 +28,12 @@ These are the Herdr 0.1.15 behaviours we hit that the manual gets wrong or leave
 - `herdr-app do overlay.close --id <key>` doesn't close a window, nor the worktree dialog; `overlay.close`
   with no id closes the top dialog. The mod's own `closeOverlay(props().overlay)` closes a window and
   un-keeps it for that layout.
-- `openOverlay` with an open window's `key` replaces it in place, with the new spec's size.
+- `openOverlay` with an open window's `key` replaces it in place, with the new spec's size, and the mod starts over
+  (`init` again, state lost), so it can't resize a window.
+- Herdr never resizes a window. One without `width`/`height` is as big as its root, re-measured every frame: a never
+  placed one recenters as it grows, one at `at` or dropped somewhere grows right and down. pr-review resizes itself
+  that way (`at` in mod.json, root `w`/`h` from state); while an edge is held, a 4000px transparent padding
+  (`frame: "none"`) keeps the pointer on the window, since `on_mouse_move` only fires while hovered.
 
 ## Runtime
 

@@ -46,7 +46,8 @@ around; the wheel zooms.
 The PRs of the repo you're in, plus this branch against main. Changed files form a tree, with one diff at a time and
 review threads inline. Select lines and comment, tagged Statement · Question · Nit · Minor · Major. The tag posts as a
 coloured badge on GitHub, so whoever picks up the review (you, or the agent) can tell a nit from a blocker at a glance.
-Reply, edit, delete and resolve threads here too.
+Reply, edit, delete and resolve threads here too. For more room, hide the PR list beside an open PR, widen the panel,
+or open the review in its own window and drag its edge or corner to any size.
 
 ### Library (⌘⇧K): every skill your agents can load
 
@@ -89,7 +90,8 @@ what that delivery cost, per commit, per merged PR and per 1K lines.</td>
 <td width="50%"><img src="docs/images/usage-rhythm.png" alt="Usage rhythm"></td>
 <td valign="top"><b>Rhythm.</b> When you start work, how many agents run at once on each day, and how long runs last.
 Find the hours you run the most agents, and the runs that drag on.<br><br>
-Hover any bar or square for its numbers. Cost is what each harness recorded, at API prices (Codex records none). The
+Hover any bar or square for its numbers. Press or drag across days, bars or hours (say 09:00–12:00) and every other
+number follows; ✕ shows the whole period again. Cost is what each harness recorded, at API prices (Codex records none). The
 kind of work comes from each run's mix of tool calls, never from your prompts.</td>
 </tr>
 </table>

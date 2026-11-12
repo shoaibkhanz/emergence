@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { wilson, levels, clean, heat, summarize, startOfDay, DAY, kindOf, rhythmOf, outputOf } from "./lib.js";
+import { wilson, levels, clean, heat, summarize, startOfDay, DAY, kindOf, rhythmOf, outputOf, span, keepOf } from "./lib.js";
 
 const NOW = new Date(2026, 10, 12, 15).getTime(); // Thu 12 Nov 2026, 15:00 local
 const s = (h, daysAgo, extra = {}) => ({
@@ -114,4 +114,21 @@ test("output: commits and lines in the period, PRs merged by merge date, median 
   expect([o.commits, o.add, o.del, o.activeDays]).toEqual([2, 15, 2, 2]);
   expect([o.opened, o.merged, o.mergeHours, o.worktrees]).toEqual([2, 1, 2, 3]);
   expect(o.repos[0]).toEqual({ repo: "/r/a", commits: 2, add: 15, del: 2 });
+});
+
+test("selection: spans days and hour blocks, and narrows the sums to what's picked", () => {
+  const today = startOfDay(NOW);
+  expect(span("days", [today - 2 * DAY, today - 2 * DAY], [today, today]).length).toBe(3);
+  // 09:00-12:00 every day, dragged down the hour labels: 7 weekdays x 3 hours.
+  const nine = span("slots", [[0, 6], [9, 9]], [[0, 6], [11, 11]]);
+  expect(nine.length).toBe(21);
+  const at = (daysAgo, hour) => s("omp", 0, { start: today - daysAgo * DAY + hour * 3600000 });
+  const all = [at(0, 10), at(0, 15), at(1, 9), at(3, 11)];
+  const slots = keepOf({ kind: "slots", keys: new Set(nine) });
+  expect(summarize(all, { from: today - 6 * DAY, to: today + DAY, harnesses: new Set(["omp"]), keep: slots }).tiles.sessions).toBe(3);
+  const days = new Set([today, today - DAY]);
+  const r = summarize(all, { from: today - DAY, to: today + DAY, harnesses: new Set(["omp"]), keep: keepOf({ kind: "days", keys: days }), days: 2 });
+  expect([r.tiles.sessions, r.tiles.days, r.tiles.activeDays]).toEqual([3, 2, 2]);
+  const out = { commits: [{ t: today + 10 * 3600000, repo: "/r/a", add: 1, del: 0 }, { t: today + 15 * 3600000, repo: "/r/a", add: 1, del: 0 }] };
+  expect(outputOf(out, { from: today, to: today + DAY, step: DAY, keep: slots }).commits).toBe(1);
 });
