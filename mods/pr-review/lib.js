@@ -89,3 +89,36 @@ export function firstVisible(tops, heights, y) {
   while (lo < hi) { const m = (lo + hi) >> 1; if (tops[m] + heights[m] <= y) lo = m + 1; else hi = m; }
   return lo;
 }
+
+/** Changed files → folder-tree rows: folders first, then files, each by name; a folder holding only one
+ *  folder folds into it ("src/lib"). Rows: { dir: true, name, depth } | { fi, name, depth } (fi: index in files). */
+export function fileTree(files) {
+  const node = () => ({ dirs: new Map(), files: [] }), root = node();
+  files.forEach((f, fi) => {
+    const parts = f.path.split("/"), name = parts.pop();
+    let n = root;
+    for (const p of parts) n = n.dirs.get(p) ?? n.dirs.set(p, node()).get(p);
+    n.files.push({ fi, name });
+  });
+  const rows = [], byName = (a, b) => (a[0] ?? a.name).localeCompare(b[0] ?? b.name);
+  const walk = (n, depth) => {
+    for (let [name, d] of [...n.dirs].sort(byName)) {
+      while (!d.files.length && d.dirs.size === 1) { const [[k, v]] = d.dirs; name += `/${k}`; d = v; }
+      rows.push({ dir: true, name, depth });
+      walk(d, depth + 1);
+    }
+    for (const f of n.files.sort(byName)) rows.push({ fi: f.fi, name: f.name, depth });
+  };
+  walk(root, 0);
+  return rows;
+}
+
+/** Review labels, sent as a shields.io badge ahead of the comment so GitHub shows it:
+ *  [key, label, badge colour, the theme colour that matches it]. */
+export const TAGS = [["statement", "Statement", "green", "ansi2"], ["question", "Question", "blue", "ansi4"], ["nit", "Nit", "purple", "ansi5"], ["minor", "Minor", "yellow", "ansi3"], ["major", "Major", "red", "ansi1"]];
+const BADGE = /^!\[(statement|question|nit|minor|major)\]\(https:\/\/img\.shields\.io\/badge\/[^)\s]*\)[ \t]*/;
+export const tagBody = (tag, text) => (tag ? `![${tag}](https://img.shields.io/badge/${tag}-${TAGS.find(([k]) => k === tag)[2]}) ${text}` : text);
+export function splitTag(body) {
+  const m = BADGE.exec(body ?? "");
+  return m ? { tag: m[1], text: body.slice(m[0].length) } : { tag: null, text: body ?? "" };
+}

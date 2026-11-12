@@ -1,19 +1,19 @@
 // PR review: a floating window (mod.json overlay kind "window"), or a side-panel
 // block (props { panel: true }), that follows the focused pane's repo. Left rail: this branch vs the default branch, then the
-// repo's PRs (search, Open · Closed · All). Main: changed files and one
-// continuous unified diff, drawn only where it is on screen, with GitHub review
-// threads inline under their lines. Click / shift-click / drag selects lines on
-// one side; ⌘Enter posts a review comment on them.
+// repo's PRs (search, Open · Closed · All). Main: the changed files as a folder tree and one file's
+// unified diff at a time, drawn only where it is on screen, with GitHub review threads inline under
+// their lines. Click / shift-click / drag selects lines on one side; ⌘Enter posts a review comment on
+// them, optionally tagged Nit · Minor · Major · Question · Statement.
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, TextView } from "gpui-base";
+import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, TextView, ScrollHandle } from "gpui-base";
 import { exec, focused, panes, spaces, theme, settings, props, shared, setShared, closeOverlay, run, layout } from "herdr";
 import * as gh from "./github.js";
-import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible } from "./lib.js";
+import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, TAGS, tagBody, splitTag } from "./lib.js";
 
 const MONO = "Geist Mono";
 const icon = (name) => svg(`mods/pr-review/${name}.svg`);
 const tint = (c, a) => c.slice(0, 7) + a;
-const H = { file: 40, row: 20, hunk: 28, note: 36, gap: 16, thread: 132, resolved: 44, composer: 180 };
+const H = { file: 40, row: 20, hunk: 28, note: 36, thread: 132, resolved: 44 };
 const GUTTER = 104; // two line-number columns + sign: cards and notes line up with the code
 const STATES = [["open", "Open"], ["closed", "Closed"], ["all", "All"]];
 const BLOCK = "prs"; // this mod's block id in the layout's panel-body stack
@@ -39,9 +39,10 @@ export default class PrReview extends View {
     this.panel = props()?.panel === true;
     this.repos = new Map(); // "machine|toplevel" → per-repo state, kept while the window is open
     this.cur = null; // the shown repo's state, or { none: message }
-    this.heights = new Map(); // measured thread / composer heights
+    this.heights = new Map(); // measured thread heights
     this.expanded = new Set(); // resolved threads opened by hand
-    this.filesOpen = null; // null: shown when there is room
+    this.filesOpen = true; // the file tree beside the diff, where there is room for both
+    this.treeScroll = ScrollHandle.new(); // keeps the arrow-key file in view
     this.handle = cx.focus_handle();
     this.search = InputState.new({ placeholder: "Search pull requests" });
     this.search.on("focus", () => (this.inSearch = true));
@@ -174,7 +175,7 @@ export default class PrReview extends View {
   }
 
   open(s, entry, cx, reload) {
-    if (s.entry !== entry) { s.entry = entry; s.sel = null; this.dropDraft(); this.composeError = null; }
+    if (s.entry !== entry) { s.entry = entry; s.sel = null; this.tag = null; this.dropDraft(); this.composeError = null; }
     const d = s.diffs.get(entry) ?? {};
     d.pr = s.prs?.find((p) => p.number === entry) ?? d.pr; // kept so the header survives filtering the PR out of the list
     if (s.diffs.has(entry) && !reload) return;
@@ -188,7 +189,11 @@ export default class PrReview extends View {
           const mb = (await git(s.id, ["merge-base", `origin/${base}`, "HEAD"]).catch(() => git(s.id, ["merge-base", base, "HEAD"]))).trim();
           text = await git(s.id, ["diff", "--no-color", "--no-ext-diff", mb]);
         } else text = await gh.prDiff(s.id, entry);
+        const keep = d.files?.[d.fi]?.path; // a refresh stays on the same file, wherever it now sits
         d.files = parseDiff(text);
+        d.order = fileTree(d.files).filter((r) => !r.dir).map((r) => r.fi); // the tree's (and the arrows') file order
+        const at = d.files.findIndex((f) => f.path === keep);
+        d.fi = at >= 0 ? at : d.order[0] ?? 0;
         d.error = null;
       } catch (e) { d.error = e.message; }
       d.loading = false;
@@ -221,15 +226,16 @@ export default class PrReview extends View {
 
   post(cx) {
     const s = this.cur, d = s?.diffs.get(s.entry), f = s?.sel && d?.files[s.sel.fi];
-    const body = this.composer.value().trim();
-    if (!f || !body || this.posting || !d.headOid) return;
+    const text = this.composer.value().trim();
+    if (!f || !text || this.posting || !d.headOid) return;
     const where = commentPayload(f.path, selectRange(f.rows, s.sel.anchor, s.sel.focus));
     this.posting = true;
     this.composeError = null;
     cx.spawn(async (cx) => {
       try {
-        await gh.createComment(s.id, s.info.nwo, s.entry, { body, commit_id: d.headOid, ...where });
+        await gh.createComment(s.id, s.info.nwo, s.entry, { body: tagBody(this.tag, text), commit_id: d.headOid, ...where });
         this.composer.set_value("");
+        this.tag = null;
         s.sel = null;
         await this.fetchThreads(s, s.entry);
       } catch (e) { this.composeError = e.message; }
@@ -256,8 +262,9 @@ export default class PrReview extends View {
 
   startDraft(kind, th, c) {
     this.dropDraft();
-    const state = this.textarea(kind === "reply" ? "Reply" : "Edit comment", (cx) => this.saveDraft(cx), kind === "edit" ? c.body : "");
-    this.draft = { kind, thread: th.id, comment: c?.databaseId, state };
+    const { tag, text } = kind === "edit" ? splitTag(c.body) : { tag: null, text: "" };
+    const state = this.textarea(kind === "reply" ? "Reply" : "Edit comment", (cx) => this.saveDraft(cx), text);
+    this.draft = { kind, thread: th.id, comment: c?.databaseId, state, tag };
     state.focus();
   }
 
@@ -265,7 +272,8 @@ export default class PrReview extends View {
 
   saveDraft(cx) {
     const dr = this.draft, s = this.cur;
-    const body = dr?.state.value().trim();
+    const text = dr?.state.value().trim();
+    const body = text && tagBody(dr.tag, text);
     const th = body && s.diffs.get(s.entry).threads.find((x) => x.id === dr.thread);
     if (!th) return;
     this.act(th, (nwo) => (dr.kind === "reply" ? gh.reply(s.id, nwo, s.entry, th.comments[0].databaseId, body) : gh.editComment(s.id, nwo, dr.comment, body)), cx,
@@ -280,27 +288,66 @@ export default class PrReview extends View {
     if (k === "escape") {
       if (this.draft) this.dropDraft();
       else if (this.confirm) this.confirm = null;
-      else if (s?.sel) { s.sel = null; this.typing = false; }
-      else if (!this.panel) return this.dismiss();
+      else if (s?.sel) { s.sel = null; this.tag = null; this.typing = false; }
       else if (this.narrow && s?.entry != null && (s.level ?? "list") !== "list") this.back(s);
+      // Wide: back from a stacked diff to its tree, then out of the entry (the arrows walk the PR list again).
+      else if (!this.narrow && s?.entry != null) { const d = s.diffs.get(s.entry); if (!this.side() && d?.view === "diff") d.view = "files"; else s.entry = null; }
+      else if (!this.panel) return this.dismiss();
       else return;
     } else if (this.typing) return;
     else if (k === "/" && !this.inSearch) this.search.focus();
     else if (s && (k === "up" || k === "down")) {
-      const n = 1 + (s.prs?.length ?? 0);
-      s.cursor = (s.cursor + (k === "down" ? 1 : n - 1)) % n;
+      const d = this.openFiles(s);
+      if (d) this.stepFile(s, d, k === "down" ? 1 : -1);
+      else {
+        const n = 1 + (s.prs?.length ?? 0);
+        s.cursor = (s.cursor + (k === "down" ? 1 : n - 1)) % n;
+      }
     } else if (s && k === "enter") {
-      const entry = s.cursor === 0 ? "local" : s.prs?.[s.cursor - 1]?.number;
-      if (entry != null) { this.open(s, entry, cx); s.level = "pr"; }
+      const d = this.openFiles(s);
+      if (d && (this.narrow ? s.level === "pr" : !this.side() && d.view !== "diff")) this.pickFile(s, d, d.fi);
+      else if (d) return; // the file is already showing
+      else {
+        const entry = s.cursor === 0 ? "local" : s.prs?.[s.cursor - 1]?.number;
+        if (entry != null) { this.open(s, entry, cx); s.level = "pr"; }
+      }
     } else return;
     cx.stop_propagation();
     cx.notify();
+  }
+
+  // ---- files ----
+
+  // The open entry's diff state once it has files; up / down then walk its files, not the PR list.
+  openFiles(s) {
+    const d = s.entry != null && !(this.narrow && (s.level ?? "list") === "list") ? s.diffs.get(s.entry) : null;
+    return d?.files?.length ? d : null;
+  }
+
+  // Room for the file tree beside a readable diff (rail 280 + tree 260 + diff ≥ 500).
+  side() { return !this.narrow && (this.width ?? Infinity) >= 1040; }
+
+  // Shows file fi's diff: where the tree stands alone (stacked, drill-down), that swaps it for the diff.
+  pickFile(s, d, fi) {
+    d.fi = fi;
+    d.view = s.level = "diff";
+    s.scroll[s.entry] = 0;
+  }
+
+  // The previous / next file in tree order: shown at once, or just highlighted while the tree stands alone.
+  stepFile(s, d, by) {
+    const o = d.order ?? [], i = Math.max(0, Math.min(o.indexOf(d.fi) + by, o.length - 1));
+    if (o[i] === d.fi) return;
+    d.fi = o[i];
+    s.scroll[s.entry] = 0;
+    this.treeScroll.scroll_to_item(fileTree(d.files).findIndex((r) => r.fi === d.fi));
   }
 
   mouseUp(cx) {
     this.bar = null;
     if (!this.dragging) return;
     this.dragging = false;
+    this.reveal = true; // the comment box docks under the diff: keep the selection's last line above it
     if (this.cur?.sel && this.cur.entry !== "local") this.composer.focus();
     cx.notify();
   }
@@ -326,7 +373,7 @@ export default class PrReview extends View {
     this.zoom = settings().zoom ?? 1;
     this.narrow = this.panel && (this.width ?? NARROW) < NARROW;
     const view = this.narrow && ready ? (s.entry == null ? "list" : s.level ?? "list") : null;
-    // The body first: the diff names the header's current file.
+    // The body first: it reads the scroll the diff clamps.
     const body = !ready ? this.empty(t, s)
       : view === "list" ? this.rail(t, s, true)
       : view === "pr" ? this.detail(t, s)
@@ -357,7 +404,7 @@ export default class PrReview extends View {
       const back = view === "pr" || view === "diff";
       return h_flex().h(42).flex_none().pl(back ? 8 : 14).pr(8).gap(8).items_center().border_b(1).border_color(t.border)
         .when(back, (el) => el.child(btn("pr-back", "chevron-left", "Back", () => this.back(s)))
-          .child(div().min_w(0).truncate().font_semibold().child(view === "diff" ? this.fileTitle ?? "Changes" : this.entryInfo(s).title)))
+          .child(div().min_w(0).truncate().font_semibold().child(view === "diff" ? s.diffs.get(s.entry)?.files?.[s.diffs.get(s.entry).fi]?.path.split("/").pop() ?? "Changes" : this.entryInfo(s).title)))
         .when(!back, (el) => where(el.child(div().flex_none().font_semibold().child(s?.id ? s.name : "Pull requests"))))
         .child(div().flex_1())
         .child(refresh)
@@ -476,11 +523,13 @@ export default class PrReview extends View {
     return div().px(16).py(8).text_size(12).text_color(t.blocked).border_b(1).border_color(t.border).child(`Comments unavailable: ${d.threadsError}`);
   }
 
-  // bare: the drill-down's diff level, without the entry header and file list.
+  // bare: the drill-down's diff level, without the entry header and file tree.
+  // With room the tree sits beside the diff; without, it stands alone until a file is picked.
   main(t, s, bare) {
     if (s.entry == null) return this.quiet(t, "Select a pull request, or this branch, to see its changes.");
     const { d, local, pr, files, title, sub, quiet } = this.entryInfo(s);
-    const filesOpen = this.filesOpen ?? (this.width ?? Infinity) >= 1040; // rail + file list + a readable diff
+    const side = !bare && this.side();
+    const treeOn = side ? this.filesOpen : !bare && d.view !== "diff";
     const head = bare ? null : h_flex().h(56).flex_none().px(16).gap(12).items_center().border_b(1).border_color(t.border)
       .child(v_flex().flex_1().min_w(0).gap(4)
         .child(h_flex().gap(8).items_center()
@@ -493,26 +542,24 @@ export default class PrReview extends View {
       .when(files.length > 0, (el) => el
         .child(this.counts(t, files.reduce((a, f) => a + f.additions, 0), files.reduce((a, f) => a + f.deletions, 0)))
         .child(h_flex().id("files-toggle").h(28).px(8).gap(4).items_center().rounded(6).cursor_pointer().text_size(12).text_color(t.muted)
-          .hover((x) => x.bg(t.hover).text_color(t.foreground))
-          .on_click((_e, cx) => { this.filesOpen = !filesOpen; cx.notify(); })
-          .child(icon(filesOpen ? "chevron-down" : "chevron-right").size(14))
+          .hover((x) => x.bg(t.hover).text_color(t.foreground)).tooltip(treeOn ? "Hide the file tree" : "Show the file tree")
+          .on_click((_e, cx) => { if (side) this.filesOpen = !treeOn; else d.view = treeOn ? "diff" : "files"; cx.notify(); })
+          .child(icon(treeOn ? "chevron-down" : "chevron-right").size(14))
           .child(`${files.length} file${files.length === 1 ? "" : "s"}`)));
-    this.fileTitle = null;
-    if (quiet) return v_flex().flex_1().min_w(0).h_full().when(!bare, (el) => el.child(head)).child(this.quiet(t, quiet));
+    const top = v_flex().flex_1().min_w(0).h_full().when(!bare, (el) => el.child(head));
+    if (quiet) return top.child(this.quiet(t, quiet));
+    if (treeOn && !side) return top.when(Boolean(d.threadsError), (el) => el.child(this.threadsBanner(t, d))).child(this.treeColumn(t, s, d, true));
     const L = this.layout(s, d);
-    const diff = this.diff(t, s, d, L); // clamps the scroll the current file is read from
-    this.fileTitle = files[this.currentFile(s, L)].path.split("/").pop();
-    return v_flex().flex_1().min_w(0).h_full().when(!bare, (el) => el.child(head))
-      .when(Boolean(d.threadsError), (el) => el.child(this.threadsBanner(t, d)))
+    return top.when(Boolean(d.threadsError), (el) => el.child(this.threadsBanner(t, d)))
       .child(h_flex().flex_1().min_h(0)
-        .when(!bare && filesOpen, (el) => el.child(this.fileList(t, s, d, L)))
-        .child(diff));
+        .when(side && treeOn, (el) => el.child(this.treeColumn(t, s, d, false)))
+        .child(v_flex().flex_1().min_w(0).h_full().child(this.fileHead(t, s, d)).child(this.diff(t, s, d, L))
+          .when(Boolean(L.range) && !this.dragging, (el) => el.child(this.composerCard(t, s, d, L.range)))));
   }
 
-  // Drill-down level 2: the entry's title and meta, then its files; a file opens the diff there.
+  // Drill-down level 2: the entry's title and meta, then its file tree; a file opens its diff there.
   detail(t, s) {
     const { d, local, pr, files, title, sub, quiet } = this.entryInfo(s);
-    const L = quiet ? null : this.layout(s, d);
     return v_flex().flex_1().min_w(0).h_full()
       .child(v_flex().flex_none().px(16).py(12).gap(8).border_b(1).border_color(t.border)
         .child(div().text_size(15).font_semibold().child(title))
@@ -524,46 +571,31 @@ export default class PrReview extends View {
         .child(div().font_family(MONO).text_size(11).text_color(t.dim).child(sub)))
       .when(Boolean(d.threadsError), (el) => el.child(this.threadsBanner(t, d)))
       .when(Boolean(quiet), (el) => el.child(this.quiet(t, quiet)))
-      .when(!quiet, (el) => el.child(v_flex().id("detail-files").flex_1().min_h(0).overflow_y_scrollbar().py(8)
-        .child(div().px(16).pb(4).text_size(11).text_color(t.dim).child(`${files.length} file${files.length === 1 ? "" : "s"} changed`))
-        .children(files.map((f, fi) => {
-          const parts = f.path.split("/"), name = parts.pop();
-          const n = (d.threads ?? []).filter((x) => x.path === f.path).length;
-          return h_flex().id(`dfile-${fi}`).h(36).flex_none().mx(8).px(8).gap(8).items_center().rounded(6).cursor_pointer().hover((x) => x.bg(t.hover))
-            .on_click((_e, cx) => { s.scroll[s.entry] = L.fileTops[fi]; s.level = "diff"; cx.notify(); })
-            .child(h_flex().flex_1().min_w(0)
-              .child(div().min_w(0).truncate().text_color(t.dim).child(parts.length ? parts.join("/") + "/" : ""))
-              .child(div().flex_none().max_w(260).truncate().when(f.status === "deleted", (el) => el.text_color(t.muted)).child(name)))
-            .when(n > 0, (el) => el.child(h_flex().gap(4).items_center().flex_none().text_size(11).text_color(t.muted).child(icon("message").size(12)).child(String(n))))
-            .when(f.additions + f.deletions > 0, (el) => el.child(this.counts(t, f.additions, f.deletions)))
-            .child(icon("chevron-right").size(14).flex_none().text_color(t.dim));
-        }))));
+      .when(!quiet, (el) => el.child(div().px(16).pt(10).text_size(11).text_color(t.dim).child(`${files.length} file${files.length === 1 ? "" : "s"} changed`))
+        .child(this.treeColumn(t, s, d, true)));
   }
 
-  // The file whose header is at or above the top of the diff.
-  currentFile(s, L) {
-    const y = (s.scroll[s.entry] ?? 0) + 1;
-    return Math.max(0, L.fileTops.findLastIndex((top) => top <= y));
-  }
-
-  fileList(t, s, d, L) {
-    const current = this.currentFile(s, L);
-    return v_flex().id("files").w(240).flex_none().h_full().py(8).border_r(1).border_color(t.border).overflow_y_scrollbar()
-      .children(d.files.map((f, fi) => {
-        const n = (d.threads ?? []).filter((x) => x.path === f.path).length;
-        return h_flex().id(`file-${fi}`).h(32).flex_none().mx(8).px(8).gap(8).items_center().rounded(6).cursor_pointer()
-          .when(fi === current, (el) => el.bg(t.selected)).hover((x) => x.bg(fi === current ? t.selected : t.hover))
-          .tooltip(f.path)
-          .on_click((_e, cx) => { s.scroll[s.entry] = L.fileTops[fi]; cx.notify(); })
-          .child(div().flex_1().min_w(0).truncate().when(f.status === "deleted", (el) => el.text_color(t.muted)).child(f.path.split("/").pop()))
+  // The changed files as a folder tree with comment and +/- counts. full: the whole area, else a 260px column.
+  treeColumn(t, s, d, full) {
+    return v_flex().id("files").h_full().py(8).overflow_y_scrollbar().track_scroll(this.treeScroll)
+      .when(full, (el) => el.flex_1().min_w(0).min_h(0)).when(!full, (el) => el.w(260).flex_none().border_r(1).border_color(t.border))
+      .children(fileTree(d.files).map((r, i) => {
+        const row = h_flex().id(`tree-${i}`).flex_none().mx(8).pl(8 + r.depth * 14).pr(8).gap(8).items_center().rounded(6);
+        if (r.dir) return row.h(26).text_size(12).text_color(t.muted).child(icon("folder").size(13).flex_none().text_color(t.dim)).child(div().min_w(0).truncate().child(r.name));
+        const f = d.files[r.fi], n = (d.threads ?? []).filter((x) => x.path === f.path).length, on = r.fi === d.fi;
+        return row.h(30).cursor_pointer().tooltip(f.path)
+          .when(on, (el) => el.bg(t.selected)).hover((x) => x.bg(on ? t.selected : t.hover))
+          .on_click((_e, cx) => { this.pickFile(s, d, r.fi); cx.notify(); })
+          .child(icon("file").size(13).flex_none().text_color({ added: t.done, deleted: t.blocked }[f.status] ?? t.dim))
+          .child(div().flex_1().min_w(0).truncate().when(f.status === "deleted", (el) => el.text_color(t.muted)).child(r.name))
           .when(n > 0, (el) => el.child(h_flex().gap(4).items_center().flex_none().text_size(11).text_color(t.muted).child(icon("message").size(12)).child(String(n))))
           .when(f.additions + f.deletions > 0, (el) => el.child(this.counts(t, f.additions, f.deletions)));
       }));
   }
 
-  // Every diff item with its height: file headers, rows, notes, thread cards, the composer.
+  // The shown file's diff items with their heights: rows, notes, thread cards; and the selected range.
   layout(s, d) {
-    const items = [], tops = [], fileTops = [];
+    const items = [], tops = [], fi = d.fi, f = d.files[fi];
     let y = 0;
     const push = (it) => { items.push(it); tops.push(y); y += it.h; };
     const card = (th) => {
@@ -571,42 +603,33 @@ export default class PrReview extends View {
       const measure = `th-${th.id}-${open}`;
       push({ k: "thread", key: `th-${th.id}`, th, measure, h: this.heights.get(measure) ?? (open ? H.thread : H.resolved) });
     };
-    d.files.forEach((f, fi) => {
-      if (fi) push({ k: "gap", key: `gap-${fi}`, h: H.gap });
-      fileTops.push(y);
-      push({ k: "file", key: `file-${fi}`, f, h: H.file });
-      const { at, loose } = anchorThreads(f.rows, (d.threads ?? []).filter((x) => x.path === f.path));
-      const note = f.binary ? "Binary file not shown." : f.rows.length ? null
-        : { deleted: "Empty file deleted.", renamed: "Renamed without changes.", added: "Empty file added." }[f.status] ?? "No text changes.";
-      if (note) push({ k: "note", key: `note-${fi}`, text: note, h: H.note });
-      loose.forEach(card);
-      const range = s.sel?.fi === fi ? selectRange(f.rows, s.sel.anchor, s.sel.focus) : null;
-      f.rows.forEach((row, ri) => {
-        push({ k: "row", key: `r-${fi}-${ri}`, fi, ri, row, on: Boolean(range) && ri >= range.from && ri <= range.to, h: row.kind === "hunk" ? H.hunk : H.row });
-        (at.get(ri) ?? []).forEach(card);
-        if (range?.to !== ri) return;
-        if (s.entry === "local") push({ k: "note", key: "local-note", text: "This branch is read-only here: comments need a pull request.", h: H.note });
-        else push({ k: "composer", key: "composer", range, measure: "composer", h: this.heights.get("composer") ?? H.composer });
-      });
+    const { at, loose } = anchorThreads(f.rows, (d.threads ?? []).filter((x) => x.path === f.path));
+    const note = f.binary ? "Binary file not shown." : f.rows.length ? null
+      : { deleted: "Empty file deleted.", renamed: "Renamed without changes.", added: "Empty file added." }[f.status] ?? "No text changes.";
+    if (note) push({ k: "note", key: `note-${fi}`, text: note, h: H.note });
+    loose.forEach(card);
+    const range = s.sel?.fi === fi ? selectRange(f.rows, s.sel.anchor, s.sel.focus) : null;
+    f.rows.forEach((row, ri) => {
+      push({ k: "row", key: `r-${fi}-${ri}`, fi, ri, row, on: Boolean(range) && ri >= range.from && ri <= range.to, h: row.kind === "hunk" ? H.hunk : H.row });
+      (at.get(ri) ?? []).forEach(card);
     });
-    return { items, tops, heights: items.map((x) => x.h), total: y + 24, fileTops };
+    return { items, tops, heights: items.map((x) => x.h), total: y + 24, range };
   }
 
   diff(t, s, d, L) {
     const view = this.diffH ?? 600;
     const max = Math.max(0, L.total - view);
+    // Once a selection is made (until the next scroll), its last line stays above the docked comment box.
+    const end = this.reveal && L.range ? L.items.findIndex((it) => it.k === "row" && it.ri === L.range.to) : -1;
+    if (end >= 0) s.scroll[s.entry] = Math.max(s.scroll[s.entry] ?? 0, L.tops[end] + L.heights[end] + 8 - view);
     const scroll = (s.scroll[s.entry] = Math.max(0, Math.min(s.scroll[s.entry] ?? 0, max)));
     const shown = [];
     for (let i = firstVisible(L.tops, L.heights, scroll); i < L.items.length && L.tops[i] < scroll + view; i++) shown.push(i);
     const thumbH = Math.max(32, (view * view) / Math.max(L.total, 1));
-    // Sticky header: the current file's header pins to the top until the next file pushes it out.
-    const fi = L.fileTops.findLastIndex((y) => y <= scroll);
-    const stick = fi >= 0 && scroll > L.fileTops[fi] ? Math.min(0, (L.fileTops[fi + 1] ?? Infinity) - H.gap - H.file - scroll) : null;
-    return div().id("diff").relative().flex_1().min_w(0).h_full().overflow_hidden()
+    return div().id("diff").relative().flex_1().min_w(0).min_h(0).overflow_hidden()
       .on_size_change((size, cx) => { const h = size.height / this.zoom; if (Math.abs(h - (this.diffH ?? 0)) > 0.5) { this.diffH = h; cx.notify(); } })
-      .on_scroll_wheel((e, cx) => { s.scroll[s.entry] = Math.max(0, Math.min((s.scroll[s.entry] ?? 0) - e.delta.y, max)); cx.notify(); })
+      .on_scroll_wheel((e, cx) => { this.reveal = false; s.scroll[s.entry] = Math.max(0, Math.min((s.scroll[s.entry] ?? 0) - e.delta.y, max)); cx.notify(); })
       .children(shown.map((i) => this.item(t, s, d, L.items[i]).absolute().left(0).right(0).top(L.tops[i] - scroll)))
-      .when(stick != null, (el) => el.child(this.item(t, s, d, { k: "file", f: d.files[fi], h: H.file }).absolute().left(0).right(0).top(stick)))
       .when(max > 0, (el) => el.child(div().id("diff-bar").absolute().right(2).w(6).top((scroll / max) * (view - thumbH)).h(thumbH).rounded(3)
         .bg(tint(t.foreground, this.bar ? "55" : "26")).hover((x) => x.bg(tint(t.foreground, "40")))
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.bar = { y: e.position.y, scroll, k: max / (view - thumbH), entry: s.entry }; cx.notify(); })));
@@ -623,18 +646,36 @@ export default class PrReview extends View {
 
   item(t, s, d, it) {
     if (it.k === "row") return this.row(t, s, it);
-    if (it.k === "gap") return div().h(it.h);
     if (it.k === "note") return h_flex().h(it.h).pl(this.narrow ? 16 : GUTTER).pr(16).items_center().text_size(12).text_color(t.muted).child(div().min_w(0).truncate().child(it.text));
-    if (it.k === "thread") return this.measured(it, this.thread(t, s, it.th));
-    if (it.k === "composer") return this.measured(it, this.composerCard(t, s, d, it.range));
-    const f = it.f;
-    const label = { added: "Added", deleted: "Deleted", renamed: "Renamed" }[f.status];
-    return h_flex().h(it.h).pl(16).pr(20).gap(8).items_center().bg(t.surface).border_t(1).border_b(1).border_color(t.border)
+    return this.measured(it, this.thread(t, s, it.th));
+  }
+
+  // The shown file's header above its diff, with previous / next file.
+  fileHead(t, s, d) {
+    const f = d.files[d.fi], label = { added: "Added", deleted: "Deleted", renamed: "Renamed" }[f.status];
+    const nav = (by, name, tip) => h_flex().id(`file-${by}`).size(24).flex_none().items_center().justify_center().rounded(6).cursor_pointer()
+      .text_color(t.muted).hover((x) => x.bg(t.hover).text_color(t.foreground)).tooltip(tip)
+      .on_click((_e, cx) => { this.stepFile(s, d, by); cx.notify(); })
+      .child(icon(name).size(14));
+    return h_flex().h(H.file).flex_none().pl(16).pr(12).gap(8).items_center().bg(t.surface).border_b(1).border_color(t.border)
       .child(div().min_w(0).truncate().font_family(MONO).text_size(12).font_medium().child(f.path))
       .when(f.status === "renamed", (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(`from ${f.oldPath}`)))
       .child(div().flex_1())
       .when(Boolean(label), (el) => el.child(this.chip(t, label, { deleted: t.blocked, added: t.done }[f.status] ?? t.idle)))
-      .when(f.additions + f.deletions > 0, (el) => el.child(this.counts(t, f.additions, f.deletions)));
+      .when(f.additions + f.deletions > 0, (el) => el.child(this.counts(t, f.additions, f.deletions)))
+      .when(d.files.length > 1, (el) => el.child(nav(-1, "chevron-up", "Previous file  ↑")).child(nav(1, "chevron-down", "Next file  ↓")));
+  }
+
+  // Review label chips: one or none, toggled; posted as a badge ahead of the comment.
+  tagRow(t, key, cur, set) {
+    return h_flex().gap(6).flex_wrap().items_center().children(TAGS.map(([k, label, , ink]) => {
+      const on = cur === k, c = t[ink];
+      return h_flex().id(`${key}-tag-${k}`).h(22).px(8).flex_none().items_center().rounded(6).border_1().text_size(11).cursor_pointer()
+        .border_color(on ? c : t.border).bg(on ? tint(c, "26") : t.background).text_color(on ? c : t.muted)
+        .hover((x) => x.border_color(c).text_color(c))
+        .on_click((_e, cx) => { set(on ? null : k); cx.notify(); })
+        .child(label);
+    }));
   }
 
   row(t, s, it) {
@@ -665,18 +706,22 @@ export default class PrReview extends View {
       .child(div().flex_1().min_w(0).pr(16).whitespace_nowrap().overflow_hidden().child(r.text.replace(/\t/g, "    ")));
   }
 
+  // Selected lines get the comment box docked under the diff, not inline: selecting stays free until you write.
   composerCard(t, s, d, r) {
     const where = `${r.side === "LEFT" ? "old " : ""}line${r.start === r.end ? ` ${r.end}` : `s ${r.start}–${r.end}`}`;
-    return v_flex().p(12).gap(8).rounded(10).bg(t.surface).border_1().border_color(t.accent)
+    if (s.entry === "local") return div().flex_none().px(16).py(10).border_t(1).border_color(t.border).text_size(12).text_color(t.muted)
+      .child(`Selected ${where}. This branch is read-only here: comments need a pull request.`);
+    return v_flex().flex_none().px(16).py(12).gap(8).bg(t.surface).border_t(1).border_color(t.accent)
       .child(h_flex().gap(8).items_center()
         .child(icon("message").size(13).text_color(t.accent))
         .child(div().flex_none().text_size(12).text_color(t.muted).child(`Comment on ${where}`))
         .child(div().flex_1())
         .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child("⌘↵ post · Esc cancel")))
+      .child(this.tagRow(t, "compose", this.tag, (k) => (this.tag = k)))
       .child(div().rounded(6).bg(t.background).border_1().border_color(t.input).px(8).py(6).child(Textarea.new(this.composer).id("composer").h(64).w_full().text_size(13)))
       .when(Boolean(this.composeError), (el) => el.child(div().text_size(12).text_color(t.blocked).child(this.composeError)))
       .child(h_flex().gap(8).items_center().justify_end()
-        .child(this.button(t, "compose-cancel", "Cancel", () => { s.sel = null; this.composeError = null; this.typing = false; }))
+        .child(this.button(t, "compose-cancel", "Cancel", () => { s.sel = null; this.tag = null; this.composeError = null; this.typing = false; }))
         .child(this.button(t, "compose-post", this.posting ? "Posting…" : "Comment", (cx) => this.post(cx), true, this.posting || !d.headOid)));
   }
 
@@ -693,7 +738,7 @@ export default class PrReview extends View {
       .child(icon("chevron-right").size(13).flex_none().text_color(t.dim))
       .child(this.chip(t, "Resolved", t.done))
       .child(div().flex_none().text_size(12).font_semibold().child(first?.author?.login ?? ""))
-      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child((first?.body ?? "").split("\n")[0]))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(splitTag(first?.body).text.split("\n")[0]))
       .child(div().flex_none().text_size(11).text_color(t.dim).child(`${th.comments.length} comment${th.comments.length === 1 ? "" : "s"}`)));
     const lines = th.line == null ? "Outdated" : th.startLine && th.startLine !== th.line ? `Lines ${th.startLine}–${th.line}` : `Line ${th.line}`;
     const dr = this.draft?.thread === th.id ? this.draft : null;
@@ -711,6 +756,7 @@ export default class PrReview extends View {
       .when(Boolean(err), (el) => el.child(div().px(12).pb(10).text_size(12).text_color(t.blocked).child(err)))
       .child(dr?.kind === "reply"
         ? v_flex().p(12).gap(8).border_t(1).border_color(t.border)
+          .child(this.tagRow(t, `reply-${th.id}`, dr.tag, (k) => (dr.tag = k)))
           .child(div().rounded(6).bg(t.background).border_1().border_color(t.input).px(8).py(6).child(Textarea.new(dr.state).id(`reply-${th.id}`).h(48).w_full().text_size(13)))
           .child(h_flex().gap(8).justify_end()
             .child(this.button(t, `reply-cancel-${th.id}`, "Cancel", () => this.dropDraft()))
@@ -723,9 +769,11 @@ export default class PrReview extends View {
     const editing = dr?.kind === "edit" && dr.comment === c.databaseId;
     const confirming = this.confirm === c.databaseId;
     const idle = !confirming && !editing && this.busy !== th.id;
+    const { tag, text } = splitTag(c.body);
     return v_flex().px(12).py(10).gap(4).when(ci > 0, (el) => el.border_t(1).border_color(t.border))
       .child(h_flex().gap(8).items_center()
         .child(div().text_size(13).font_semibold().child(c.author?.login ?? "ghost"))
+        .when(Boolean(tag) && !editing, (el) => { const [, label, , ink] = TAGS.find(([k]) => k === tag); return el.child(this.chip(t, label, t[ink])); })
         .child(div().text_size(11).text_color(t.dim).child(ago(c.createdAt)))
         .child(div().flex_1())
         .when(confirming, (el) => el
@@ -736,10 +784,11 @@ export default class PrReview extends View {
         .when(idle && c.viewerCanDelete, (el) => el.child(this.link(t, `del-${c.databaseId}`, "Delete", () => (this.confirm = c.databaseId)))))
       .child(editing
         ? v_flex().gap(8).pt(4)
+          .child(this.tagRow(t, `edit-${c.databaseId}`, dr.tag, (k) => (dr.tag = k)))
           .child(div().rounded(6).bg(t.background).border_1().border_color(t.input).px(8).py(6).child(Textarea.new(dr.state).id(`edit-box-${c.databaseId}`).h(64).w_full().text_size(13)))
           .child(h_flex().gap(8).justify_end()
             .child(this.button(t, `edit-cancel-${c.databaseId}`, "Cancel", () => this.dropDraft()))
             .child(this.button(t, `edit-save-${c.databaseId}`, "Save", (cx) => this.saveDraft(cx), true, this.busy === th.id)))
-        : TextView.markdown(`md-${c.id}`, c.body).selectable(true).scrollable(false).w_full().text_size(13).text_color(t.foreground));
+        : TextView.markdown(`md-${c.id}`, text).selectable(true).scrollable(false).w_full().text_size(13).text_color(t.foreground));
   }
 }

@@ -1,5 +1,23 @@
 import { test, expect } from "bun:test";
-import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible } from "./lib.js";
+import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, tagBody, splitTag } from "./lib.js";
+
+test("file tree: folders first, single-folder chains fold, indices kept", () => {
+  const files = ["src/lib/b.js", "README.md", "src/lib/a.js", "src/main.js", "docs/specs/x.md"].map((path) => ({ path }));
+  expect(fileTree(files)).toEqual([
+    { dir: true, name: "docs/specs", depth: 0 }, { fi: 4, name: "x.md", depth: 1 },
+    { dir: true, name: "src", depth: 0 }, { dir: true, name: "lib", depth: 1 }, { fi: 2, name: "a.js", depth: 2 }, { fi: 0, name: "b.js", depth: 2 },
+    { fi: 3, name: "main.js", depth: 1 },
+    { fi: 1, name: "README.md", depth: 0 },
+  ]);
+});
+
+test("review tags: badge round-trips, untagged and look-alike bodies stay text", () => {
+  const body = tagBody("major", "Leaks the token.\n![nit](https://img.shields.io/badge/x) later");
+  expect(body.startsWith("![major](https://img.shields.io/badge/major-red) ")).toBe(true);
+  expect(splitTag(body)).toEqual({ tag: "major", text: "Leaks the token.\n![nit](https://img.shields.io/badge/x) later" });
+  expect(tagBody(null, "plain")).toBe("plain");
+  expect(splitTag("![nit](https://evil.example/x) hi")).toEqual({ tag: null, text: "![nit](https://evil.example/x) hi" });
+});
 
 const DIFF = `diff --git a/README.md b/README.md
 index e83d840..4ea9bfe 100644
