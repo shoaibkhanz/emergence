@@ -119,9 +119,9 @@ prunes it. Raise `cleanupPeriodDays` to keep more.
 - **Usage**: `python3 mods/usage/scan.py` reads the harnesses' session logs (omp, Claude Code, Codex, OpenCode, pi) and
   keeps a cache in Herdr's `data/usage/`; `python3 mods/usage/output.py` runs `git log`, `gh pr list` or `glab mr list`
   and `git worktree list` in the repos those sessions name. Only counts, models and timestamps are read, never prompts.
-- **Tab bar**: every 6 hours, `git fetch` of your Emergence clone; **Update** runs `git pull --ff-only` and
-  `install.sh` there. Nothing for a copy that isn't a clone of this repo, or one on another branch or with your own
-  commits.
+- **Tab bar**: every 6 hours, `git fetch` of this repo's `main` (public HTTPS) into your clone; **Update** runs
+  `git merge --ff-only` and `install.sh` there. Nothing for a copy that isn't a clone of this repo, or one on another
+  branch or with your own commits.
 - **Inbox, Spaces**: nothing outside Herdr.
 
 ## Update or remove

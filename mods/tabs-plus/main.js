@@ -47,16 +47,19 @@ function rail() {
 // fetches main, and when main has moved an Update chip pulls it, reruns install.sh (new mods, keys, layouts) and,
 // if a layout file changed, reloads the layout (switching to the shown layout is a no-op, so via main).
 // No clone (copied by hand), a fork, another branch or local commits: no chip; that clone is its owner's.
+// Fetches use the public URL into origin/main, so an ssh origin never asks for a key passphrase.
 const ORIGIN = /github\.com[:/]shoaibkhanz\/(emergence|herdr_mods)(\.git)?$/;
+const FETCH = ["fetch", "--quiet", "https://github.com/shoaibkhanz/emergence", "+main:refs/remotes/origin/main"];
 async function git(dir, ...args) {
   const r = await exec("git", ["-C", dir, ...args], { timeout: 60000 });
   if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || `git ${args[0]} exited ${r.code}`);
   return r.stdout.trim();
 }
 const UPDATE = `set -e; d="$1"; old="$(git -C "$d" rev-parse HEAD)"
-git -C "$d" pull --ff-only --quiet origin main
+git -C "$d" ${FETCH.join(" ")}
+git -C "$d" merge --ff-only --quiet origin/main
 bash "$d/install.sh" >/dev/null
-if ! git -C "$d" diff --quiet "$old" HEAD -- layouts; then
+if command -v herdr-app >/dev/null && ! git -C "$d" diff --quiet "$old" HEAD -- layouts; then
   herdr-app do layout.switch --name main >/dev/null; sleep 1; herdr-app do layout.switch --name emergence >/dev/null
 fi`;
 
@@ -80,7 +83,7 @@ export default class Tabs extends View {
       try {
         const [dir, branch] = (await git(`${appHome()}/mods/tabs-plus`, "rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD")).split("\n");
         if (branch !== "main" || !ORIGIN.test(await git(dir, "remote", "get-url", "origin"))) return;
-        await git(dir, "fetch", "--quiet", "origin", "main");
+        await git(dir, ...FETCH);
         const [ahead, behind] = (await git(dir, "rev-list", "--left-right", "--count", "HEAD...origin/main")).split(/\s+/).map(Number);
         this.repo = dir;
         if (!this.update?.busy) this.update = behind && !ahead ? { behind } : null;
@@ -96,7 +99,8 @@ export default class Tabs extends View {
     this.update = { behind: u.behind, busy: true };
     cx.spawn(async (cx) => {
       const r = await exec("bash", ["-c", UPDATE, "update", this.repo], { timeout: 300000 }).catch((e) => ({ code: 1, stderr: String(e?.message ?? e) }));
-      this.update = r.code === 0 ? null : { behind: u.behind, error: r.stderr.trim().split("\n").pop() || `exited ${r.code}` };
+      const lines = (r.stderr ?? "").trim().split("\n"), why = (lines.find((l) => /^(error|fatal): /.test(l))?.replace(/^\w+: /, "") ?? lines.pop())?.replace(/:$/, "");
+      this.update = r.code === 0 ? null : { behind: u.behind, error: why || `exited ${r.code}` };
       cx.notify();
     });
   }

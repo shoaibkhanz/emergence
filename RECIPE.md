@@ -109,8 +109,9 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - PANELS `[id, label, icon, width]`; remembers each panel's width and per-space choice; hides settled tabs.
   - `nextCommand` handles `graph`, `prs`, `skills`, `usage`, `attention`, `rail`, `worktrees` and `update`.
   - Updates: finds the clone with `git -C <appHome>/mods/tabs-plus rev-parse --show-toplevel` (the mod is a link into
-    it), only on `main` with this repo as `origin`; `git fetch` at start and every 6 h; behind with no local commits
-    shows the chip. Its click runs one `bash -c`: `git pull --ff-only`, `install.sh`, and `layout.switch` main →
+    it), only on `main` with this repo as `origin`; at start and every 6 h, `git fetch` of the public HTTPS URL into
+    `origin/main` (an ssh origin would ask for a passphrase); behind with no local commits shows the chip. Its click
+    runs one `bash -c`: fetch again, `git merge --ff-only`, `install.sh`, and `layout.switch` main →
     emergence when `layouts/` changed.
 - **`mods/inbox`**: `agents()`, `terminals()` (parent), `panes()` (cwd, branch), `spaces()` (tabs, settled,
   changed_at), `keys()`, `setAgentOrder`, `run("agent.focus" | "tab.settle" | "tab.select" | "tabs-plus.rail" |
