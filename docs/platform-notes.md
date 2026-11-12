@@ -25,8 +25,9 @@ These are the Herdr 0.1.15 behaviours we hit that the manual gets wrong or leave
   window stays where it was dropped (`windows.json` `places`) across restarts and layouts. nav-keys' 1 px
   window once ended up over the panel column and ate all its clicks, scrolls and hovers.
   Host resident mods in a 0 px layout block instead.
-- `herdr-app do overlay.close --id <key>` doesn't close a window. The mod's own `closeOverlay(props().overlay)`
-  does, and un-keeps it for that layout.
+- `herdr-app do overlay.close --id <key>` doesn't close a window, nor the worktree dialog; `overlay.close`
+  with no id closes the top dialog. The mod's own `closeOverlay(props().overlay)` closes a window and
+  un-keeps it for that layout.
 - `openOverlay` with an open window's `key` replaces it in place, with the new spec's size.
 
 ## Runtime
@@ -44,3 +45,7 @@ These are the Herdr 0.1.15 behaviours we hit that the manual gets wrong or leave
   `herdr-app shot` and `herdr-app status`, then delete the loop before committing.
 - To learn whether pointer events arrive at all, log from the handlers into memory and flush it with
   `fs.writeFile` under `~/.config/herdr-app/data/`, then ask the person to click.
+- A synthetic agent for a test: a terminal that prints `\033]7501;state=<working|blocked|done|idle>:app=<claude|codex|pi|…>\033\\`
+  (and an OSC 0 title) and then sleeps shows up in `agents()` with that program's icon. `done` needs a
+  `working` report first and must land while another tab is in front, else it reads as idle. Start it with
+  `tab.new {folder, argv}`, label it `herdr-mods-test=1`, close the tab after.

@@ -5,12 +5,26 @@ They live as side panels in the tab bar, next to Herdr's Files and Changes.
 
 | Panel | Key | What it shows |
 |---|---|---|
-| Agents (`agent-graph`) | ⌘⇧G | Every agent on a canvas: repo → worktree/branch (with its PR) → agent → sub-agents. Click an agent to jump to it, a PR chip to review it. Drag a card to move it, empty space to pan; R resets the arrangement. |
+| Agents (`agent-graph`) | ⌘⇧G | Every agent on a canvas: repo → worktree/branch (with its PR) → agent → sub-agents. Click an agent to jump to it, a PR chip to review it, a repo to list every worktree it has. Drag a card to move it, empty space to pan; R resets the arrangement. |
 | PRs (`pr-review`) | ⌘⇧U | Follows the focused pane's repo: PRs (open/closed, search) and the branch vs main. The changed files as a folder tree with +/− and comment counts; one file's diff at a time (↑/↓ step files). Select lines (click, shift-click, drag), then comment from the box docked under the diff, tagged Statement · Question · Nit · Minor · Major (posted as a shields.io badge). Reply, edit, delete, resolve. |
 | Library (`skills`) | ⌘⇧K | Skills: every skill across `~/.agents`, `~/.claude`, OpenCode, Codex and the current repo. Plugins: installed Claude Code plugins and the skills they ship. Open one in the skill window: SKILL.md, references, scripts (one window, reused; the corner button makes it bigger). |
 
 Each panel has an expand button that opens the same mod as a large overlay/window, and remembers its width.
-⌘⇧J jumps to the next agent that needs you (blocked ones first, then done), from anywhere, sidebar open or not.
+
+The sidebar's Agents list is replaced by an **Inbox** (`inbox`, after [T3 Inbox](https://github.com/JinJieBeWater/herdr-t3-inbox)):
+a card for every agent waiting on you (blocked, finished, or idle for its next prompt) with its program icon,
+folder, task and branch. Working agents are one `Working N` row that opens the Agents panel. Hover a card and
+**Settle** it (Herdr's `tab.settle`) to put it on the shelf below; Herdr brings it back when its agent needs
+you again, and the tab bar hides settled tabs. Spaces above it is sized to its rows.
+
+| Key | Does |
+|---|---|
+| ⌘⇧J | Next agent that needs you (blocked first, then done), sidebar open or not |
+| ⌘⇧O | Every worktree of the repo you're in (Herdr's Open worktree dialog: filter, Enter opens one as a space) |
+| ⌘B | Fold the sidebar to a 14px strip that shows only a dot per agent that needs you (click one to go there, the strip to unfold), and back. In `factory`; Herdr's own ⌘B hides it |
+
+Worktrees work best with Herdr's model, one space per repo: then Spaces nests each worktree under its repo,
+and right-clicking a repo offers New / Open / Remove worktree.
 
 ## Set it up with your coding agent
 
@@ -25,8 +39,8 @@ Install herdr-mods (https://github.com/shoaibkhanz/herdr_mods) into my Herdr app
    - `gh auth status` says logged in (the PRs panel needs it; ask me to run `gh auth login` if not).
 2. Clone it: `git clone https://github.com/shoaibkhanz/herdr_mods ~/code/herdr-mods` (or pull if it's there).
 3. Run `~/code/herdr-mods/install.sh`. It links every mod and layout into ~/.config/herdr-app
-   (or $HERDR_APP_HOME), adds four key bindings without replacing any I already have, checks
-   each mod with `herdr-app check`, and switches Herdr to the `factory` layout.
+   (or $HERDR_APP_HOME), adds key bindings and omp's program icon without replacing anything I
+   already have, checks each mod with `herdr-app check`, and switches Herdr to the `factory` layout.
 4. Verify:
    - `herdr-app status` shows "layout": "factory" and "errors": [].
    - `herdr-app do tabs-plus.graph`, then `tabs-plus.prs`, then `tabs-plus.skills` each show a panel;
@@ -47,20 +61,21 @@ Safe to rerun. What it does:
 
 - Links `mods/*` and `layouts/*.json` into `~/.config/herdr-app/` (pull or edit in the clone; see Develop for reloading).
   A mod or layout of the same name that isn't a link to this clone is left alone (`skip`).
-- Merges `keys.json`: ⌘⇧G / ⌘⇧U / ⌘⇧K toggle the panels, ⌘⇧J jumps to the next agent that needs you.
-  Keys you already bound are kept (`skip`).
+- Merges `keys.json` (⌘⇧G / ⌘⇧U / ⌘⇧K toggle the panels, plus ⌘⇧J, ⌘⇧O and ⌘B above) and `programs.json`
+  (omp's own icon, `mods/inbox/omp.svg`, instead of the generic agent one). Keys and entries you already have are kept (`skip`).
 - Runs `herdr-app check` on every mod and switches to the `factory` layout. `ctrl-shift-l` cycles back to
   Herdr's own layouts.
 
 To undo: `herdr-app do layout.switch --name main`, delete the links
 (`find ~/.config/herdr-app/mods ~/.config/herdr-app/layouts -maxdepth 1 -lname "$HOME/code/herdr-mods/*" -delete`),
-and remove the four `tabs-plus.*` keys from `~/.config/herdr-app/keys.json`.
+and remove the `tabs-plus.*` keys from `~/.config/herdr-app/keys.json` and the `omp` entry from `programs.json`.
 
 ## What's in here
 
 - `mods/agent-graph`, `mods/pr-review`, `mods/skills`: the three panels.
-- `mods/tabs-plus`: Herdr's tab bar (0.1.15) with the Agents / PRs / Library buttons.
-- `layouts/factory.json`: Herdr's `main` layout (0.1.15) with the three panels in the side panel stack.
+- `mods/inbox`: the sidebar's Inbox, in place of Herdr's Agents list.
+- `mods/tabs-plus`: Herdr's tab bar (0.1.15) with the Agents / PRs / Library buttons; hides settled tabs.
+- `layouts/factory.json`: Herdr's `main` layout (0.1.15) with the three panels in the side panel stack and the Inbox in the sidebar.
   Herdr updates to its own `tabs` mod and `main` layout don't flow into these copies.
 - `mods/nav-keys` (optional): ctrl-h/j/k/l moves between panes, and hands the key to (n)vim when it's focused
   so an editor mapping can move between splits first. `factory` hosts it in a 0px block; it only does
@@ -95,4 +110,4 @@ Platform gotchas worth knowing before you change anything (for people and agents
 
 Design: [`docs/specs/2026-11-11-herdr-mods-design.md`](docs/specs/2026-11-11-herdr-mods-design.md).
 
-License: MIT (see [`LICENSE`](LICENSE)); icons from [Lucide](https://lucide.dev) (ISC).
+License: MIT (see [`LICENSE`](LICENSE)); icons from [Lucide](https://lucide.dev) (ISC); the omp icon is omp's own (MIT).
