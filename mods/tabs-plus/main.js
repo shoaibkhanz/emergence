@@ -52,14 +52,17 @@ const ORIGIN = /github\.com[:/]shoaibkhanz\/(emergence|herdr_mods)(\.git)?$/;
 const FETCH = ["fetch", "--quiet", "https://github.com/shoaibkhanz/emergence", "+main:refs/remotes/origin/main"];
 async function git(dir, ...args) {
   const r = await exec("git", ["-C", dir, ...args], { timeout: 60000 });
-  if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || `git ${args[0]} exited ${r.code}`);
+  if (r.code !== 0) throw 0;
   return r.stdout.trim();
 }
-const UPDATE = `set -e; d="$1"; old="$(git -C "$d" rev-parse HEAD)"
+// EMERGENCE_UPDATE stops install.sh checking mods and switching layouts; the layout reloads only if it's showing.
+const UPDATE = `set -e; d="$1"
+[ "$(git -C "$d" symbolic-ref -q --short HEAD)" = main ] || { echo "error: not on main" >&2; exit 1; }
+old="$(git -C "$d" rev-parse HEAD)"
 git -C "$d" ${FETCH.join(" ")}
 git -C "$d" merge --ff-only --quiet origin/main
-bash "$d/install.sh" >/dev/null
-if command -v herdr-app >/dev/null && ! git -C "$d" diff --quiet "$old" HEAD -- layouts; then
+EMERGENCE_UPDATE=1 bash "$d/install.sh" >/dev/null
+if ! git -C "$d" diff --quiet "$old" HEAD -- layouts && herdr-app status 2>/dev/null | grep -q '"layout": "emergence"'; then
   herdr-app do layout.switch --name main >/dev/null; sleep 1; herdr-app do layout.switch --name emergence >/dev/null
 fi`;
 
@@ -82,7 +85,10 @@ export default class Tabs extends View {
     cx.spawn(async (cx) => {
       try {
         const [dir, branch] = (await git(`${appHome()}/mods/tabs-plus`, "rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD")).split("\n");
-        if (branch !== "main" || !ORIGIN.test(await git(dir, "remote", "get-url", "origin"))) return;
+        if (branch !== "main" || !ORIGIN.test(await git(dir, "remote", "get-url", "origin"))) {
+          if (!this.update?.busy) this.update = null;
+          return cx.notify();
+        }
         await git(dir, ...FETCH);
         const [ahead, behind] = (await git(dir, "rev-list", "--left-right", "--count", "HEAD...origin/main")).split(/\s+/).map(Number);
         this.repo = dir;

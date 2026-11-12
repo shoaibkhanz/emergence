@@ -60,7 +60,7 @@ for name in ("keys.json", "programs.json"):
         os.replace(tmp, path)
 PY
 
-if herdr-app status >/dev/null 2>&1; then
+if [ -z "${EMERGENCE_UPDATE:-}" ] && herdr-app status >/dev/null 2>&1; then
   for dir in "$repo"/mods/*/; do herdr-app check "$home/mods/$(basename "$dir")"; done
   herdr-app do layout.switch --name emergence >/dev/null && echo "layout  emergence (ctrl-shift-l cycles back)"
 fi
