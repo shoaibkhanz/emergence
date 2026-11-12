@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
-# Links every mod in ./mods and layout in ./layouts into the Herdr app home,
-# merges ./keys.json and ./programs.json (omp's icon), and switches to the `factory` layout.
+# herdr-mods installer. One command, from anywhere (run it again to update):
+#   curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr_mods/main/install.sh | bash
+# Clones (or pulls) the repo into ~/code/herdr-mods (HERDR_MODS_DIR moves it), links every mod and layout into the
+# Herdr app home, merges keys.json and programs.json (omp's icon), checks each mod and switches to the `factory` layout.
 # Safe to rerun. Never replaces a file, folder or key it didn't create.
 set -euo pipefail
 shopt -s nullglob
 
-repo="$(cd "$(dirname "$0")" && pwd)"
+# Piped, or run outside a clone: get the clone first, then run its own copy of this script.
+src="${BASH_SOURCE[0]:-}"
+if [ -z "$src" ] || [ ! -f "$(dirname "$src")/layouts/factory.json" ]; then
+  dir="${HERDR_MODS_DIR:-$HOME/code/herdr-mods}"
+  if [ -d "$dir/.git" ]; then git -C "$dir" pull --ff-only --quiet; else git clone --quiet https://github.com/shoaibkhanz/herdr_mods "$dir"; fi
+  exec bash "$dir/install.sh"
+fi
+repo="$(cd "$(dirname "$src")" && pwd)"
 home="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
 
 link() { # link <repo path> <home path> <label>
