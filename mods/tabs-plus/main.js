@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
-import { spaces, panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, agents, focused, exec, appHome } from "herdr";
+import { spaces, panes, machines, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, agents, focused, exec, appHome } from "herdr";
 
 // Herdr's tab bar plus the Emergence panels beside Files and Changes.
 // [layout block id in panel-body, label, icon, default panel width px]
@@ -70,6 +70,8 @@ export default class Tabs extends View {
   init(_props, cx) {
     this.pressed = null;
     this.scroll = ScrollHandle.new();
+    this.repos = new Map(); // repoOf's lookups
+    this.asked = {}; // autoName's renames sent, by tab id
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
     this.widths = JSON.parse(localStorage.getItem("widths") ?? "{}");
     // keys.json: "cmd-shift-g": "tabs-plus.graph" toggles that panel; "tabs-plus.attention" jumps (⌘⇧J); "tabs-plus.rail" (⌘B);
@@ -163,7 +165,40 @@ export default class Tabs extends View {
     localStorage.setItem("panels", JSON.stringify(this.panels));
   }
 
-  render() {
+  // Unnamed tabs take the name of their work: the branch checked out there (a worktree's), else the repo (or folder).
+  // A name given here follows the branch; one the person gives (tab.rename) is theirs. "tabs.auto": tab id → the name
+  // given, once it has landed (a rename on its way is in `asked`). A machine not loaded yet keeps its tabs' entries.
+  autoName(cx) {
+    const auto = shared("tabs.auto") ?? {}, keep = machines().every((m) => m.layout === "ready") ? {} : { ...auto }, all = panes();
+    for (const s of spaces()) for (const tb of s.tabs) {
+      if (tb.named && auto[tb.id] !== tb.name && this.asked[tb.id] !== tb.name) { delete keep[tb.id]; delete this.asked[tb.id]; continue; } // yours now
+      if (tb.named) keep[tb.id] = tb.name;
+      const p = all.find((x) => x.tab === tb.id && x.terminal && x.cwd);
+      const name = p && (p.branch && !/^(main|master|trunk|develop)$/.test(p.branch) ? p.branch : this.repoOf(p.cwd, s.machine, cx));
+      if (name && name !== tb.name && this.asked[tb.id] !== name) run("tab.rename", { id: tb.id, name: (this.asked[tb.id] = name) }); // once, not every frame until it lands
+    }
+    if (JSON.stringify(keep) !== JSON.stringify(auto)) setShared("tabs.auto", keep);
+  }
+
+  // A folder's repo name (its checkout's folder), else the folder's own name, "~" at home; looked up once.
+  repoOf(cwd, machine, cx) {
+    const k = `${machine ?? ""}\n${cwd}`;
+    if (!this.repos.has(k)) {
+      this.repos.set(k, null);
+      cx.spawn(async (cx) => {
+        const r = await exec("sh", ["-c", 'git rev-parse --show-toplevel 2>/dev/null || { [ "$PWD" = "$HOME" ] && echo "~" || pwd; }'], { cwd, on: machine ?? undefined }).catch(() => null);
+        this.repos.set(k, r?.code === 0 ? r.stdout.trim().split("/").pop() || null : null);
+        cx.notify();
+      });
+    }
+    return this.repos.get(k);
+  }
+
+  render(cx) {
+    this.autoName(cx);
+    // Tabs in the order last shown, for Jump (⌘E).
+    const here = focused()?.tab, recent = shared("jump.recent") ?? [];
+    if (here && recent[0] !== here) setShared("jump.recent", [here, ...recent.filter((x) => x !== here)].slice(0, 100));
     const t = theme();
     const space = spaces().find(p => p.active);
     const shown = (space?.tabs ?? []).filter(tab => !tab.settled || tab.active); // settled: on the inbox's shelf (the shown one stays)

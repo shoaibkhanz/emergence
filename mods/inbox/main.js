@@ -5,7 +5,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout } from "herdr";
+import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -47,14 +47,26 @@ export default class Inbox extends View {
     cx.timer.every(30000, (cx) => cx.notify()); // the ages
   }
 
-  // Spaces gets the height its rows ask for (header and padding 45, a row 30, 26 on the rail, a header
-  // per machine once there are several; 8 rows at most, then it scrolls), this list the rest.
-  fitSpaces(collapsed) {
-    const ms = machines().length;
-    const px = 45 + Math.min(Math.max(spaces().length, 1) + (ms > 1 ? ms : 0), 8) * (collapsed ? 26 : 30);
+  // Spaces gets the height its rows ask for (header and padding 45, a row 30, 26 on the rail, a header per
+  // machine once there are several) while this inbox's own content still fits below; past that, at least half.
+  fitSpaces(collapsed, need) {
+    const ms = machines().length, H = this.H ?? 0, sp = find(layout(), "spaces");
+    if (!sp || sp.hidden) return;
+    const want = 45 + (Math.max(spaces().length, 1) + (ms > 1 ? ms : 0)) * (collapsed ? 26 : 30);
+    const px = Math.round(H ? Math.max(60, Math.min(want, H - 90, Math.max(H - need, H / 2))) : Math.min(want, 285));
     if (px === this.spacesPx) return;
     this.spacesPx = px;
-    if (find(layout(), "spaces")) run("layout.resize", { id: "spaces", px });
+    run("layout.resize", { id: "spaces", px });
+  }
+
+  // This block's height plus Spaces' is what the two share; measured after every layout pass.
+  measured(el) {
+    return el.on_size_change((size, cx) => {
+      const sp = find(layout(), "spaces");
+      if (!sp || sp.hidden) return;
+      const H = Math.round(size.height / (settings().zoom ?? 1)) + (sp.size?.px ?? 0);
+      if (H !== this.H) { this.H = H; cx.notify(); }
+    });
   }
 
   // The program's mark (programs.json): its glyph on its own colored tile where it has one, else its icon.
@@ -102,7 +114,6 @@ export default class Inbox extends View {
   render() {
     const t = theme();
     const collapsed = narrow();
-    this.fitSpaces(collapsed);
     const now = Date.now();
     const tabs = new Map(spaces().flatMap((s) => s.tabs).map((tab) => [tab.id, tab]));
     const parent = new Map(terminals().map((x) => [x.address, x.parent]));
@@ -123,16 +134,20 @@ export default class Inbox extends View {
     // Folded (⌘B): a short line per agent that needs you, nothing else (lines, not dots: macOS's window
     // buttons are red, yellow and green dots right beside it). A line goes to its agent; anywhere else unfolds.
     if (collapsed) {
-      return v_flex().id("inbox-strip").size_full().pt(find(layout(), "brand")?.hidden ? 76 : 8).gap(2).items_center().bg(t.chrome).cursor_pointer()
+      const marks = cards.filter((a) => a.status !== "idle"), top = find(layout(), "brand")?.hidden ? 76 : 8;
+      this.fitSpaces(collapsed, top + marks.length * 24);
+      return this.measured(v_flex().id("inbox-strip").size_full().pt(top).gap(2).items_center().bg(t.chrome).cursor_pointer())
         .tooltip("Unfold the sidebar").on_click(() => run("tabs-plus.rail"))
-        .children(cards.filter((a) => a.status !== "idle").map((a) => h_flex().id(`mark-${a.address}`).w_full().h(22).flex_none().justify_center().items_center()
+        .children(marks.map((a) => h_flex().id(`mark-${a.address}`).w_full().h(22).flex_none().justify_center().items_center()
           .tooltip(`${task(a, tabs.get(a.tab))} · ${WORD[a.status]}`)
           .on_click((_e, cx) => { cx.stop_propagation(); run("agent.focus", { terminal: a.address }); })
           .child(div().w(3).h(16).rounded(2).bg(t[a.status]))));
     }
+    // Header, the list's content (measured below), the feet and the open shelf.
+    this.fitSpaces(collapsed, 41 + (this.listH ?? 32) + (working ? 32 : 0) + (settled.length ? 32 + (this.shelf ? Math.min(160, settled.length * 30) + 6 : 0) : 0));
     const bound = keys().find((k) => k.action === "tabs-plus.attention")?.keys;
     // Header and inset line up with Herdr's Spaces list above (16px, 11.5px label).
-    return root
+    return this.measured(root)
       .child(h_flex().h(41).pt(10).pl(16).pr(12).gap(6).flex_none().items_center().text_size(11.5).text_color(t.dim)
         .child(div().font_medium().child("Inbox"))
         .when(cards.length > 0, (el) => el.child(String(cards.length)))
@@ -140,10 +155,12 @@ export default class Inbox extends View {
         .when(Boolean(bound), (el) => el.child(div().id("inbox-key").h(18).px(5).flex().items_center().rounded(4).border(1).border_color(t.border)
           .text_size(11).tooltip("Next agent that needs you")
           .child(bound.split("-").map((p) => GLYPH[p] ?? p.toUpperCase()).join("")))))
-      .child(v_flex().id("inbox-list").flex_1().min_h(0).px(6).gap(2).overflow_y_scrollbar()
-        .when(cards.length === 0, (el) => el.child(h_flex().h(32).px(10).gap(8).items_center().text_size(12).text_color(t.dim)
-          .child(svg("mods/workspace-chrome/circle-check.svg").size(14).flex_none()).child("All caught up")))
-        .children(cards.map((a) => this.card(t, a, tabs.get(a.tab), pane.get(a.pane), now, manySpaces))))
+      .child(v_flex().id("inbox-list").flex_1().min_h(0).px(6).overflow_y_scrollbar()
+        .child(v_flex().flex_none().gap(2)
+          .on_size_change((size, cx) => { const h = Math.round(size.height / (settings().zoom ?? 1)); if (h !== this.listH) { this.listH = h; cx.notify(); } })
+          .when(cards.length === 0, (el) => el.child(h_flex().h(32).px(10).gap(8).items_center().text_size(12).text_color(t.dim)
+            .child(svg("mods/workspace-chrome/circle-check.svg").size(14).flex_none()).child("All caught up")))
+          .children(cards.map((a) => this.card(t, a, tabs.get(a.tab), pane.get(a.pane), now, manySpaces)))))
       .when(working > 0, (el) => el.child(this.foot(t, "inbox-working", svg("mods/workspace-chrome/spinner.svg").size(12).text_color(t.working), "Working", working,
         () => { if (find(layout(), "panel")?.hidden || find(layout(), "panel-body")?.active !== "graph") run("tabs-plus.graph"); }, false)
         .tooltip("Open the agent graph")))

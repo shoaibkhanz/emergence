@@ -32,8 +32,13 @@ These are the Herdr 0.1.15 behaviours we hit that the manual gets wrong or leave
   (`init` again, state lost), so it can't resize a window.
 - Herdr never resizes a window. One without `width`/`height` is as big as its root, re-measured every frame: a never
   placed one recenters as it grows, one at `at` or dropped somewhere grows right and down. pr-review resizes itself
-  that way (`at` in mod.json, root `w`/`h` from state); while an edge is held, a 4000px transparent padding
-  (`frame: "none"`) keeps the pointer on the window, since `on_mouse_move` only fires while hovered.
+  that way (`openOverlay` with a centred `at`, root `w`/`h` from state); while an edge is held, a 4000px transparent
+  padding (`frame: "none"`) keeps the pointer on the window, since `on_mouse_move` only fires while hovered.
+- A keyed window opens where it was last dropped (`windows.json` `places`), ignoring `at`. To open centred every
+  time, leave `key` out, keep the id `openOverlay` returns, and `closeOverlay(id)` it before opening the next.
+- An error thrown in a window's `init` shows nowhere (not in `herdr-app status` errors); the window is just an empty
+  border. `herdr`'s `window()` has no `viewport_size`: that's the gpui global `window`, so don't import `window`
+  from `herdr` unaliased.
 
 ## Runtime
 

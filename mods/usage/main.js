@@ -4,7 +4,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { exec, appHome, theme, settings, props, run } from "herdr";
+import { exec, appHome, theme, settings, props, run, layout } from "herdr";
 import { summarize, outputOf, heat, levels, startOfDay, addDays, DAY, KINDS, LENGTHS, span, keepOf } from "./lib.js";
 
 const MONO = "Geist Mono";
@@ -43,10 +43,14 @@ const hh = (h) => `${String(h % 24).padStart(2, "0")}:00`;
 
 let data = null; // shared by every copy, so reopening is instant (↻ rescans)
 let output = null; // git and gh facts for the Output tab, read after the sessions (they name the repos)
+let scanned = 0, outputAt = 0; // when the last scan (started or) finished, and the last Output read: copies share them
+const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(c, id)).find(Boolean));
 
 export default class Usage extends View {
   init(_props, cx) {
     this.panel = props()?.panel === true;
+    // Every minute while it shows: a rescan reads only the logs that changed (about 1.5 s); Output's git and gh every 15.
+    cx.timer.every(60000, (cx) => { if (this.shown() && Date.now() - scanned > 50000) this.scan(cx, true); });
     const r = localStorage.getItem("range");
     this.range = r === "custom" ? "custom" : Number(r ?? 30);
     this.tab = localStorage.getItem("tab") ?? "overview";
@@ -125,23 +129,36 @@ export default class Usage extends View {
     return { from: addDays(now, 1 - this.range), to: now, label: `the last ${RANGES.find(([d]) => d === this.range)[1]}`, days: this.range };
   }
 
-  scan(cx) {
+  // ↻ reads everything; the minute timer (quick) reruns git and gh for Output only every 15 min, since gh's calls
+  // share your GitHub budget with your agents'.
+  scan(cx, quick) {
     if (this.busy) return;
     this.busy = true;
     this.error = null;
+    scanned = Date.now(); // a second copy's timer won't start another meanwhile
     cx.spawn(async (cx) => {
       try {
         const r = await exec("python3", [`${appHome()}/mods/usage/scan.py`], { timeout: 600000 });
         if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || `scan.py exited ${r.code}`);
         data = JSON.parse(r.stdout);
-        // Then your commits, PRs and worktrees in the repos the sessions name, for the last year.
-        const repos = [...new Set(data.sessions.map((s) => s.repo).filter(Boolean))];
-        const o = await exec("python3", [`${appHome()}/mods/usage/output.py`, String(addDays(Date.now(), -365)), ...repos], { timeout: 180000 });
-        if (o.code === 0) output = JSON.parse(o.stdout);
+        if (!quick || Date.now() - outputAt > 15 * 60000) {
+          // Then your commits, PRs and worktrees in the repos the sessions name, for the last year.
+          const repos = [...new Set(data.sessions.map((s) => s.repo).filter(Boolean))];
+          const o = await exec("python3", [`${appHome()}/mods/usage/output.py`, String(addDays(Date.now(), -365)), ...repos], { timeout: 180000 });
+          if (o.code === 0) { output = JSON.parse(o.stdout); outputAt = Date.now(); }
+        }
       } catch (e) { this.error = String(e?.message ?? e); }
       this.busy = false;
+      scanned = Date.now();
       cx.notify();
     });
+  }
+
+  // The panel copy shows when the side panel is open on Usage; the popup copy whenever it exists.
+  shown() {
+    if (!this.panel) return true;
+    const root = layout(), p = find(root, "panel");
+    return Boolean(p) && !p.hidden && find(root, "panel-body")?.active === "usage";
   }
 
   // What the work delivered: commits, lines, PRs, worktrees, and what agent spend each of them cost.

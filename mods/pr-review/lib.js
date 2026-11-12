@@ -40,12 +40,29 @@ export function parseDiff(text) {
 export const sideOf = (row) => (row.kind === "del" ? "LEFT" : "RIGHT");
 export const lineOf = (row, side) => (side === "LEFT" ? row.old : row.new);
 
+// The unchanged lines a diff leaves out before rows[at] (a hunk header), or after the last hunk (at = rows.length):
+// new-side lines from..to (to null: to the file's end; to < from: none), `old` being from's old-side number.
+// Between hunks both sides run in step, so the gap starts one past the last numbers seen.
+export function gapBefore(rows, at) {
+  let old = 0, nu = 0;
+  for (let i = 0; i < at; i++) { old = rows[i].old ?? old; nu = rows[i].new ?? nu; }
+  const m = rows[at]?.text.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))?/);
+  return { from: nu + 1, to: m ? +m[1] - (m[2] === "0" ? 0 : 1) : null, old: old + 1 }; // "+4,0": nothing added, after line 4
+}
+
+// That gap as context rows, from the new side's lines; `extra`: not part of the diff, so not commentable.
+export function hiddenRows(rows, lines, at) {
+  const g = gapBefore(rows, at), out = [];
+  for (let n = g.from; n <= (g.to ?? lines.length); n++) out.push({ kind: "context", old: g.old + n - g.from, new: n, text: lines[n - 1] ?? "", hunk: -1, extra: true });
+  return out;
+}
+
 // A selection from anchor row to focus row (indices into file.rows), kept on the
 // anchor's side and inside its hunk (GitHub refuses ranges across hunks).
 // Returns { side, start, end, from, to } (from/to: row indices) or null.
 export function selectRange(rows, anchor, focus = anchor) {
   const a = rows[anchor];
-  if (!a || a.kind === "hunk") return null;
+  if (!a || a.kind === "hunk" || a.extra) return null;
   const side = sideOf(a);
   const lo = Math.min(anchor, focus), hi = Math.max(anchor, focus);
   let from = anchor, to = anchor;
@@ -89,6 +106,39 @@ export function firstVisible(tops, heights, y) {
   while (lo < hi) { const m = (lo + hi) >> 1; if (tops[m] + heights[m] <= y) lo = m + 1; else hi = m; }
   return lo;
 }
+
+// A diff line as drawn: tabs as four spaces.
+export const shown = (text) => text.replace(/\t/g, "    ");
+
+// Find in a diff: every match of q in the lines as drawn, files in `order` (the tree's), hunk headers skipped,
+// and each review comment whose author or text has q, where its card sits (loose ones first, as drawn).
+// Smart case: an upper-case letter in q makes it exact. → [{ fi, ri, start, end } | { fi, th, ci }].
+export function findAll(files, q, order = files.map((_, i) => i), threads = []) {
+  if (!q) return [];
+  const exact = q !== q.toLowerCase(), low = (s) => (exact ? s : s.toLowerCase()), has = (s) => low(s).includes(q), out = [];
+  const say = (fi, th) => th.comments.forEach((c, ci) => { if (has(`${c.author?.login ?? ""}\n${splitTag(c.body).text}`)) out.push({ fi, th: th.id, ci }); });
+  for (const fi of order) {
+    const { at, loose } = anchorThreads(files[fi].rows, threads.filter((t) => t.path === files[fi].path));
+    loose.forEach((th) => say(fi, th));
+    files[fi].rows.forEach((r, ri) => {
+      const hay = r.kind === "hunk" ? "" : low(shown(r.text));
+      for (let i = hay.indexOf(q); i >= 0; i = hay.indexOf(q, i + q.length)) out.push({ fi, ri, start: i, end: i + q.length });
+      (at.get(ri) ?? []).forEach((th) => say(fi, th));
+    });
+  }
+  return out;
+}
+
+// The conversation's entries whose author or text holds q, as { ti: index, id }; the same smart case as findAll.
+export function findTalk(talk, q) {
+  const exact = q !== q.toLowerCase();
+  return talk.flatMap((c, ti) => { const s = `${c.author ?? ""}\n${splitTag(c.body).text}`; return (exact ? s : s.toLowerCase()).includes(q) ? [{ ti, id: c.id }] : []; });
+}
+
+// GitHub @mentions (users, org/teams) as profile links, so people stand apart from the prose; code is left alone.
+export const mentions = (md) => md.split(/(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`|\[[^\]\n]*\]\([^)\n]*\)|<[^>\n]+>|https?:\/\/\S+)/).map((p, i) => (i % 2 ? p
+  : p.replace(/(^|[^\w`/[@.-])@([A-Za-z0-9][A-Za-z0-9-]*)(?:\/([\w.-]*\w))?(?![\w-])/g, (_, pre, u, team) =>
+    `${pre}[@${u}${team ? `/${team}` : ""}](https://github.com/${team ? `orgs/${u}/teams/${team}` : u})`))).join("");
 
 /** Changed files → folder-tree rows: folders first, then files, each by name; a folder holding only one
  *  folder folds into it ("src/lib"). Rows: { dir: true, name, depth } | { fi, name, depth } (fi: index in files). */

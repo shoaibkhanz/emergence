@@ -5,7 +5,8 @@
     "cmd-shift-k": "tabs-plus.skills",
     "cmd-shift-j": "tabs-plus.attention",
     "cmd-shift-o": "tabs-plus.worktrees",
-    "cmd-shift-m": "tabs-plus.usage"
+    "cmd-shift-m": "tabs-plus.usage",
+    "cmd-e": "mod.open:jump"
   },
   "layout:emergence": {
     "cmd-b": "tabs-plus.rail"

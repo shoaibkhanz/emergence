@@ -139,19 +139,11 @@ export default class AgentGraph extends View {
 
   // Cross-mod deep link: pr-review picks this up (if < 30 s old) and selects the PR.
   // With a PRs panel in the layout (emergence) that panel takes it; otherwise the pr-review window.
-  openPr(w, cx) {
+  openPr(w) {
     setShared("pr-review.open", { repo: w.top, machine: w.machine, number: w.pr.number, at: Date.now() });
-    if (find(layout(), "prs")) {
-      if (!panelShows("prs")) run("tabs-plus.prs");
-      return this.dismiss();
-    }
-    cx.spawn(async () => {
-      const s = await exec("herdr-app", ["status"]).catch(() => null);
-      let open = false;
-      try { open = JSON.parse(s?.stdout ?? "{}").overlays?.includes("pr-review"); } catch {}
-      if (!open) run("mod.open", { name: "pr-review" });
-      this.dismiss();
-    });
+    if (!find(layout(), "prs")) run("mod.open", { name: "pr-review" }); // it re-opens itself centred, replacing any open one
+    else if (!panelShows("prs")) run("tabs-plus.prs");
+    this.dismiss();
   }
 
   // Every checkout of a repo in Herdr's own Open worktree dialog: filter, then Enter goes to it (a space).
@@ -479,7 +471,7 @@ export default class AgentGraph extends View {
       .when(live, (el) => el.cursor_pointer().tooltip(c.title || c.label)
         .hover((s) => s.bg(alpha(color, 0.2)))
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .on_click((_e, cx) => { cx.stop_propagation(); this.openPr(w, cx); }))
+        .on_click((_e, cx) => { cx.stop_propagation(); this.openPr(w); }))
       .when(live, (el) => el.child(svg(ICON(c.state === "merged" ? "merge" : "pr")).size(11 * z).flex_none()))
       .child(c.label);
   }

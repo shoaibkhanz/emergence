@@ -1,5 +1,47 @@
 import { test, expect } from "bun:test";
-import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, tagBody, splitTag } from "./lib.js";
+import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, tagBody, splitTag, findAll, mentions, gapBefore, hiddenRows } from "./lib.js";
+
+test("findAll: smart case, every match per line, tabs as shown, hunks skipped, given file order", () => {
+  const files = parseDiff([
+    "diff --git a/a.js b/a.js", "@@ -1,2 +1,2 @@ retry", "-\tretry(retry)", "+Retry()",
+    "diff --git a/b.js b/b.js", "@@ -1 +1 @@", " x = retry",
+  ].join("\n"));
+  expect(findAll(files, "retry").map(({ fi, ri, start }) => [fi, ri, start])).toEqual([[0, 1, 4], [0, 1, 10], [0, 2, 0], [1, 1, 4]]);
+  expect(findAll(files, "Retry").map(({ ri }) => ri)).toEqual([2]);
+  expect(findAll(files, "retry", [1, 0])[0].fi).toBe(1);
+  expect(findAll(files, "")).toEqual([]);
+  expect(findAll(files, "aa")).toEqual([]);
+});
+
+test("findAll: comments by author or text, in place under their line, loose ones first, badge ignored", () => {
+  const files = parseDiff(["diff --git a/a.js b/a.js", "@@ -1,2 +1,2 @@", " x", "+retry()"].join("\n"));
+  const c = (login, body) => ({ author: { login }, body });
+  const threads = [
+    { id: "T1", path: "a.js", line: 1, diffSide: "RIGHT", comments: [c("ana", "why retry here?"), c("bo", "fine")] },
+    { id: "T2", path: "a.js", line: null, comments: [c("Retry-app", tagBody("nit", "ok"))] },
+    { id: "T3", path: "a.js", line: 2, diffSide: "RIGHT", comments: [c("cy", tagBody("major", "no"))] },
+  ];
+  expect(findAll(files, "retry", undefined, threads).map((h) => h.th ? `${h.th}/${h.ci}` : h.ri)).toEqual(["T2/0", "T1/0", 2]);
+  expect(findAll(files, "bo", undefined, threads).map((h) => h.th)).toEqual(["T1"]);
+  expect(findAll(files, "major", undefined, threads)).toEqual([]);
+});
+
+test("mentions: users and teams become profile links; emails, code and links stay", () => {
+  expect(mentions("cc @ana-b, @org/core-team.")).toBe("cc [@ana-b](https://github.com/ana-b), [@org/core-team](https://github.com/orgs/org/teams/core-team).");
+  expect(mentions("mail a@b.com, `@x`, [@y](u), [ping @v](u), https://x.io/?u=@z\n```\n@w\n```")).toBe("mail a@b.com, `@x`, [@y](u), [ping @v](u), https://x.io/?u=@z\n```\n@w\n```");
+});
+
+test("hidden lines: gaps before hunks and after the last, numbered on both sides, not selectable", () => {
+  const lines = ["a1", "a2", "a3", "a4", "a5", "x", "a6", "a7", "a8", "A9"]; // a1..a9: x added after a5, a9 changed
+  const [f] = parseDiff(["diff --git a/f b/f", "@@ -4,4 +4,5 @@", " a4", " a5", "+x", " a6", " a7", "@@ -9 +10 @@", "-a9", "+A9"].join("\n"));
+  expect(gapBefore(f.rows, 0)).toEqual({ from: 1, to: 3, old: 1 });
+  expect(hiddenRows(f.rows, lines, 0).map((r) => [r.old, r.new, r.text])).toEqual([[1, 1, "a1"], [2, 2, "a2"], [3, 3, "a3"]]);
+  expect(hiddenRows(f.rows, lines, 6).map((r) => [r.old, r.new, r.text])).toEqual([[8, 9, "a8"]]);
+  expect(hiddenRows(f.rows, lines, f.rows.length)).toEqual([]);
+  expect(gapBefore([{ kind: "hunk", text: "@@ -5,2 +4,0 @@" }], 0).to).toBe(4); // nothing added: the deletion sits after line 4
+  f.rows.splice(0, 0, ...hiddenRows(f.rows, lines, 0));
+  expect(selectRange(f.rows, 1)).toBe(null);
+});
 
 test("file tree: folders first, single-folder chains fold, indices kept", () => {
   const files = ["src/lib/b.js", "README.md", "src/lib/a.js", "src/main.js", "docs/specs/x.md"].map((path) => ({ path }));

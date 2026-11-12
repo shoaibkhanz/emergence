@@ -46,8 +46,15 @@ around; the wheel zooms.
 The PRs of the repo you're in, plus this branch against main. Changed files form a tree, with one diff at a time and
 review threads inline. Select lines and comment, tagged Statement · Question · Nit · Minor · Major. The tag posts as a
 coloured badge on GitHub, so whoever picks up the review (you, or the agent) can tell a nit from a blocker at a glance.
-Reply, edit, delete and resolve threads here too. For more room, hide the PR list beside an open PR, widen the panel,
-or open the review in its own window and drag its edge or corner to any size.
+Find (⌘F) searches the code and review comments of the whole PR (or just the open file), stepping from match to match.
+Comment authors and @mentions stand out from the text. The commit history lists the PR's commits; open one to review
+just its changes, and step through them with [ and ]. Click a hunk header to show the unchanged lines it hides, or
+show the whole file from the file's header. Comments on the PR itself and reviews sit under the conversation, with a box
+to answer (tags too); edit or delete your comments there, and ⌘F searches it. It all refreshes every 5 seconds, so you
+watch an agent's comments and pushes land. Reply, edit,
+delete and resolve threads here too. For more room, hide the PR list beside an open PR, or go full size: the
+sidebar folds away and the agent's terminal stays on the left, so you watch its comments land as it works. The review
+also opens in its own window, centred and nearly full screen; drag its edge or corner to any size.
 
 ### Library (⌘⇧K): every skill your agents can load
 
@@ -60,7 +67,7 @@ already installed before writing or copying another. Each skill opens in a reusa
 ### Usage (⌘⇧M): what your agents cost, and what they deliver
 
 How you work across omp, Claude Code, Codex, OpenCode and pi, read from their own logs and your git history. Pick 7,
-30 or 90 days, a year, or two dates. Nothing leaves your machine.
+30 or 90 days, a year, or two dates. It rescans every minute while it's open. Nothing leaves your machine.
 
 <table>
 <tr>
@@ -110,6 +117,16 @@ prunes it. Raise `cleanupPeriodDays` to keep more.
 - **Spaces**: soft avatars, sized to their rows.
 - **⌘B** folds it to a thin strip: one coloured line per agent that needs you, nothing else.
 
+### Jump (⌘E): every session and worktree, most recent first
+
+One list of every tab in every space, plus the worktrees of your open repos that aren't open yet. The tab you're on is
+at the top and the one before it is picked, so ⌘E ↵ flips between your last two. Each row shows what its agent is
+working on and for how long, so you can tell sessions apart at a glance. Type to filter by tab, branch, folder, agent or task. Type a
+new branch name to make a worktree for it.
+
+Unnamed tabs take the name of their branch (or the repo, on main), and follow it as the branch changes; a name you
+give a tab stays.
+
 **Keys**: ⌘⇧J jumps to the next agent that needs you. ⌘⇧O lists every worktree of the repo you're in.
 
 ## What it runs
@@ -133,7 +150,7 @@ If you installed by copying the files, run the install command once to switch to
 
 Remove: switch back with `herdr-app do layout.switch --name main`, delete the links
 (`find ~/.config/herdr-app/mods ~/.config/herdr-app/layouts -maxdepth 1 -lname "$HOME/code/emergence/*" -delete`),
-then take the `tabs-plus.*` keys out of `~/.config/herdr-app/keys.json` and the `omp` entry out of `programs.json`.
+then take the `tabs-plus.*` and `mod.open:jump` keys out of `~/.config/herdr-app/keys.json` and the `omp` entry out of `programs.json`.
 
 ## Optional: ctrl-h/j/k/l between panes
 
@@ -150,7 +167,8 @@ then take the `tabs-plus.*` keys out of `~/.config/herdr-app/keys.json` and the 
 |---|---|
 | `mods/agent-graph`, `pr-review`, `skills`, `usage` | the four panels |
 | `mods/inbox`, `spaces-plus` | the sidebar |
-| `mods/tabs-plus` | Herdr's tab bar with the panel buttons |
+| `mods/tabs-plus` | Herdr's tab bar with the panel buttons; names tabs and records the order you visit them |
+| `mods/jump` | the ⌘E switcher |
 | `layouts/emergence.json` | Herdr's `main` layout with all of the above |
 | `RECIPE.md` | the brief to rebuild it from scratch |
 

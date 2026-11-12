@@ -31,7 +31,7 @@ Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` div
   "Update" chip (`accent` dot and text; "Update failed" in `blocked`) follows; clicking it pulls and reruns
   `install.sh`.
 - **Main**: the active tab's panes.
-- **Side panel** (368px, 280–1400, hidden until a button opens it; each panel keeps its own width: Agents 620, PRs
+- **Side panel** (368px, 280–4000, hidden until a button opens it; each panel keeps its own width: Agents 620, PRs
   860, Library 440, Usage 760): a stack of Files, Changes, `agent-graph`, `pr-review`, `skills`, `usage`, each with
   `{panel: true}`, in a 10px-radius bordered card.
 - **Status bar** (28px, `workspace-status`), and a 0px `nav-keys` block in the work column.
@@ -65,6 +65,20 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - ⌘⇧G, ⌘⇧U, ⌘⇧K and ⌘⇧M toggle the panels.
   - ⌘⇧J jumps to the next blocked agent, then the next done one.
   - ⌘⇧O opens Herdr's Open worktree dialog for the focused pane's repo.
+  - ⌘E opens Jump.
+- **Tab names.** tabs-plus renames an unnamed tab after its first terminal's branch, or its repo (else folder, `~` at
+  home) when the branch is main, master, trunk or develop. It remembers the names it gave in `shared("tabs.auto")`,
+  so a given name keeps following the branch while a name you give (`tab.rename`) stays yours.
+- **Jump (`mods/jump`, ⌘E, a 680×520 dialog).**
+  - Rows: every tab, ordered by `shared("jump.recent")` (tabs-plus puts each focused tab first, 100 kept), then
+    never-shown tabs in space order. After them, under "Worktrees, not open", the checkouts of each repo a terminal is in
+    (`git worktree list` once per repo, newest commit first) that no session's terminal is inside.
+  - The first row that isn't where you are is picked, so ⌘E ↵ goes back.
+  - A tab row (48px): program icon, tab name, space, branch; under it the agent's terminal title (what it's on), else
+    the folder; on the right its state with how long ("working 12m", "needs you 3m") and its agents.
+  - Typing filters on every word (tab, space, branch, folder, agent, title; a leading `/` is ignored). A single
+    branch-like word no checkout has adds "New worktree <name>" (Herdr's worktree dialog, action `new`), when the
+    tab you're on is in a repo. ↑/↓, ↵ (a worktree opens with `space.new`), Esc.
 - **Agents panel.**
   - Cards for repos (15px semibold), worktrees (branch in Geist Mono, ahead/behind, a PR chip) and agents (program
     icon, title without harness marks, state).
@@ -78,11 +92,41 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - Select lines by click, shift-click or drag. The comment box then docks under the diff with tag chips: Statement
     (green), Question (blue), Nit (purple), Minor (yellow), Major (red). A tag posts as
     `![tag](https://img.shields.io/badge/<tag>-<color>)` on its own line, then the comment.
-  - Reply, edit, delete and resolve threads. Esc steps back out.
-  - Room: the panel-left button left of the PR title hides the PR list (and brings it back); the header's « widens
-    the panel to its 1400px max and » restores the width it had; ⤢ opens the same PR in a window.
-  - The window (frameless, at 260,56 unless dragged elsewhere; it draws its own 10px border and shadow) resizes from
-    its right edge, bottom edge or corner, min 640×420; the size is kept in `shared("pr-review.size")`.
+  - Reply, edit, delete and resolve threads. Esc steps back out. Comment authors are in accent; @mentions (users,
+    org/teams, not in code) render as profile links (`mentions` in lib.js).
+  - Conversation: "N comments" in the header swaps the changes for the description, the comments on the PR itself and
+    the reviews with a verdict (chip: Approved, Changes requested, Dismissed) or a note, oldest first, with tag chips
+    and a box that posts a PR comment (`POST repos/<nwo>/issues/<n>/comments`, ⌘↵). A badge in any of them shows as
+    its chip. Your comments have Edit (with tag chips: add, change or drop the badge) and Delete, as on a thread
+    (`PATCH`/`DELETE repos/<nwo>/issues/comments/<id>`); the conversation stands in for a thread (`TALK`) in the same
+    draft and busy state. ⌘F there searches it (author or text; the card tinted, ↵ scrolls to it). They come with the
+    review threads, in one GraphQL query. Commits and Conversation share the header's slot (`d.pane`); Esc closes
+    either.
+  - Live: every 5 s while it shows, the threads and conversation refetch; the diff follows when the PR's head has moved
+    past the one shown (this branch: every 5 s, from the working tree), unless a commit, a selection or a draft is open
+    (it catches up after). The PR list refreshes every 30 s. A hidden panel doesn't poll, nor does the panel while the
+    window is open (one set of GitHub calls: about 840 GraphQL points an hour of the 5,000).
+  - Find (⌘F, or the search button on the file's header): a bar over the diff, All files (the default) or This file,
+    smart case (an upper-case letter makes it exact); ⌘F again selects the query. It matches diff lines (each hit
+    marked) and review comments by author or text (the comment tinted; a resolved thread opens), in drawn order.
+    ↵ / ⇧↵ step through matches, opening each one's file with it a third of the way down; All files puts each file's
+    match count in the tree and dims the rest. Esc closes it.
+  - Commits: "N commits" in the header lists them, oldest first, under "All changes" (`gh pr view --json commits`;
+    `git log` for this branch). One opens its own diff (`gh api` with `Accept: application/vnd.github.diff`; `git show`)
+    under a bar with Commit i of N, ‹ ›, and All changes; [ / ] step. Comments, their counts and the comment box stay
+    on All changes, because their lines are the whole PR's. A refresh goes back to All changes.
+  - Hidden lines: a hunk header with lines hidden above it reads "N lines" (unfold icon) and shows them on click; a
+    "Rest of the file" row after the last hunk does the same, and the file header's unfold button shows the whole file.
+    The lines come from the new side, fetched once per file (`gh api …/contents/<path>?ref=<head or commit>` raw; for
+    this branch the working tree, or `git show <commit>:<path>`), and splice in as muted context rows that can't be
+    commented on (GitHub only takes lines in the diff). Not for added, deleted or binary files.
+  - Room: the panel-left button left of the PR title hides the PR list (and brings it back); the header's « goes full
+    size: the sidebar folds away as ⌘B does (`tabs-plus.rail`), the terminal keeps the sidebar's old width on the left and the panel takes
+    the rest; » puts all of it back. ⤢ opens the same PR in a window.
+  - The window opens unkeyed (a keyed window reopens wherever it was last dropped) at the centre, 90% of the screen.
+    It's frameless, draws its own 10px border and shadow, and resizes from its right edge, bottom edge or corner,
+    min 640×420, never past the screen; the size is kept in `shared("pr-review.wsize")`. A window `mod.open` puts up
+    (agent-graph's deep link, the CLI) hands over to a centred one at once.
 - **Library panel.**
   - Skills and Plugins tabs. Plugins are the installed Claude Code plugins; open one to see the skills it ships.
   - A skill opens in one reusable window (SKILL.md, references, scripts) with a bigger/smaller toggle.
@@ -90,6 +134,8 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - Range: 7d, 30d, 90d, 1y, or Custom: two typed `YYYY-MM-DD` dates, or two clicks on the calendar, both days
     included.
   - Harness chips filter everything.
+  - Rescans the logs every minute while it shows (about 1.5 s: only changed logs are read); `output.py` (git, and gh,
+    whose calls share the agents' GitHub budget) reruns with it at most every 15 min, and on ↻.
   - Tabs:
     - **Overview:** 4 tiles, an activity calendar in 11px squares, "Where the tokens go", "What the work was".
     - **Compare:** kind-of-work chips and Same repos only; a success-vs-cost scatter (log x, dot size = runs, 95%
@@ -117,6 +163,7 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
 - **`mods/tabs-plus`** (clone of `tabs`):
   - PANELS `[id, label, icon, width]`; remembers each panel's width and per-space choice; hides settled tabs.
   - `nextCommand` handles `graph`, `prs`, `skills`, `usage`, `attention`, `rail`, `worktrees` and `update`.
+  - Tab names (`autoName`, one `git rev-parse --show-toplevel` per folder) and `jump.recent`, both from `render`.
   - Updates: finds the clone with `git -C <appHome>/mods/tabs-plus rev-parse --show-toplevel` (the mod is a link into
     it), only on `main` with this repo as `origin`; at start and every 6 h, `git fetch` of the public HTTPS URL into
     `origin/main` (an ssh origin would ask for a passphrase); behind with no local commits shows the chip. Its click
@@ -137,14 +184,15 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - `lib.js` does the maths: Wilson intervals, quartile levels, cost anatomy, rhythm.
   - `main.js` draws with divs only.
 - **`programs.json`**: gives omp its icon (`mods/inbox/omp.svg`, omp's MIT favicon).
-- **`keys.json`**: `global` ⌘⇧G/U/K/M/J/O; `layout:emergence` ⌘B.
+- **`keys.json`**: `global` ⌘⇧G/U/K/M/J/O and ⌘E (`mod.open:jump`); `layout:emergence` ⌘B.
 
 ## Watch out
 
 - Merge `programs.json` into `~/.config/herdr-app/programs.json` too (Herdr's add flow only names `keys.json`).
   Without it, omp shows the generic agent icon.
-- **Cross-mod paths.** Usage uses `mods/inbox/omp.svg` and `mods/agent-graph/refresh.svg`/`expand.svg`. Inbox and
-  the graph call `tabs-plus.*` commands. If a name clashes and you rename a mod, rename these references too.
+- **Cross-mod paths.** Usage uses `mods/inbox/omp.svg` and `mods/agent-graph/refresh.svg`/`expand.svg`; Jump uses
+  `mods/agent-graph/branch.svg` and reads tabs-plus's `jump.recent`. Inbox and the graph call `tabs-plus.*` commands.
+  If a name clashes and you rename a mod, rename these references too.
 - **Programs and files outside each mod's folder.**
   - `agent-graph`, `pr-review`: run `git` and `gh`, and post to GitHub on comment actions.
   - `skills`: reads the skill folders.
@@ -166,7 +214,7 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
 
 ## Done when
 
-- `herdr-app check` passes for agent-graph, inbox, nav-keys, pr-review, skills, spaces-plus, tabs-plus and usage.
+- `herdr-app check` passes for agent-graph, inbox, jump, nav-keys, pr-review, skills, spaces-plus, tabs-plus and usage.
 - `herdr-app do layout.switch --name emergence` shows Spaces and an Inbox in the sidebar.
 - `herdr-app do tabs-plus.graph`, then `.prs`, `.skills` and `.usage`, each open their panel. `bun test` passes in
   agent-graph, pr-review, skills and usage, and `python3 mods/usage/test_scan.py` passes.

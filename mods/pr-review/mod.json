@@ -1,1 +1,1 @@
-{ "place": "none", "title": "PR review", "overlay": { "kind": "window", "key": "pr-review", "frame": "none", "at": { "x": 260, "y": 56 } } }
+{ "place": "none", "title": "PR review", "overlay": { "kind": "window", "frame": "none" } }
