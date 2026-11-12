@@ -333,7 +333,8 @@ export default class AgentGraph extends View {
         const v = this.view ?? this.fitted;
         const r = e.local_position ?? (e.bounds ? { x: e.position.x - e.bounds.x, y: e.position.y - e.bounds.y } : null);
         const p = r ? { x: r.x / Z, y: r.y / Z } : { x: this.size.width / 2, y: this.size.height / 2 };
-        if (e.modifiers.control || e.modifiers.platform) this.zoomAt(Math.exp(e.delta.y * 0.003), p.x, p.y);
+        // A mouse wheel (it reports lines) zooms, like a map; a trackpad's two-finger scroll pans; ⌘/ctrl-scroll zooms either way.
+        if (e.delta_lines || e.modifiers.control || e.modifiers.platform) this.zoomAt(Math.exp((e.delta_lines ? e.delta_lines.y * 40 : e.delta.y) * 0.003), p.x, p.y);
         else this.view = { ...v, x: v.x + e.delta.x / Z, y: v.y + e.delta.y / Z };
         cx.notify();
       })
