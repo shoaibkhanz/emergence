@@ -123,7 +123,7 @@ export default class Inbox extends View {
     // Folded (⌘B): a short line per agent that needs you, nothing else (lines, not dots: macOS's window
     // buttons are red, yellow and green dots right beside it). A line goes to its agent; anywhere else unfolds.
     if (collapsed) {
-      return v_flex().id("inbox-strip").size_full().pt(find(layout(), "brand")?.hidden ? 48 : 8).gap(2).items_center().bg(t.chrome).cursor_pointer()
+      return v_flex().id("inbox-strip").size_full().pt(find(layout(), "brand")?.hidden ? 76 : 8).gap(2).items_center().bg(t.chrome).cursor_pointer()
         .tooltip("Unfold the sidebar").on_click(() => run("tabs-plus.rail"))
         .children(cards.filter((a) => a.status !== "idle").map((a) => h_flex().id(`mark-${a.address}`).w_full().h(22).flex_none().justify_center().items_center()
           .tooltip(`${task(a, tabs.get(a.tab))} · ${WORD[a.status]}`)
