@@ -1,7 +1,8 @@
 // Herdr's confirm dialog (mods/confirm), but Cancel is selected when it opens: Enter alone cancels, so a destructive
 // action takes a deliberate → (or Tab) then Enter, or a click on its button. Esc cancels.
 // Props: { title, detail, command: { name, args } } as confirm's, plus optional
-//   path:   shown on one line in mono, home as ~, long ones shortened in the middle (the whole path on hover);
+//   name:   what it acts on (a branch), on its own line in mono, so a long one never runs off the title;
+//   path:   under the name in mono, home as ~, long ones shortened in the middle (the whole path on hover);
 //   warn:   a second consequence, on its own line with an amber dot;
 //   action: the button's verb ("Delete"; default "Confirm"); danger: draw it in the blocked colour;
 //   after:  a command run on every close, Confirm or Cancel (the opener taking the keyboard back).
@@ -50,8 +51,10 @@ export default class ConfirmSafe extends View {
         .child(div().flex_none().text_size(11).text_color(t.dim).child("Esc")))
       .child(v_flex().flex_1().min_h(0).gap(10)
         .child(div().text_color(t.muted).child(p.detail ?? ""))
-        .when(Boolean(p.path), (el) => el.child(div().id("cs-path").px(10).py(6).rounded(6).bg(t.surface).border_1().border_color(t.border)
-          .truncate().font_family(MONO).text_size(12).text_color(t.foreground).tooltip(p.path).child(shortPath(p.path, home()))))
+        .when(Boolean(p.name || p.path), (el) => el.child(v_flex().id("cs-what").px(10).py(7).gap(3).rounded(6).bg(t.surface)
+          .border_1().border_color(t.border).font_family(MONO).tooltip([p.name, p.path].filter(Boolean).join("\n"))
+          .when(Boolean(p.name), (b) => b.child(div().truncate().text_size(12.5).font_semibold().text_color(t.foreground).child(p.name)))
+          .when(Boolean(p.path), (b) => b.child(div().truncate().text_size(11.5).text_color(t.dim).child(shortPath(p.path, home()))))))
         .when(Boolean(p.warn), (el) => el.child(h_flex().gap(8).items_center().text_color(t.muted)
           .child(div().size(6).flex_none().rounded(3).bg(t.working)).child(div().flex_1().min_w(0).child(p.warn)))))
       .child(h_flex().justify_end().gap(8).text_size(12.5)
