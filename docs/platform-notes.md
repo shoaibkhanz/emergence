@@ -40,6 +40,17 @@ These are the Herdr 0.1.15 behaviours we hit that the manual gets wrong or leave
   border. `herdr`'s `window()` has no `viewport_size`: that's the gpui global `window`, so don't import `window`
   from `herdr` unaliased.
 
+## Keyboard in a layout block
+
+- `"focusable": true` works both ways: `pane.go left` from the terminal gives the sidebar block `"focus"`, and
+  `pane.go right` gives the keyboard back (tested 2026-11-13).
+- But `pane.go` only releases a keyboard it gave. After the mod's own `handle.focus()` (from a command, a key), `pane.go`
+  from the mod or the CLI leaves `is_focused()` true. `pane.focus {pane | terminal}` always takes it back.
+- `focused()` keeps reporting the terminal while a mod holds the keyboard: it's the pane to go back to.
+- No blur or focus-change event: a mod that draws its focus re-checks `is_focused()` on a timer to clear it.
+- `exec(cmd, args, {cwd, on})`: `args` is an array.
+- `herdr-app check` misses a missing import (`shared is not defined`): it throws at render time, once data arrives.
+
 ## Runtime
 
 - `fs/promises` has no `appendFile` (calling it throws inside the handler). `readTextFile` of a missing file
@@ -49,7 +60,8 @@ These are the Herdr 0.1.15 behaviours we hit that the manual gets wrong or leave
 - `InputState.set_value` doesn't fire `change`.
 - `.tooltip()` on tiny cells (an 11 px heatmap square) never showed for the person; an `on_hover` that sets state
   and a readout line under the chart works every time (the Usage panel does this throughout).
-- `run("<mod>.<command>")` reaches another mod's `nextCommand()` (inbox → `tabs-plus.rail`, agent-graph → `tabs-plus.prs`).
+- `run("<mod>.<command>")` reaches another mod's `nextCommand()` (inbox → `tabs-plus.rail`, agent-graph → `tabs-plus.prs`),
+  focusable or not.
 - `render()` is interrupted after about 100 ms ("This view could not be re-rendered; interrupted"); work inside
   `cx.spawn` isn't. Do heavy sums in a task, keep the result keyed on its inputs, and `cx.notify()` when it lands
   (Usage's `memo`).

@@ -113,11 +113,18 @@ prunes it. Raise `cleanupPeriodDays` to keep more.
 
 ### Sidebar
 
-- **Inbox** (after [T3 Inbox](https://github.com/JinJieBeWater/herdr-t3-inbox)): a card for every agent waiting on you
-  (blocked, finished, or idle for its next prompt). Working agents fold into one row that opens the graph. Settle puts
-  a card away until its agent needs you again.
-- **Spaces**: soft avatars, sized to their rows.
-- **⌘B** folds it to a thin strip: one coloured line per agent that needs you, nothing else.
+![The sidebar at its three sizes: open with worktrees under their space, the rail, and dots](docs/images/sidebar.png)
+
+- **Spaces**: every worktree sits under its repo's space, with its ↑/↓ commits and what its agent is doing (amber dot:
+  needs you, spinner: working, check: done). Worktrees with no space yet are greyed; click one (or ↵) to open it.
+  Fold a repo with its chevron (or ←/→); folds are remembered. Spaces grows with its rows and pushes the inbox down.
+- **Inbox** (after [T3 Inbox](https://github.com/JinJieBeWater/herdr-t3-inbox)): a two-line row for every agent
+  waiting on you (blocked, finished, or idle for its next prompt): branch and age, then its task. Working agents fold
+  into one row that opens the graph. Settle puts a row away until its agent needs you again.
+- **Three sizes**: open, a rail of letter cells with a status dot, or dots (one square per space, ringed when it needs
+  you or is working). Folded, the inbox shows only how many need you. ⌘B opens and folds it, ⌘⌥B goes one size thinner.
+- **Keyboard**: ⌘B puts the keyboard in the list (so does ctrl-h from the leftmost terminal, with nav-keys bound);
+  see [Keys](#keys).
 
 ### Jump (⌘E): every session and worktree, most recent first
 
@@ -129,8 +136,27 @@ new branch name to make a worktree for it.
 Unnamed tabs take the name of their branch (or the repo, on main), and follow it as the branch changes; a name you
 give a tab stays.
 
-**Keys** (in the `emergence` layout): ⌘⇧J jumps to the next agent in the inbox that needs you. ⌘⇧O lists every
-worktree of the repo you're in.
+Its keys are with every other under [Keys](#keys).
+
+## Keys
+
+The installer adds these without replacing any key you already have. All but ⌘E act only in the `emergence` layout.
+
+| Key | Where | What |
+|---|---|---|
+| ⌘E | everywhere | Jump: every session and worktree |
+| ⌘⇧A · ⌘⇧R · ⌘⇧K · ⌘⇧U | layout | open or close Agents · PRs · Library · Usage (the panel takes the keyboard) |
+| ⌘⇧J | layout | the next agent that needs you |
+| ⌘⇧O | layout | every worktree of the repo you're in |
+| ⌘B | layout | sidebar: open it with the keyboard in Spaces; in it, fold it (to the last folded size) |
+| ⌘⌥B | layout | sidebar one size thinner: open → rail → dots → open |
+| ↑ ↓ · ↵ | sidebar | move · open the space or worktree, or go to the agent |
+| ← → | Spaces | fold or unfold a repo; ← on a worktree goes to its space |
+| ctrl-j · ctrl-k | sidebar | Spaces → Inbox · Inbox → Spaces |
+| ctrl-l · Esc | sidebar | back to the terminal you came from |
+| ↑ ↓ · ← → · ↵ · Esc | panels | step through the list · switch tabs (PR states in PRs) · open · close |
+| ⌘F · [ ] | PRs | find across the PR · previous and next commit |
+| ctrl-h/j/k/l | terminals | move between panes, with [nav-keys](#optional-ctrlhjkl-between-panes) bound (optional) |
 
 ## What it runs
 
@@ -144,7 +170,9 @@ worktree of the repo you're in.
 - **Tab bar**: every 6 hours, `git fetch` of this repo's `main` (public HTTPS) into your clone; **Update** runs
   `git merge --ff-only` and `install.sh` there. Nothing for a copy that isn't a clone of this repo, or one on another
   branch or with your own commits.
-- **Inbox, Spaces**: nothing outside Herdr.
+- **Spaces**: `git rev-parse`, `symbolic-ref` and `rev-list` in each space's folder (branch, ahead/behind), and per
+  repo `git worktree list` and `git for-each-ref` (its worktrees and their ahead/behind).
+- **Inbox**: nothing outside Herdr.
 
 ## Update or remove
 
@@ -166,9 +194,10 @@ does nothing until you bind it in `~/.config/herdr-app/keys.json`, because the k
 "terminal": { "ctrl-h": "nav-keys.left", "ctrl-j": "nav-keys.down", "ctrl-k": "nav-keys.up", "ctrl-l": "nav-keys.right" }
 ```
 
-It only runs in the `emergence` layout (a 0px block); in other layouts these keys then fail. Leaving (n)vim with
-them needs an editor mapping this repo doesn't ship: move between splits and, at the edge, run
-`herdr-app do pane.go --direction <left|down|up|right>`. Without one the keys stay inside the editor.
+It only runs in the `emergence` layout (a 0px block); in other layouts these keys then fail. The sidebar takes ctrl-j/k/l
+itself, with or without nav-keys. Leaving (n)vim with them needs an editor mapping this repo doesn't ship: move between
+splits and, at the edge, run `herdr-app do pane.go --direction <left|down|up|right>`. Without one the keys stay inside
+the editor.
 
 ## Develop
 

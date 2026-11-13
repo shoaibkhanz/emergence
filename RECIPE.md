@@ -14,21 +14,30 @@ bar's Update chip can keep them current. A copy works but never updates.
 
 Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` dividers:
 
-- **Sidebar** (268px, 14–480, `chrome`):
-  - The brand row (46px, Herdr's `workspace-chrome`).
-  - **Spaces** (`spaces-plus`), sized by the inbox (`fitSpaces`): 45px plus 30px a row (26px on the rail), plus a row
-    per machine once there are several. It gives way while the inbox below lacks room for its content, but not below
-    half the height the two share, never under 60px and never leaving the inbox under 90px; before the inbox has
-    measured, 285px at most. Rows past that scroll. The
-    avatar is a soft tile: the space's colour at 15% with a 20% border, its letter in the colour, 18px, radius 5.
+- **Sidebar** (`chrome`; open 268px, folded to a 48px rail or 20px dots, by its width: under 34 dots, under 160 rail):
+  - The brand row (46px, Herdr's `workspace-chrome`), hidden while folded.
+  - **Spaces** (`spaces-plus`), sized by the inbox (`fitSpaces`) to the height Spaces publishes in
+    `shared("spaces.want")`: 45px plus 30px a space, 28px a worktree row, plus 26px a machine header once there are
+    several (rail: 26px a cell; dots: 22px a square, no header). It gives way while the inbox below lacks room for
+    its content, but not below half the height the two share, never under 60px and never leaving the inbox under
+    90px; before the inbox has measured, 285px at most. Rows past that scroll. The avatar is a soft tile: the space's
+    colour at 15% with a 20% border, its letter in the colour, 18px, radius 5.
+    - Under a repo's first main space: its other spaces' worktrees, then every worktree of the repo with no space yet,
+      greyed (28px rows: branch icon, branch name in plain Geist 12.5px, ↑/↓ counts). An open worktree is matched by
+      path or branch (git prints `/tmp` where rev-parse prints `/private/tmp`). A chevron folds a repo
+      (`localStorage` `spaces.folded`); folded, it says "N worktrees". A nested space ends with its agent state:
+      a 7px `blocked` dot, the still spinner (`working`) or a check (`done`).
+    - Rail: a 32px cell per space (avatar, 7px status dot top right for blocked or working). Dots: an 8px square in
+      the space's colour (55% unless active), in a 1.5px `blocked`/`working` ring when it needs you or is working.
+      Folded, the top 36px stays clear for macOS's window buttons.
   - **Inbox** (`inbox`), the rest of the height. Its header is "Inbox N" (11.5px, `dim`) with a key chip on the right
     showing the binding of `tabs-plus.attention` (⌘⇧J).
-    - Each card is 3 lines on an 8px-radius row: the program mark (14px) and the folder, the age or a "! Needs you"
-      pill; the task title (13px `foreground`); the branch (11px Geist Mono `dim`) with a `done` check on unread
-      finished agents.
+    - Each row is 2 lines on an 8px-radius row: the program mark (14px), the branch (else the folder) in 12.5px
+      `foreground`, and the age or "Needs you" (`blocked`); under it the task (12px `muted`), indented to the text.
     - At the foot: "Working N ›" (spinner glyph, still) and, once anything is settled, a "Settled N" shelf.
     - With nothing waiting: a circle-check and "All caught up".
-  - The footer (69px, `workspace-chrome {footer: true}`).
+    - Folded: only the count of rows, at the foot: a 22px round `blocked` badge on the rail, the number on dots.
+  - The footer (69px, `workspace-chrome {footer: true}`), hidden while folded.
 - **Tab bar** (42px, `tabs-plus`, Herdr's tab bar): the space's tabs (settled ones hidden unless shown), `+`, then
   buttons for Files, Changes, Agents, PRs, Library and Usage. When the Emergence clone is behind GitHub's `main`, an
   "Update" chip (`accent` dot and text; "Update failed" in `blocked`) follows; clicking it pulls and reruns
@@ -50,7 +59,7 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
 ## How it behaves
 
 - **Agent states.**
-  - Inbox cards: blocked shows the red "Needs you" pill, done (unread) a green check, idle nothing; nothing animates.
+  - Inbox rows: blocked says "Needs you" in `blocked`, others their age; nothing animates.
   - Graph: the same colours on a still dot.
   - A done card turns idle once you look and stays a card until settled.
 - **Inbox.**
@@ -59,12 +68,23 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
     agent needs you. Clicking a shelf row shows the tab.
   - "Working N" opens the Agents panel.
   - The inbox order drives ⌘] / ⌘[ (`setAgentOrder`).
-- **⌘B (`tabs-plus.rail`, in this layout only).**
-  - It folds the sidebar to 14px and hides the brand row, Spaces and footer.
-  - The inbox becomes a strip of 3×16px coloured lines, one per agent that needs you, starting 76px down, below the
-    macOS window buttons.
-  - A line focuses its agent; anywhere else on the strip unfolds the sidebar.
-- **Keys** (`layout:emergence`: only the emergence layout shows tabs-plus; ⌘E is global).
+- **Sidebar sizes (`tabs-plus`, in this layout only).**
+  - ⌘B (`tabs-plus.rail`): folded or hidden → open at the last open width with the keyboard in Spaces. Open → fold to
+    the last folded size (`shared("sidebar.folded")`, default rail) when the sidebar holds the keyboard, else only
+    give Spaces the keyboard. There's no blur event, so it asks: `spaces-plus.toggle` folds (`tabs-plus.fold`) if
+    Spaces' focus handle is focused, else `inbox.toggle` folds if the inbox's is, else `spaces-plus.focus`.
+  - ⌘⌥B (`tabs-plus.thinner`): open → rail → dots → open; the folded size it lands on is remembered.
+  - Folding hands the keyboard back to the pane `focused()` reports (it keeps reporting the terminal while a mod
+    holds the keyboard). A saved 14px fold from before opens like any folded size.
+  - Clicking the inbox's badge opens the sidebar.
+- **Sidebar keyboard** (`"focusable": true` in both mod.json files, so `pane.go` reaches them too).
+  - Spaces: ↑/↓ move an `accent` 1px ring (it stops at both ends; it stays on its row across refreshes, or moves to
+    the nearest row above when its row goes), → unfolds and ← folds the repo under it (← on a worktree goes to its
+    space), ↵ selects the space or opens the worktree (`space.new {folder, machine}`). Inbox: ↑/↓, ↵ focuses the agent.
+  - ctrl-j (Spaces → `inbox.focus`), ctrl-k (Inbox → `spaces-plus.focus`), ctrl-l and Esc (`pane.focus` on
+    `focused()`). Not `pane.go`: it releases only a keyboard `pane.go` gave, not one a mod took itself.
+  - The ring clears when the keyboard leaves: a 250ms timer compares `is_focused()` with what was drawn.
+- **Keys** (`layout:emergence`: only the emergence layout shows tabs-plus; ⌘E is global). ⌘B and ⌘⌥B as above.
   - ⌘⇧A (Agents), ⌘⇧R (PRs: review), ⌘⇧K (Library) and ⌘⇧U (Usage) toggle the panels.
   - ⌘⇧J jumps to the next agent the inbox shows that needs you: blocked ones, then done ones (not settled, not
     sub-agents).
@@ -183,7 +203,7 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
     files, changes, graph, prs, skills, usage; `status` workspace-status; `nav-keys` 0px `{resident: true}`).
 - **`mods/tabs-plus`** (clone of `tabs`):
   - PANELS `[id, label, icon, width]`; remembers each panel's width and per-space choice; hides settled tabs.
-  - `nextCommand` handles `graph`, `prs`, `skills`, `usage`, `attention`, `rail`, `worktrees` and `update`.
+  - `nextCommand` handles `graph`, `prs`, `skills`, `usage`, `attention`, `rail`, `thinner`, `fold`, `worktrees` and `update`.
   - Tab names (`autoName`, one `git rev-parse --show-toplevel` per folder, again after 30 s if it couldn't run; a rename
     not landed in 10 s is sent again) and `jump.recent`, both from `render`.
   - Updates: finds the clone with `git -C <appHome>/mods/tabs-plus rev-parse --show-toplevel` (the mod is a link into
@@ -194,9 +214,14 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
     links), and switching to the shown layout is a no-op, hence the detour. `install.sh` run by hand does the same
     detour when emergence already shows, and prints how to reload by hand if a switch fails.
 - **`mods/inbox`**: `agents()`, `terminals()` (parent), `panes()` (cwd, branch), `spaces()` (tabs, settled,
-  changed_at), `keys()`, `setAgentOrder`, `run("agent.focus" | "tab.settle" | "tab.select" | "tabs-plus.rail" |
-  "tabs-plus.graph")`, and `layout.resize` for the Spaces block.
-- **`mods/spaces-plus`**: a clone of `spaces` with only `avatar()` changed.
+  changed_at), `keys()`, `focused()`, `shared("spaces.want")`, `setAgentOrder`, `run("agent.focus" | "tab.settle" |
+  "tab.select" | "tabs-plus.rail" | "tabs-plus.fold" | "tabs-plus.graph" | "spaces-plus.focus" | "pane.focus")`, and
+  `layout.resize` for the Spaces block. Commands `focus`, `toggle`.
+- **`mods/spaces-plus`**: a clone of `spaces` with soft avatars, worktree rows (`lib.js`: `parseWorktrees`,
+  `parseTrack`, `addWorktrees`, `nearest`, tested in `lib.test.js`), folding, the keyboard and the rail and dots
+  sizes. Per main checkout it runs `git worktree list --porcelain` and
+  `git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads`; a machine that stops answering keeps
+  its last list. Commands `focus`, `toggle`.
 - **`mods/agent-graph`**: `lib.js` builds the tree and lays it out. It runs `git rev-parse` per folder (30s cache) and
   `gh pr list` per repo (60s), and draws edges with `PathBuilder` + `window.paint_path`.
 - **`mods/pr-review`**: `github.js` (gh api); `lib.js` parses diffs, builds the file tree and handles tag bodies.
@@ -208,7 +233,7 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - `lib.js` does the maths: Wilson intervals, quartile levels, cost anatomy, rhythm.
   - `main.js` draws with divs only.
 - **`programs.json`**: gives omp its icon (`mods/inbox/omp.svg`, omp's MIT favicon).
-- **`keys.json`**: `layout:emergence` ⌘⇧A/R/K/U/J/O and ⌘B; `global` ⌘E (`mod.open:jump`). The layout section beats
+- **`keys.json`**: `layout:emergence` ⌘⇧A/R/K/U/J/O, ⌘B and ⌘⌥B; `global` ⌘E (`mod.open:jump`). The layout section beats
   `global` and still applies while a terminal is focused (only a `terminal` binding for the same key would shadow it).
   `install.sh` drops the keys it used to add (`RETIRED`: ⌘⇧G, old ⌘⇧U, ⌘⇧M, and the panel keys in `global`) while
   they still hold its value, but only once that action's new key is theirs or free to add; then it adds the new ones.
@@ -244,7 +269,9 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
 - `herdr-app check` passes for agent-graph, inbox, jump, nav-keys, pr-review, skills, spaces-plus, tabs-plus and usage.
 - `herdr-app do layout.switch --name emergence` shows Spaces and an Inbox in the sidebar.
 - `herdr-app do tabs-plus.graph`, then `.prs`, `.skills` and `.usage`, each open their panel. `bun test` passes in
-  agent-graph, pr-review, skills and usage, and `python3 mods/usage/test_scan.py` passes.
-- A terminal printing `\033]7501;state=blocked:app=claude\033\\` shows a red "Needs you" card. `tabs-plus.rail` then
-  shows it as a red line on the 14px strip.
+  agent-graph, pr-review, skills, spaces-plus and usage, and `python3 mods/usage/test_scan.py` passes.
+- A terminal printing `\033]7501;state=blocked:app=claude\033\\` shows a "Needs you" row. `tabs-plus.thinner` then
+  folds to the rail with a count badge, again to dots with the number, and once more opens the sidebar.
+- With a repo open as a space and another worktree of it (`git worktree add`), that worktree shows greyed under it;
+  opening it as a space turns it into a nested space row, never a second row.
 - `python3 mods/usage/scan.py | head -c 50` starts with `{"scanned_at":`.
