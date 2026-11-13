@@ -10,7 +10,8 @@
     "cmd-shift-o": "tabs-plus.worktrees",
     "cmd-shift-u": "tabs-plus.usage",
     "cmd-b": "tabs-plus.rail",
-    "cmd-alt-b": "tabs-plus.thinner"
+    "cmd-alt-b": "tabs-plus.thinner",
+    "cmd-shift-/": "mod.open:emergence-keys"
   },
   "mod:spaces-plus": {
     "ctrl-j": "inbox.focus",

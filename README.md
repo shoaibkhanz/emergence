@@ -142,6 +142,7 @@ The installer adds these without replacing any key you already have. All but ⌘
 | Key | Where | What |
 |---|---|---|
 | ⌘E | everywhere | Jump: every session and worktree |
+| ⌘⇧/ | layout | every Emergence key in one dialog, filterable (also the keyboard button in the tab bar; ⌘/ is Herdr's) |
 | ⌘⇧A · ⌘⇧R · ⌘⇧K · ⌘⇧U | layout | open or close Agents · PRs · Library · Usage (the panel takes the keyboard) |
 | ⌘⇧I | layout | the keyboard into the Inbox (the sidebar opens if folded): ↑↓ pick, ↵ goes to that agent, Esc back |
 | ⌘⇧O | layout | every worktree of the repo you're in |
@@ -211,6 +212,7 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/edi
 | `mods/agent-graph`, `pr-review`, `skills`, `usage` | the four panels |
 | `mods/inbox`, `spaces-plus` | the sidebar |
 | `mods/confirm-safe` | Herdr's confirm dialog with Cancel selected, for worktree delete and archive |
+| `mods/emergence-keys` | the ⌘⇧/ dialog: every Emergence key, grouped (its list is `lib.js`) |
 | `mods/row-menu` | a right-click menu with the items its opener passes (Herdr's menu has fixed ones) |
 | `mods/tabs-plus` | Herdr's tab bar with the panel buttons; names tabs and records the order you visit them |
 | `mods/jump` | the ⌘E switcher |

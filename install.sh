@@ -43,7 +43,7 @@ import json, sys, os
 # action's key in ours is in their file or free to add, so no action is left without a key. A layout key isn't
 # free while a global binding holds that key for something else (it would shadow it in the layout), except the
 # Herdr default the layout key exists to replace (SHADOWS).
-SHADOWS = {"cmd-b": "layout.toggle:sidebar"}
+SHADOWS = {"cmd-b": "layout.toggle:sidebar", "cmd-shift-/": "app.help"}  # ⌘/ still opens Herdr's keys
 RETIRED = {"keys.json": [("global", k, "tabs-plus." + a) for k, a in (
     ("cmd-shift-g", "graph"), ("cmd-shift-u", "prs"), ("cmd-shift-m", "usage"),  # before ⌘⇧A, ⌘⇧R, ⌘⇧U
     ("cmd-shift-a", "graph"), ("cmd-shift-r", "prs"), ("cmd-shift-k", "skills"),  # global until they moved to layout:emergence

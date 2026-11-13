@@ -310,6 +310,7 @@ export default class Tabs extends View {
         .children(shown.map(item)))
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
       .children(PANELS.filter(([id]) => enabled.includes(id)).map(panelButton))
+      .child(button("emergence-keys", svg("mods/tabs-plus/keyboard.svg").size(14), () => run("mod.open", { name: "emergence-keys" })).tooltip("Emergence keys (⌘⇧/)"))
       .when(Boolean(this.update), (el) => {
         const u = this.update, ink = u.error ? t.blocked : t.accent;
         return el.child(h_flex().id("emergence-update").h(26).px(8).gap(6).flex_none().items_center().rounded(6).text_size(12).text_color(ink)

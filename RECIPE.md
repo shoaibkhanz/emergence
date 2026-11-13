@@ -96,6 +96,9 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - The ring clears when the keyboard leaves: a 250ms timer compares `is_focused()` with what was drawn.
 - **Keys** (`layout:emergence`: only the emergence layout shows tabs-plus; ⌘E is global). ⌘B and ⌘⌥B as above.
   - ⌘⇧A (Agents), ⌘⇧R (PRs: review), ⌘⇧K (Library) and ⌘⇧U (Usage) toggle the panels.
+  - ⌘⇧/ (`mod.open:emergence-keys`, also a keyboard button after the panel buttons) lists every Emergence key: bound
+    ones read live from `keys()`, the ones mods handle themselves as written (`emergence-keys/lib.js`). install.sh's
+    SHADOWS lets it replace Herdr's global ⌘⇧/ (`app.help`, still on ⌘/).
   - ⌘⇧I (not ⌘⇧J: Homerow takes that system-wide for its scroll mode) puts the keyboard in the Inbox (`inbox.focus`),
     opening the sidebar first if it's folded; ↵ there runs
     `agent.focus` then `pane.focus` on that agent's terminal (pane.focus releases the Inbox's keyboard).
