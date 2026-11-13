@@ -338,8 +338,7 @@ export default class Spaces extends View {
       ...(target.space
         ? [["Rename", "space.rename", { id: target.space }, I + "square-pen.svg"], ["Close space", "space.close", { id: target.space }, I + "x.svg"]]
         : [["Open", "space.new", { folder: target.path, machine: target.on ?? "" }, I + "plus.svg", "↵"]]),
-      ["—"],
-      ["Archive worktree…", "spaces-plus.ask-archive", {}, I + "archive.svg", "→"],
+      ["Archive worktree…", "spaces-plus.ask-archive", {}, I + "archive.svg", "→", true],
       ["Delete worktree…", "spaces-plus.ask-delete", {}, "mods/row-menu/trash.svg", "←"],
     ];
     openOverlay({ mod: "row-menu", kind: "popup", width: 230, height: 160, props: { items } });
