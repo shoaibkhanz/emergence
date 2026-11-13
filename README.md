@@ -123,8 +123,8 @@ prunes it. Raise `cleanupPeriodDays` to keep more.
   into one row that opens the graph. Settle puts a row away until its agent needs you again.
 - **Three sizes**: open, a rail of letter cells with a status dot, or dots (one square per space, ringed when it needs
   you or is working). Folded, the inbox shows only how many need you. ⌘B opens and folds it, ⌘⌥B goes one size thinner.
-- **Keyboard**: ⌘B puts the keyboard in the list (so does ctrl-h from the leftmost terminal, with nav-keys bound);
-  see [Keys](#keys).
+- **Keyboard**: ⌘B puts the keyboard in Spaces and ⌘⇧I in the Inbox (so does ctrl-h from the leftmost terminal, with
+  nav-keys bound); ctrl-j and ctrl-k move between the two, ctrl-l or Esc go back. See [Keys](#keys).
 
 ### Jump (⌘E): every session and worktree, most recent first
 
@@ -158,6 +158,9 @@ The installer adds these without replacing any key you already have. All but ⌘
 | ⌘F · [ ] | PRs | find across the PR · previous and next commit |
 | ctrl-h/j/k/l | terminals | move between panes, with [nav-keys](#optional-ctrlhjkl-between-panes) bound (optional) |
 
+Not ⌘⇧J for the Inbox: Homerow, if you run it, takes ⌘⇧J system-wide for its scroll mode. ⌘⇧B isn't a sidebar key
+either; the second fold size is ⌘⌥B (Option).
+
 ## What it runs
 
 - **Agents**: `git rev-parse` in each agent's folder, and `gh pr list` once a minute per repo.
@@ -187,8 +190,9 @@ then take the `tabs-plus.*` and `mod.open:jump` keys out of `~/.config/herdr-app
 ## Optional: ctrl-h/j/k/l between panes
 
 `nav-keys` moves focus between panes, but where the focused terminal runs (n)vim it passes the key to the editor
-(Neovim over its own socket, at once; vim through `hc keys`, which waits for ~3 s without a keypress). It does nothing until you bind it in `~/.config/herdr-app/keys.json`, because the keys then stop reaching your shell
-(ctrl-l clear, ctrl-k kill line):
+(Neovim over its own socket, at once, also under a wrapper such as `uv run nvim`; vim through `hc keys`, which waits
+for ~3 s without a keypress). It does nothing until you bind it in `~/.config/herdr-app/keys.json`, because the keys
+then stop reaching your shell (ctrl-l clear, ctrl-k kill line):
 
 ```json
 "terminal": { "ctrl-h": "nav-keys.left", "ctrl-j": "nav-keys.down", "ctrl-k": "nav-keys.up", "ctrl-l": "nav-keys.right" }
@@ -196,8 +200,21 @@ then take the `tabs-plus.*` and `mod.open:jump` keys out of `~/.config/herdr-app
 
 It only runs in the `emergence` layout (a 0px block); in other layouts these keys then fail. The sidebar takes
 ctrl-j/k/l itself (`mod:spaces-plus` and `mod:inbox` in keys.json), with or without nav-keys or a global ctrl-j/k/l.
-Leaving (n)vim with them needs an editor mapping this repo doesn't ship: move between splits and, at the edge, run
-`herdr-app do pane.go --direction <left|down|up|right>`. Without one the keys stay inside the editor.
+Leaving (n)vim with them needs a mapping in the editor: move between splits and, at the edge, hand over to Herdr.
+Without one the keys stay inside the editor. For Neovim, in `~/.config/nvim/after/plugin/herdr_nav.lua` (after/plugin
+so it wins over other ctrl-h/j/k/l maps):
+
+```lua
+for key, dir in pairs({ h = "left", j = "down", k = "up", l = "right" }) do
+  vim.keymap.set("n", "<C-" .. key .. ">", function()
+    local win = vim.api.nvim_get_current_win()
+    vim.cmd("wincmd " .. key)
+    if vim.api.nvim_get_current_win() == win and vim.env.HC_TERMINAL_ID then -- at the edge, inside Herdr
+      vim.fn.system({ "herdr-app", "do", "pane.go", "--direction", dir })
+    end
+  end, { desc = "Move to the split or Herdr pane " .. dir })
+end
+```
 
 ## Develop
 
