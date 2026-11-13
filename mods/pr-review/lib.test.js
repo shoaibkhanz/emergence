@@ -155,3 +155,12 @@ test("pairRows: context on both sides, deletions pair with the additions after t
   expect(pairRows(k("hcddac"))).toEqual([{ hunk: 0 }, { l: 1, r: 1 }, { l: 2, r: 4 }, { l: 3, r: null }, { l: 5, r: 5 }]);
   expect(pairRows(k("aadda"))).toEqual([{ l: null, r: 0 }, { l: null, r: 1 }, { l: 2, r: 4 }, { l: 3, r: null }]);
 });
+
+test("commentPayload: both line numbers of the chosen rows and the old path ride along (GitLab needs them)", () => {
+  const rows = [{ kind: "hunk" }, { kind: "del", old: 3, new: null }, { kind: "context", old: 4, new: 6 }, { kind: "add", old: null, new: 7 }];
+  const one = commentPayload("a.py", { side: "RIGHT", start: 6, end: 6, from: 2, to: 2 }, rows, null);
+  expect(one).toMatchObject({ path: "a.py", line: 6, side: "RIGHT", old_path: "a.py", anchor: { start: { old: 4, new: 6 }, end: { old: 4, new: 6 } } });
+  expect("start_line" in one).toBe(false);
+  const range = commentPayload("b.py", { side: "RIGHT", start: 6, end: 7, from: 2, to: 3 }, rows, "old/b.py");
+  expect(range).toMatchObject({ start_line: 6, line: 7, old_path: "old/b.py", anchor: { start: { old: 4, new: 6 }, end: { old: null, new: 7 } } });
+});

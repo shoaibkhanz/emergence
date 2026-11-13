@@ -71,10 +71,12 @@ export function selectRange(rows, anchor, focus = anchor) {
   return { side, start: lineOf(rows[from], side), end: lineOf(rows[to], side), from, to };
 }
 
-// Selection → the location fields of POST pulls/{n}/comments.
-export function commentPayload(path, sel) {
+// Selection → the location fields of POST pulls/{n}/comments; given the rows, also both line numbers of the first and
+// last row and the old path (GitLab places a note by old and new line; github.js drops them).
+export function commentPayload(path, sel, rows, oldPath) {
   const p = { path, line: sel.end, side: sel.side };
   if (sel.start !== sel.end) Object.assign(p, { start_line: sel.start, start_side: sel.side });
+  if (rows) Object.assign(p, { old_path: oldPath ?? path, anchor: { start: { old: rows[sel.from].old, new: rows[sel.from].new }, end: { old: rows[sel.to].old, new: rows[sel.to].new } } });
   return p;
 }
 

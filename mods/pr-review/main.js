@@ -7,7 +7,9 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, TextView, ScrollHandle } from "gpui-base";
 import { exec, focused, panes, spaces, theme, settings, props, shared, setShared, openOverlay, closeOverlay, run, layout } from "herdr";
-import * as gh from "./github.js";
+import * as github from "./github.js";
+import * as gitlab from "./gitlab.js";
+import { forgeOf } from "./gitlab-map.js";
 import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, TAGS, tagBody, splitTag, shown, findAll, findTalk, mentions, gapBefore, hiddenRows, pairRows } from "./lib.js";
 
 const MONO = "Geist Mono";
@@ -136,7 +138,7 @@ export default class PrReview extends View {
           if (pair === (entry === "local" && this.compareTitle(s))) {
             if (got.commits) d.commits = got.commits;
             if (text === d.text) d.at = d.headOid; // a new head with the same changes (base merged in, message amended)
-            if (entry !== "local") d.commits = await gh.prCommits(s.id, entry).catch(() => d.commits);
+            if (entry !== "local") d.commits = await s.api.prCommits(s.id, entry).catch(() => d.commits);
             if (text !== d.text && !d.loading && !d.commit && !s.sel) this.applyDiff(d, text); // a selection made meanwhile keeps its lines
           }
         }
@@ -236,10 +238,12 @@ export default class PrReview extends View {
     cx.spawn(async (cx) => {
       s.branch = (await git(s.id, ["branch", "--show-current"]).catch(() => "")).trim() || "detached HEAD";
       try {
-        s.info = await gh.repoInfo(s.id);
+        // The repo's forge, by its origin remote: GitHub (gh) or GitLab (glab); the rest of the panel calls s.api.
+        s.api = forgeOf((await git(s.id, ["remote", "get-url", "origin"]).catch(() => "")).trim()) === "github" ? github : gitlab;
+        s.info = await s.api.repoInfo(s.id);
         s.info.defaultBranch ??= (await git(s.id, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).catch(() => "main")).trim().replace(/^origin\//, "");
       } catch (e) {
-        s.error = /remote|not a github|no known/i.test(e.message) ? "No GitHub remote for this repository." : e.message;
+        s.error = /remote|not a github|no known/i.test(e.message) ? "No GitHub or GitLab remote for this repository." : e.message;
       }
       s.loading = false;
       if (s.info) { this.loadPRs(s, cx); if (number) this.open(s, number, cx); }
@@ -252,7 +256,7 @@ export default class PrReview extends View {
     const ask = `${s.state}|${s.search}`;
     cx.spawn(async (cx) => {
       try {
-        const prs = await gh.listPRs(s.id, s.state, s.search.trim());
+        const prs = await s.api.listPRs(s.id, s.state, s.search.trim());
         if (ask !== `${s.state}|${s.search}`) return;
         const rank = (p) => (p.state === "OPEN" ? 0 : 1);
         s.prs = prs.sort((a, b) => rank(a) - rank(b) || b.updatedAt.localeCompare(a.updatedAt));
@@ -279,8 +283,8 @@ export default class PrReview extends View {
     });
     if (entry === "local") return;
     this.loadThreads(s, entry, cx);
-    if (!d.pr) cx.spawn(async (cx) => { d.pr = await gh.viewPR(s.id, entry).catch(() => null); cx.notify(); });
-    cx.spawn(async (cx) => { d.commits = await gh.prCommits(s.id, entry).catch(() => d.commits); cx.notify(); });
+    if (!d.pr) cx.spawn(async (cx) => { d.pr = await s.api.viewPR(s.id, entry).catch(() => null); cx.notify(); });
+    cx.spawn(async (cx) => { d.commits = await s.api.prCommits(s.id, entry).catch(() => d.commits); cx.notify(); });
   }
 
   // The two sides "This branch" compares, picked per repo: the base (else the default branch) and the head (else
@@ -293,7 +297,7 @@ export default class PrReview extends View {
   // is this branch), with its commits. The default branch is taken from origin when it can be (a stale local main
   // would add others' work); a picked one, as is.
   async diffText(s, entry, d) {
-    if (entry !== "local") return gh.prDiff(s.id, entry);
+    if (entry !== "local") return s.api.prDiff(s.id, entry);
     const base = this.baseOf(s), head = this.headOf(s), to = head ?? "HEAD", picked = base !== s.info.defaultBranch;
     const mb = (await (picked ? git(s.id, ["merge-base", base, to]) : git(s.id, ["merge-base", `origin/${base}`, to]).catch(() => git(s.id, ["merge-base", base, to])))).trim();
     d.commits = (await git(s.id, ["log", "--reverse", "--format=%H%x09%an%x09%cI%x09%s", `${mb}..${to}`])).split("\n").filter(Boolean)
@@ -392,7 +396,7 @@ export default class PrReview extends View {
     d.commitLoading = true;
     cx.spawn(async (cx) => {
       try {
-        const files = parseDiff(s.entry === "local" ? await git(s.id, ["show", "--format=", "--no-color", "--no-ext-diff", "--diff-merges=first-parent", oid]) : await gh.commitDiff(s.id, s.info.nwo, oid));
+        const files = parseDiff(s.entry === "local" ? await git(s.id, ["show", "--format=", "--no-color", "--no-ext-diff", "--diff-merges=first-parent", oid]) : await s.api.commitDiff(s.id, s.info.nwo, oid));
         const v = { files, order: fileTree(files).filter((r) => !r.dir).map((r) => r.fi) };
         (d.byCommit ??= new Map()).set(oid, v);
         if (d.commit === oid) show(v);
@@ -406,7 +410,7 @@ export default class PrReview extends View {
   async fetchThreads(s, n) {
     const d = s.diffs.get(n), seq = (d.tseq = (d.tseq ?? 0) + 1);
     try {
-      const r = await gh.threads(s.id, s.info.nwo, n);
+      const r = await s.api.threads(s.id, s.info.nwo, n);
       if (seq !== d.tseq) return; // a later fetch (after a reply or resolve) got there first
       Object.assign(d, { headOid: r.headOid, threads: r.threads, talk: r.talk, threadsError: null });
       d.at ??= r.headOid; // the head the diff shown was taken at (near enough), for its hidden lines
@@ -467,12 +471,12 @@ export default class PrReview extends View {
     const s = this.cur, d = s?.diffs.get(s.entry), f = s?.sel && d?.files[s.sel.fi];
     const text = this.composer.value().trim();
     if (!f || !text || this.posting || !d.headOid) return;
-    const where = commentPayload(f.path, selectRange(f.rows, s.sel.anchor, s.sel.focus));
+    const where = commentPayload(f.path, selectRange(f.rows, s.sel.anchor, s.sel.focus), f.rows, f.oldPath);
     this.posting = true;
     this.composeError = null;
     cx.spawn(async (cx) => {
       try {
-        await gh.createComment(s.id, s.info.nwo, s.entry, { body: tagBody(this.tag, text), commit_id: d.at ?? d.headOid, ...where }); // the lines are the shown diff's
+        await s.api.createComment(s.id, s.info.nwo, s.entry, { body: tagBody(this.tag, text), commit_id: d.at ?? d.headOid, ...where }); // the lines are the shown diff's
         this.composer.set_value("");
         this.tag = null;
         s.sel = null;
@@ -516,7 +520,7 @@ export default class PrReview extends View {
     const body = text && tagBody(dr.tag, text);
     const th = body && (dr.thread === TALK.id ? TALK : s.diffs.get(s.entry).threads.find((x) => x.id === dr.thread));
     if (!th) return;
-    this.act(th, (nwo) => (dr.kind === "reply" ? gh.reply(s.id, nwo, s.entry, th.comments[0].databaseId, body) : gh.editComment(s.id, nwo, dr.comment, body, th.where)), cx,
+    this.act(th, (nwo) => (dr.kind === "reply" ? s.api.reply(s.id, nwo, s.entry, th.comments[0].databaseId, body, th.id) : s.api.editComment(s.id, nwo, dr.comment, body, th.where, s.entry)), cx,
       () => this.draft === dr && this.dropDraft());
   }
 
@@ -836,6 +840,7 @@ export default class PrReview extends View {
   }
 
   counts(t, add, del) {
+    if (add == null) return div(); // GitLab's MR list has no line counts
     return h_flex().gap(6).flex_none().font_family(MONO).text_size(11)
       .child(div().text_color(t.done).child(`+${add}`))
       .child(div().text_color(t.blocked).child(`−${del}`));
@@ -997,7 +1002,7 @@ export default class PrReview extends View {
     this.talkError = null;
     cx.spawn(async (cx) => {
       try {
-        await gh.postComment(s.id, s.info.nwo, n, tagBody(this.talkTag, text));
+        await s.api.postComment(s.id, s.info.nwo, n, tagBody(this.talkTag, text));
         this.talkBox.set_value("");
         this.talkTag = null;
         await this.fetchThreads(s, n);
@@ -1131,7 +1136,7 @@ export default class PrReview extends View {
       try {
         if (!f.lines) {
           let text;
-          if (s.entry !== "local") text = await gh.fileAt(s.id, s.info.nwo, f.path, d.commit ?? d.at ?? d.headOid ?? d.pr?.headRefName);
+          if (s.entry !== "local") text = await s.api.fileAt(s.id, s.info.nwo, f.path, d.commit ?? d.at ?? d.headOid ?? d.pr?.headRefName);
           else if (d.commit || this.headOf(s)) text = await git(s.id, ["show", `${d.commit ?? this.headOf(s)}:${f.path}`]);
           else { const r = await exec("cat", [f.path], { cwd: s.id.repo, on: s.id.machine }); if (r.code !== 0) throw new Error(r.stderr.trim() || "can't read it"); text = r.stdout; }
           f.lines = text.replace(/\n$/, "").split("\n");
@@ -1339,7 +1344,7 @@ export default class PrReview extends View {
         .child(div().flex_1())
         .when(busy, (el) => el.child(icon("spinner").size(13).text_color(t.dim).spin(900)))
         .when(!busy, (el) => el.child(this.link(t, `res-${th.id}`, th.isResolved ? "Unresolve" : "Resolve",
-          (cx) => this.act(th, () => (th.isResolved ? gh.unresolveThread : gh.resolveThread)(s.id, th.id), cx)))))
+          (cx) => this.act(th, (nwo) => (th.isResolved ? s.api.unresolveThread : s.api.resolveThread)(s.id, th.id, nwo, s.entry), cx)))))
       .children(th.comments.map((c, ci) => this.comment(t, s, th, c, ci, dr)))
       .when(Boolean(err), (el) => el.child(div().px(12).pb(10).text_size(12).text_color(t.blocked).child(err)))
       .child(dr?.kind === "reply"
@@ -1372,7 +1377,7 @@ export default class PrReview extends View {
     return row
       .when(confirming, (el) => el
         .child(div().text_size(12).text_color(t.muted).child("Delete this comment?"))
-        .child(this.link(t, `del-yes-${id}`, "Delete", (cx) => { this.confirm = null; this.act(th, (nwo) => gh.deleteComment(s.id, nwo, id, th.where), cx); }, t.blocked))
+        .child(this.link(t, `del-yes-${id}`, "Delete", (cx) => { this.confirm = null; this.act(th, (nwo) => s.api.deleteComment(s.id, nwo, id, th.where, s.entry), cx); }, t.blocked))
         .child(this.link(t, `del-no-${id}`, "Keep", () => (this.confirm = null))))
       .when(idle && c.viewerCanUpdate, (el) => el.child(this.link(t, `edit-${id}`, "Edit", () => this.startDraft("edit", th, c))))
       .when(idle && c.viewerCanDelete, (el) => el.child(this.link(t, `del-${id}`, "Delete", () => (this.confirm = id))));
