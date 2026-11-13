@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { buildTree, layout, prChip, prsByBranch, parseRevParse, cleanTitle, SIZE } from "./lib.js";
+import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -73,4 +73,15 @@ test("parsers", () => {
   expect(cleanTitle("✳ Claude Code")).toBe("Claude Code");
   expect(cleanTitle("AI is great")).toBe("AI is great");
   expect(cleanTitle("PR #42 fixes")).toBe("PR #42 fixes");
+});
+
+test("mrsAsPRs: GitLab MRs as the PRs prsByBranch and prChip read", () => {
+  const m = prsByBranch(mrsAsPRs([
+    { iid: 8, state: "opened", draft: false, source_branch: "feature/e2e", title: "Run page", web_url: "https://gitlab.com/x/y/-/merge_requests/8" },
+    { iid: 3, state: "merged", draft: false, source_branch: "feature/e2e", title: "older", web_url: "u3" },
+    { iid: 5, state: "opened", draft: true, source_branch: "wip", title: "W", web_url: "u5" },
+  ]));
+  expect(m.get("feature/e2e")).toMatchObject({ number: 8, state: "OPEN", isDraft: false, title: "Run page", url: "https://gitlab.com/x/y/-/merge_requests/8", reviewDecision: null });
+  expect(prChip(m.get("feature/e2e")).label).toBe("#8 open");
+  expect(prChip(m.get("wip")).state).toBe("draft");
 });

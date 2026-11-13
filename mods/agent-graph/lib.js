@@ -24,6 +24,11 @@ export function prsByBranch(list) {
   return m;
 }
 
+// `glab mr list` JSON -> the PR fields prsByBranch and prChip read (GitLab has no review decision here).
+const MR_STATE = { opened: "OPEN", merged: "MERGED", closed: "CLOSED", locked: "CLOSED" };
+export const mrsAsPRs = (list) => list.map((m) => ({ number: m.iid, state: MR_STATE[m.state] ?? "OPEN", isDraft: Boolean(m.draft),
+  headRefName: m.source_branch, title: m.title, url: m.web_url, reviewDecision: null }));
+
 // The chip a worktree shows for its PR (or none).
 export function prChip(pr) {
   if (!pr) return { state: "none", label: "No PR" };

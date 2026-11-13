@@ -5,7 +5,7 @@
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout } from "herdr";
-import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, cleanTitle, RANK } from "./lib.js";
+import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000;
 const MONO = "Geist Mono";
@@ -43,8 +43,14 @@ async function facts(on, cwd) {
   }
 }
 
+// The repo's PRs by branch: GitHub's through gh, GitLab's merge requests through glab (by the origin remote).
 async function pulls(on, cwd) {
   try {
+    const url = (await exec("git", ["remote", "get-url", "origin"], { cwd, on })).stdout ?? "";
+    if (!/github/i.test(url)) {
+      const r = await exec("glab", ["mr", "list", "--all", "-P", "100", "-F", "json"], { cwd, on });
+      return r.code === 0 ? prsByBranch(mrsAsPRs(JSON.parse(r.stdout))) : null;
+    }
     const r = await exec("gh", ["pr", "list", "--state", "all", "--limit", "100", "--json", "number,state,isDraft,headRefName,title,url,reviewDecision"], { cwd, on });
     return r.code === 0 ? prsByBranch(JSON.parse(r.stdout)) : null;
   } catch {
