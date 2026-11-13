@@ -8,6 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
+import { parseWorktrees, parseTrack, addWorktrees } from "./lib.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -27,7 +28,8 @@ function place(s, ps) {
   const tabs = new Set((s.tabs ?? []).map((c) => c.id));
   return ps.find((p) => tabs.has(p.tab) && p.cwd)?.cwd || s.folder;
 }
-const rowHeight = ({ tree }) => (tree ? 28 : 30);
+const rowHeight = ({ tree, kind }) => (tree || kind === "wt" ? 28 : 30);
+const machineOf = (r) => (r.w ? r.w.machine : r.on) ?? null;
 const RAIL_CELL = 32;
 const railCell = (el) => h_flex().flex_none().justify_center().child(el);
 const where = (s, ps) => JSON.stringify([s.machine ?? null, place(s, ps)]);
@@ -77,6 +79,8 @@ export default class Spaces extends View {
     this.reconnecting = JSON.parse(localStorage.getItem("machines.reconnecting") ?? "{}");
     for (const state of Object.values(this.reconnecting)) state.busy = false;
     this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
+    this.foldedSpaces = new Set(JSON.parse(localStorage.getItem("spaces.folded") ?? "[]"));
+    this.trees = {}; // repo -> { list, track }: its worktrees and their branches' ahead/behind
     this.refreshMachines(cx);
     cx.timer.every(15000, cx => this.refreshMachines(cx));
     // Refresh only when the refs could have changed (see `due`).
@@ -230,9 +234,17 @@ export default class Spaces extends View {
       ]);
       const name = repo.endsWith("/.git") ? base(repo.slice(0, -5)) : base(repo).replace(/\.git$/, "");
       const [ahead, behind] = counts.code === 0 ? counts.stdout.trim().split(/\s+/).map(Number) : [0, 0];
-      const info = { name, branch: branch.code === 0 ? branch.stdout.trim().replace(/^refs\/heads\//, "") : "(detached)", ahead, behind, repo: JSON.stringify([on, repo]), linked: repo !== `${top}/.git` };
+      const info = { name, branch: branch.code === 0 ? branch.stdout.trim().replace(/^refs\/heads\//, "") : "(detached)", ahead, behind, repo: JSON.stringify([on, repo]), linked: repo !== `${top}/.git`, top };
       this.git[key] = info;
       if (!on) this.watch(repo, cx);
+      // Its worktrees, from the main checkout. A machine that stops answering keeps the last list.
+      if (!info.linked) {
+        const [list, track] = await Promise.all([
+          exec("git", ["worktree", "list", "--porcelain"], { cwd, on }),
+          exec("git", ["for-each-ref", "--format=%(refname:short) %(upstream:track)", "refs/heads"], { cwd, on }),
+        ]);
+        if (list.code === 0 && track.code === 0) this.trees[info.repo] = { list: parseWorktrees(list.stdout), track: parseTrack(track.stdout) };
+      }
     } catch {
       // Couldn't ask (the machine is away): keep what it showed, look again later.
       this.git[key] ??= null;
@@ -304,11 +316,14 @@ export default class Spaces extends View {
     return out.filter(r => this.shown.has(r.w.id));
   }
 
-  // The rows, under a header per machine once one isn't this computer.
+  // The rows, under a header per machine once one isn't this computer. Open, each repo's worktrees go under it.
   grouped(t, collapsed) {
-    const rows = this.ordered();
-    const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t));
-    const remote = [...new Set([...rows.map(r => r.w.machine).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
+    const rows = collapsed ? this.ordered() : addWorktrees(this.ordered(), this.trees, this.foldedSpaces);
+    this.rows = rows;
+    const draw = (r) => (collapsed ? this.compact(r, t) : r.kind === "wt" ? this.worktreeRow(r, t) : this.row(r, t));
+    const remote = [...new Set([...rows.map(machineOf).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
+    const want = 45 + rows.reduce((h, r) => h + (collapsed ? 26 : rowHeight(r)), 0) + (remote.length ? (remote.length + 1) * 26 : 0);
+    if (want !== shared("spaces.want")) setShared("spaces.want", want);
     const loading = m => {
       const layout = machines().find(k => k.name === m)?.layout;
       return layout === "loading" || (!layout && this.machines.some(k => k.name === m && k.state === "connected"))
@@ -318,7 +333,7 @@ export default class Spaces extends View {
     if (!remote.length) return loading(null) && !rows.length ? [loadingRow(null)] : rows.map(draw);
     const machineNames = [null, ...remote];
     return machineNames.flatMap((m) => {
-      const mine = rows.filter((r) => (r.w.machine ?? null) === m);
+      const mine = rows.filter((r) => machineOf(r) === m);
       const repair = this.reconnecting[m];
       const machine = this.machines.find(k => k.name === m) ?? repair?.machine;
       const connected = !m || machine?.state === "connected";
@@ -394,8 +409,9 @@ export default class Spaces extends View {
       .when(g.behind > 0, (el) => el.child(div().flex_none().text_color(t.ansi1).child(`\u2193${g.behind}`)));
   }
 
-  row({ w, i, g, tree }, t) {
+  row({ w, i, g, tree, kids }, t) {
     const on = w.active;
+    const folded = this.foldedSpaces.has(w.id);
     const fromIndex = this.pressed === null ? -1 : spaces().findIndex(s => s.id === this.pressed);
     return v_flex()
       .relative()
@@ -442,10 +458,42 @@ export default class Spaces extends View {
           .gap(9)
           .items_center()
           .when(Boolean(tree), el => el.pl(22).child(svg("mods/workspace-chrome/branch.svg").size(13).text_color(t.dim)))
+          .when(!tree, el => el.child(kids
+            ? div().id(`fold-${w.id}`).flex_none().text_color(t.dim).hover(s => s.text_color(t.foreground))
+              .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.fold(w.id, cx); })
+              .child(svg(`mods/workspace-chrome/chevron-${folded ? "right" : "down"}.svg`).size(12))
+            : div().w(12).flex_none()))
           .when(!tree, el => el.child(avatar(w, t, 18)))
           .child(div().flex_shrink(0).max_w(150).truncate().text_color(t.foreground).child(w.name))
-          .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1()),
+          .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1())
+          .when(folded && kids > 0, el => el.child(div().flex_none().text_size(11.5).text_color(t.dim).child(`${kids} worktree${kids === 1 ? "" : "s"}`)))
+          .when(Boolean(tree), el => el.child(this.mark(w.status, t))),
       );
+  }
+
+  fold(id, cx) {
+    this.foldedSpaces.has(id) ? this.foldedSpaces.delete(id) : this.foldedSpaces.add(id);
+    localStorage.setItem("spaces.folded", JSON.stringify([...this.foldedSpaces]));
+    cx.notify();
+  }
+
+  // A worktree's agent state, at the end of its row: needs you, working, done; nothing when idle.
+  mark(status, t) {
+    if (status === "blocked") return div().size(7).rounded(4).flex_none().bg(t.blocked);
+    if (status === "working") return svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working);
+    if (status === "done") return svg("mods/workspace-chrome/check.svg").size(12).flex_none().text_color(t.done);
+    return div();
+  }
+
+  // A worktree with no space yet: greyed; a click opens a space there.
+  worktreeRow(r, t) {
+    return h_flex().id(`wt-${r.key}`).px(8).h(28).flex_none().rounded(8).gap(9).items_center().text_color(t.dim)
+      .hover((s) => s.bg(t.hover))
+      .on_click(() => run("space.new", { folder: r.path, machine: r.on ?? "" }))
+      .child(svg("mods/workspace-chrome/branch.svg").size(13).ml(22).flex_none())
+      .child(div().flex_1().min_w(0).truncate().text_size(12.5).child(r.label))
+      .when(r.ahead > 0, (el) => el.child(div().flex_none().text_size(11.5).child(`\u2191${r.ahead}`)))
+      .when(r.behind > 0, (el) => el.child(div().flex_none().text_size(11.5).child(`\u2193${r.behind}`)));
   }
 
   compact({ w, i }, t) {
