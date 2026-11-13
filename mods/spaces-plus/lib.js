@@ -29,7 +29,8 @@ export function parseTrack(text) {
 // ordered() rows ({w, i, g, tree}) -> rows with keys, each repo's worktrees that have no space yet (greyed) after
 // the nested spaces of its first main space (a bare repo has none: after its first space). An open worktree is
 // matched by path or branch: git and rev-parse can print one path two ways (/tmp vs /private/tmp).
-export function addWorktrees(rows, trees, folded) {
+// `archived`: JSON [machine, path] -> the space closed by archiving it (or null); those aren't listed.
+export function addWorktrees(rows, trees, folded, archived = {}) {
   const out = [];
   const placed = new Set();
   for (let n = 0; n < rows.length; n++) {
@@ -47,6 +48,7 @@ export function addWorktrees(rows, trees, folded) {
     const tree = trees[r.g.repo];
     for (const wt of tree?.list ?? []) {
       if (wt.bare || wt.prunable || tops.has(wt.path) || (wt.branch && branches.has(wt.branch))) continue;
+      if (JSON.stringify([on, wt.path]) in archived) continue;
       const track = (wt.branch && tree.track[wt.branch]) || { ahead: 0, behind: 0 };
       kids.push({ kind: "wt", key: `p:${JSON.stringify([on, wt.path])}`, parent: row.key, on, path: wt.path, label: wt.branch ?? base(wt.path), ahead: track.ahead, behind: track.behind });
     }
@@ -61,4 +63,19 @@ export function nearest(keys, old, cur) {
   if (keys.includes(cur)) return cur;
   for (let i = old.indexOf(cur) - 1; i >= 0; i--) if (keys.includes(old[i])) return old[i];
   return keys[0] ?? null;
+}
+
+// The worktree a row stands for, for archive and delete: a greyed worktree, or an open space in a linked worktree.
+// null for a main checkout (git can't remove it) or a folder outside git.
+export function actionTarget(r) {
+  if (r.kind === "wt") return { on: r.on, path: r.path, label: r.label, space: null };
+  if (!r.g?.linked) return null;
+  return { on: JSON.parse(r.g.repo)[0], path: r.g.top, label: r.g.branch, space: r.w.id };
+}
+
+// Archived worktrees open again in a space (from ⌘E Jump): not the space the archive closed, which can still be
+// on its way out. Their keys leave the archive.
+export function reopened(archived, rows) {
+  return rows.filter((r) => r.g?.linked).map((r) => [JSON.stringify([JSON.parse(r.g.repo)[0], r.g.top]), r.w.id])
+    .filter(([k, id]) => k in archived && archived[k] !== id).map(([k]) => k);
 }

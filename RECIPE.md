@@ -79,8 +79,13 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - Clicking the inbox's badge opens the sidebar.
 - **Sidebar keyboard** (`"focusable": true` in both mod.json files, so `pane.go` reaches them too).
   - Spaces: ↑/↓ move an `accent` 1px ring (it stops at both ends; it stays on its row across refreshes, or moves to
-    the nearest row above when its row goes), → unfolds and ← folds the repo under it (← on a worktree goes to its
-    space), ↵ selects the space or opens the worktree (`space.new {folder, machine}`). Inbox: ↑/↓, ↵ focuses the agent.
+    the nearest row above when its row goes), → unfolds and ← folds the repo under it, ↵ selects the space or opens
+    the worktree (`space.new {folder, machine}`). Inbox: ↑/↓, ↵ focuses the agent.
+  - On a worktree (greyed, or an open space in a linked worktree; not a main checkout: lib.js `actionTarget`), ←
+    deletes and → archives, each after `confirm-safe` (Herdr's confirm with Cancel selected: Enter alone cancels).
+    Delete: `git status --porcelain` first (dirty: a warning toast, no dialog), then `space.close` if open and
+    `git worktree remove` (the branch stays). Archive: shared `spaces.archived` (JSON [machine, path] → the space it
+    closed), skipped by `addWorktrees`; reopening it in another space drops it from the archive (`reopened`).
   - ctrl-j (Spaces → `inbox.focus`), ctrl-k (Inbox → `spaces-plus.focus`), ctrl-l and Esc (`pane.focus` on
     `focused()`). Not `pane.go`: it releases only a keyboard `pane.go` gave, not one a mod took itself.
     keys.json binds them in `mod:spaces-plus` / `mod:inbox` (`inbox.focus`, `spaces-plus.focus`, `<mod>.back`):

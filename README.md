@@ -115,6 +115,9 @@ prunes it. Raise `cleanupPeriodDays` to keep more.
 - **Spaces**: every worktree sits under its repo's space, with its ↑/↓ commits and what its agent is doing (amber dot:
   needs you, spinner: working, check: done). Worktrees with no space yet are greyed; click one (or ↵) to open it.
   Fold a repo with its chevron (or ←/→); folds are remembered. Spaces grows with its rows and pushes the inbox down.
+  On a worktree, ← deletes it (`git worktree remove`; not with uncommitted changes, and its branch stays) and →
+  archives it (off the sidebar, still on disk; opening it from ⌘E Jump brings it back). Both ask first, with
+  Cancel selected.
 - **Inbox** (after [T3 Inbox](https://github.com/JinJieBeWater/herdr-t3-inbox)): a two-line row for every agent
   waiting on you (blocked, finished, or idle for its next prompt): branch and age, then its task. Working agents fold
   into one row that opens the graph. Settle puts a row away until its agent needs you again.
@@ -145,7 +148,7 @@ The installer adds these without replacing any key you already have. All but ⌘
 | ⌘B | layout | sidebar: open it with the keyboard in Spaces; in it, fold it (to the last folded size) |
 | ⌘⌥B | layout | sidebar one size thinner: open → rail → dots → open |
 | ↑ ↓ · ↵ | sidebar | move · open the space or worktree, or go to the agent |
-| ← → | Spaces | fold or unfold a repo; ← on a worktree goes to its space |
+| ← → | Spaces | on a repo: fold or unfold it; on a worktree: delete · archive it (asks first) |
 | ctrl-j · ctrl-k | sidebar | Spaces → Inbox · Inbox → Spaces |
 | ctrl-l · Esc | sidebar | back to the terminal you came from |
 | ↑ ↓ · ← → · ↵ · Esc | panels | step through the list · switch tabs (PR states in PRs) · open · close |
@@ -207,6 +210,7 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/edi
 |---|---|
 | `mods/agent-graph`, `pr-review`, `skills`, `usage` | the four panels |
 | `mods/inbox`, `spaces-plus` | the sidebar |
+| `mods/confirm-safe` | Herdr's confirm dialog with Cancel selected, for worktree delete and archive |
 | `mods/tabs-plus` | Herdr's tab bar with the panel buttons; names tabs and records the order you visit them |
 | `mods/jump` | the ⌘E switcher |
 | `layouts/emergence.json` | Herdr's `main` layout with all of the above |

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseWorktrees, parseTrack, addWorktrees, nearest } from "./lib.js";
+import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened } from "./lib.js";
 
 const PORCELAIN = ["worktree /r", "HEAD a", "branch refs/heads/main", "",
   "worktree /w/feat", "HEAD b", "branch refs/heads/feat/x", "",
@@ -91,4 +91,25 @@ test("addWorktrees: bare repo (no main checkout) -> its first space shows the wo
   const trees = { [B]: { list: parseWorktrees("worktree /b.git\nbare\n\nworktree /w/a\nbranch refs/heads/feat/a\n\nworktree /w/b\nbranch refs/heads/feat/b\n\nworktree /w/c\nbranch refs/heads/feat/c\n"), track: {} } };
   const out = addWorktrees(rows, trees, new Set());
   expect(out.map((r) => [r.key, r.kids, r.parent])).toEqual([["s:F1", 1, null], ['p:[null,"/w/b"]', undefined, "s:F1"], ["s:F2", 0, null]]);
+});
+
+test("addWorktrees: an archived worktree isn't listed", () => {
+  const out = addWorktrees(fixture(), TREES, new Set(), { [JSON.stringify([null, "/w/det"])]: null });
+  expect(out.map((r) => r.key)).toEqual(["s:T", "s:F", "s:D"]);
+  expect(out[0].kids).toBe(1);
+});
+
+test("actionTarget: greyed worktree and open linked space; not the main checkout or a plain folder", () => {
+  const [T, F, det, D] = addWorktrees(fixture(), TREES, new Set());
+  expect(actionTarget(det)).toEqual({ on: null, path: "/w/det", label: "det", space: null });
+  expect(actionTarget(F)).toEqual({ on: null, path: "/w/feat", label: "feat/x", space: "F" });
+  expect(actionTarget(T)).toBe(null);
+  expect(actionTarget(D)).toBe(null);
+});
+
+test("reopened: archived keys whose worktree is open again in a new space", () => {
+  const k = JSON.stringify([null, "/w/feat"]);
+  expect(reopened({ [k]: "F" }, fixture())).toEqual([]); // the space being closed by the archive itself
+  expect(reopened({ [k]: "old" }, fixture())).toEqual([k]);
+  expect(reopened({ [k]: null }, fixture())).toEqual([k]);
 });

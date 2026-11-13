@@ -7,8 +7,8 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, nextCommand, focused } from "herdr";
-import { parseWorktrees, parseTrack, addWorktrees, nearest } from "./lib.js";
+import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, nextCommand, focused, notify } from "herdr";
+import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened } from "./lib.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -101,6 +101,7 @@ export default class Spaces extends View {
         if (c === "focus") this.fh.focus();
         else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "inbox.toggle");
         else if (c === "back") back(); // ctrl-l (keys.json mod:spaces-plus: a binding beats on_key_down)
+        else if (c === "archive" || c === "delete") this.act(c, cx); // the confirm dialog's OK (see ask)
         cx.notify();
       }
     });
@@ -291,6 +292,39 @@ export default class Spaces extends View {
     });
   }
 
+  // ← deletes, → archives the worktree under the cursor, each after a confirm dialog (confirm-safe: Cancel selected; it
+  // runs spaces-plus.<kind> on OK; a mod command carries no args, so the target waits in this.asked).
+  // Delete is `git worktree remove`: never with uncommitted changes, never the branch. Archive hides it from the
+  // sidebar (shared "spaces.archived"), on disk still; ⌘E Jump opens it, and that brings it back.
+  async ask(kind, target, cx) {
+    const { on, path, label, space } = target;
+    if (kind === "delete") {
+      const st = await exec("git", ["-C", path, "status", "--porcelain"], { on });
+      if (st.code !== 0) return notify({ title: `Couldn't check ${label}`, body: st.stderr.trim(), level: "error" });
+      if (st.stdout.trim()) return notify({ title: `${label} has uncommitted changes`, body: "Not deleted. → archives it instead.", level: "warning" });
+    }
+    this.asked = { kind, target };
+    const closes = space ? " Its space and terminals close." : "";
+    openOverlay({ mod: "confirm-safe", kind: "dialog", width: 440, height: 240, props: kind === "delete"
+      ? { title: `Delete worktree ${label}?`, detail: `Removes ${path} from disk (git worktree remove). Its branch stays.${closes}`, command: { name: "spaces-plus.delete" } }
+      : { title: `Archive worktree ${label}?`, detail: `Hides it from the sidebar; it stays on disk at ${path}. Open it from ⌘E Jump to bring it back.${closes}`, command: { name: "spaces-plus.archive" } } });
+    cx.notify();
+  }
+
+  async act(kind, cx) {
+    const a = this.asked;
+    this.asked = null;
+    if (a?.kind !== kind) return;
+    const { on, path, label, space } = a.target;
+    if (kind === "archive") setShared("spaces.archived", { ...(shared("spaces.archived") ?? {}), [JSON.stringify([on, path])]: space });
+    if (space) run("space.close", { id: space, confirmed: true });
+    if (kind === "delete") {
+      const r = await exec("git", ["-C", path, "worktree", "remove", path], { on });
+      if (r.code !== 0) notify({ title: `Couldn't delete ${label}`, body: r.stderr.trim(), level: "error" });
+    }
+    this.refreshGit(Object.keys(this.git), cx);
+  }
+
   menu(w) {
     // A popup is as tall as its items; height is only the most.
     openOverlay({ mod: "menu", kind: "popup", width: 200, height: 260, props: { tab: "space", target: { id: w.id } } });
@@ -344,7 +378,9 @@ export default class Spaces extends View {
   // The rows, under a header per machine once one isn't this computer. Open, each repo's worktrees go under it;
   // dots: a square per space, nothing else.
   grouped(t, collapsed) {
-    const rows = collapsed ? this.ordered() : addWorktrees(this.ordered(), this.trees, this.foldedSpaces);
+    const archived = shared("spaces.archived") ?? {}, open = this.ordered(), back = reopened(archived, open);
+    if (back.length) setShared("spaces.archived", Object.fromEntries(Object.entries(archived).filter(([k]) => !back.includes(k))));
+    const rows = collapsed ? open : addWorktrees(open, this.trees, this.foldedSpaces, archived);
     const remote = [...new Set([...rows.map(machineOf).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
     // A folded machine draws only its header, a rebuilt one only its header: their rows aren't the cursor's.
     const hidden = (m) => remote.length > 0 && (this.folded.has(m) || (!collapsed && (!!this.reconnecting[m] || this.rebuilt(this.machines.find((k) => k.name === m)))));
@@ -553,6 +589,7 @@ export default class Spaces extends View {
     const rows = this.rows ?? [], i = rows.findIndex((r) => r.key === this.cur), r = rows[i];
     if (k === "up" || k === "down") this.cur = rows[Math.max(0, Math.min(rows.length - 1, i + (k === "up" ? -1 : 1)))]?.key ?? null;
     else if (!r) return;
+    else if ((k === "left" || k === "right") && actionTarget(r)) this.ask(k === "left" ? "delete" : "archive", actionTarget(r), cx);
     else if (k === "right" && r.kids && this.foldedSpaces.has(r.w.id)) this.fold(r.w.id, cx);
     else if (k === "left" && r.parent) this.cur = r.parent;
     else if (k === "left" && r.kids && !this.foldedSpaces.has(r.w.id)) this.fold(r.w.id, cx);
