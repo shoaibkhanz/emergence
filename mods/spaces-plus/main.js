@@ -6,7 +6,7 @@
 // switch, right-click for its menu, drag to reorder.
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
+import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, nextCommand, focused } from "herdr";
 import { parseWorktrees, parseTrack, addWorktrees, nearest } from "./lib.js";
 
@@ -94,6 +94,7 @@ export default class Spaces extends View {
     this.fh = cx.focus_handle();
     this.cur = null; // the cursor's row key
     this.keys = [];
+    this.list = ScrollHandle.new();
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
@@ -259,8 +260,9 @@ export default class Spaces extends View {
       const info = { name, branch: branch.code === 0 ? branch.stdout.trim().replace(/^refs\/heads\//, "") : "(detached)", ahead, behind, repo: JSON.stringify([on, repo]), linked: repo !== `${top}/.git`, top };
       this.git[key] = info;
       if (!on) this.watch(repo, cx);
-      // Its worktrees, from the main checkout. A machine that stops answering keeps the last list.
-      if (!info.linked) {
+      // Its worktrees, from the main checkout (a bare repo has none: from any of them). A machine that stops
+      // answering keeps the last list.
+      if (!info.linked || !repo.endsWith("/.git")) {
         const [list, track] = await Promise.all([
           exec("git", ["worktree", "list", "--porcelain"], { cwd, on }),
           exec("git", ["for-each-ref", "--format=%(refname:short) %(upstream:track)", "refs/heads"], { cwd, on }),
@@ -342,27 +344,33 @@ export default class Spaces extends View {
   // dots: a square per space, nothing else.
   grouped(t, collapsed) {
     const rows = collapsed ? this.ordered() : addWorktrees(this.ordered(), this.trees, this.foldedSpaces);
-    this.rows = rows;
+    const remote = [...new Set([...rows.map(machineOf).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
+    // A folded machine draws only its header, a rebuilt one only its header: their rows aren't the cursor's.
+    const hidden = (m) => remote.length > 0 && (this.folded.has(m) || (!collapsed && (!!this.reconnecting[m] || this.rebuilt(this.machines.find((k) => k.name === m)))));
+    const shown = rows.filter((r) => !hidden(machineOf(r)));
+    this.rows = shown;
     if (!collapsed) {
-      const keys = rows.map((r) => r.key);
+      const keys = shown.map((r) => r.key);
       this.cur = nearest(keys, this.keys, this.cur ?? `s:${spaces().find((s) => s.active)?.id}`);
       this.keys = keys;
     }
+    // The key of each drawn child (null: a header, a note), for scroll_to_item.
+    const drawn = (this.drawn = []);
+    const out = (key, el) => { drawn.push(key); return el; };
     const publish = (want) => { if (want !== shared("spaces.want")) setShared("spaces.want", want); };
     if (collapsed && dotsSize()) {
       publish(lights() + 16 + rows.length * 22);
       return rows.map((r) => this.dot(r, t));
     }
-    const draw = (r) => (collapsed ? this.compact(r, t) : r.kind === "wt" ? this.worktreeRow(r, t) : this.row(r, t));
-    const remote = [...new Set([...rows.map(machineOf).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
-    publish(45 + lights() + rows.reduce((h, r) => h + (collapsed ? 26 : rowHeight(r)), 0) + (remote.length ? (remote.length + 1) * 26 : 0));
+    const draw = (r) => out(r.key, collapsed ? this.compact(r, t) : r.kind === "wt" ? this.worktreeRow(r, t) : this.row(r, t));
+    publish(45 + lights() + shown.reduce((h, r) => h + (collapsed ? 26 : rowHeight(r)), 0) + (remote.length ? (remote.length + 1) * 26 : 0));
     const loading = m => {
       const layout = machines().find(k => k.name === m)?.layout;
       return layout === "loading" || (!layout && this.machines.some(k => k.name === m && k.state === "connected"))
         || spaces().some(s => (s.machine ?? null) === m && !this.shown.has(s.id));
     };
     const loadingRow = m => h_flex().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(collapsed ? 0 : 8).items_center().when(collapsed, el => el.justify_center()).text_size(12).text_color(t.dim).child(collapsed ? "…" : "Loading…");
-    if (!remote.length) return loading(null) && !rows.length ? [loadingRow(null)] : rows.map(draw);
+    if (!remote.length) return loading(null) && !rows.length ? [out(null, loadingRow(null))] : rows.map(draw);
     const machineNames = [null, ...remote];
     return machineNames.flatMap((m) => {
       const mine = rows.filter((r) => machineOf(r) === m);
@@ -415,7 +423,7 @@ export default class Spaces extends View {
             .text_size(11).text_color(t.foreground).bg(t.raised).cursor_pointer().hover(s => s.bg(t.hover))
             .on_click((_e, cx) => { cx.stop_propagation(); cx.write_to_clipboard(login); this.copiedLogin = login; cx.notify(); })
             .child(this.copiedLogin === login ? "Copied" : "Copy")))] : [];
-      return [cell(head), ...guidance, ...(folded ? [] : mine.length ? mine.map(draw) : [loading(m) ? loadingRow(m) : cell(empty)])];
+      return [out(null, cell(head)), ...guidance.map((g) => out(null, g)), ...(folded ? [] : mine.length ? mine.map(draw) : [out(null, loading(m) ? loadingRow(m) : cell(empty))])];
     });
   }
 
@@ -548,6 +556,8 @@ export default class Spaces extends View {
     else if (k === "left" && r.parent) this.cur = r.parent;
     else if (k === "left" && r.kids && !this.foldedSpaces.has(r.w.id)) this.fold(r.w.id, cx);
     else if (k === "enter") run(r.kind === "wt" ? "space.new" : "space.select", r.kind === "wt" ? { folder: r.path, machine: r.on ?? "" } : { id: r.w.id });
+    const at = (this.drawn ?? []).indexOf(this.cur);
+    if (at >= 0) this.list.scroll_to_item(at);
     cx.notify();
   }
 
@@ -599,7 +609,7 @@ export default class Spaces extends View {
         .when(!collapsed, el => el.child("Spaces"))
         .child(div().id("space-new").size(26).flex_none().flex().items_center().justify_center().rounded(6).hover(s => s.bg(t.hover).text_color(t.foreground))
           .on_click(() => run("space.new")).child(svg("mods/workspace-chrome/plus.svg").size(14)))))
-      .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pt(dots ? top + 8 : 0).pb(dots ? 8 : 14).overflow_y_scrollbar().mode("always")
+      .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pt(dots ? top + 8 : 0).pb(dots ? 8 : 14).overflow_y_scrollbar().mode("always").track_scroll(this.list)
         .on_mouse_up("left", (_e, cx) => { this.pressed = null; cx.notify(); })
         .children(this.grouped(t, collapsed)));
   }

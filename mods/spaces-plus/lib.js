@@ -27,8 +27,8 @@ export function parseTrack(text) {
 }
 
 // ordered() rows ({w, i, g, tree}) -> rows with keys, each repo's worktrees that have no space yet (greyed) after
-// the nested spaces of its first main space. An open worktree is matched by path or branch: git and rev-parse
-// can print one path two ways (/tmp vs /private/tmp).
+// the nested spaces of its first main space (a bare repo has none: after its first space). An open worktree is
+// matched by path or branch: git and rev-parse can print one path two ways (/tmp vs /private/tmp).
 export function addWorktrees(rows, trees, folded) {
   const out = [];
   const placed = new Set();
@@ -37,7 +37,7 @@ export function addWorktrees(rows, trees, folded) {
     if (r.tree) continue; // drawn with its main below
     const row = { ...r, kind: "space", key: `s:${r.w.id}`, kids: 0, parent: null };
     out.push(row);
-    if (!r.g || r.g.linked || placed.has(r.g.repo)) continue;
+    if (!r.g || (r.g.linked && !trees[r.g.repo]?.list.some((wt) => wt.bare)) || placed.has(r.g.repo)) continue;
     placed.add(r.g.repo);
     const kids = [];
     for (let k = n + 1; k < rows.length && rows[k].tree; k++) kids.push({ ...rows[k], kind: "space", key: `s:${rows[k].w.id}`, kids: 0, parent: row.key });

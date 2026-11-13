@@ -84,3 +84,11 @@ test("nearest: kept, removed -> previous, all gone -> first, empty -> null", () 
   expect(nearest([], ["a"], "a")).toBe(null);
   expect(nearest(["x"], [], null)).toBe("x");
 });
+
+test("addWorktrees: bare repo (no main checkout) -> its first space shows the worktrees with no space", () => {
+  const B = JSON.stringify([null, "/b.git"]);
+  const rows = [space("F1", { repo: B, branch: "feat/a", linked: true, top: "/w/a" }), space("F2", { repo: B, branch: "feat/c", linked: true, top: "/w/c" })];
+  const trees = { [B]: { list: parseWorktrees("worktree /b.git\nbare\n\nworktree /w/a\nbranch refs/heads/feat/a\n\nworktree /w/b\nbranch refs/heads/feat/b\n\nworktree /w/c\nbranch refs/heads/feat/c\n"), track: {} } };
+  const out = addWorktrees(rows, trees, new Set());
+  expect(out.map((r) => [r.key, r.kids, r.parent])).toEqual([["s:F1", 1, null], ['p:[null,"/w/b"]', undefined, "s:F1"], ["s:F2", 0, null]]);
+});

@@ -42,13 +42,14 @@ function nextAttention() {
 // else it takes the keyboard. ⌘⌥B: one size thinner, dots wrapping to open. A hidden sidebar comes back.
 const sizeOf = (s) => ((s.size?.px ?? Infinity) < 34 ? "dots" : (s.size?.px ?? Infinity) < 160 ? "rail" : "open");
 
-function open() {
+// ⌘B moves the keyboard with the sidebar (`keys`); ⌘⌥B only changes the size.
+function open(keys) {
   for (const id of ["brand", "spaces", "sidebar-footer"]) run("layout.show", { id });
   run("layout.resize", { id: "sidebar", px: shared("sidebar.width") ?? 268 });
-  run("spaces-plus.focus");
+  if (keys) run("spaces-plus.focus");
 }
 
-function fold(to = shared("sidebar.folded") ?? "rail") {
+function fold(to = shared("sidebar.folded") ?? "rail", keys = false) {
   const s = find(layout(), "sidebar");
   if (!s) return;
   if (sizeOf(s) === "open") setShared("sidebar.width", s.size?.px);
@@ -57,15 +58,15 @@ function fold(to = shared("sidebar.folded") ?? "rail") {
   run("layout.resize", { id: "sidebar", px: to === "dots" ? 20 : 48 });
   setShared("sidebar.folded", to);
   // The keyboard goes back to the pane it came from (focused() keeps reporting it while a mod holds it).
-  const f = focused();
+  const f = keys && focused();
   if (f) run("pane.focus", f.pane ? { pane: f.pane } : { terminal: f.terminal });
 }
 
 function rail() {
   const s = find(layout(), "sidebar");
   if (!s) return;
-  if (s.hidden) { run("layout.show", { id: "sidebar" }); return open(); }
-  if (sizeOf(s) !== "open") return open();
+  if (s.hidden) { run("layout.show", { id: "sidebar" }); return open(true); }
+  if (sizeOf(s) !== "open") return open(true);
   run("spaces-plus.toggle");
 }
 
@@ -113,7 +114,7 @@ export default class Tabs extends View {
     // and "tabs-plus.thinner" (⌘⌥B) size the sidebar ("tabs-plus.fold" is ⌘B's fold, asked for by spaces-plus or the inbox);
     // "tabs-plus.worktrees" (⌘⇧O) lists every worktree of the repo you're in, in Herdr's own dialog (Enter opens one as a space);
     // "tabs-plus.update" applies a pending update (the chip's click).
-    const commands = { attention: nextAttention, rail, thinner, fold: () => fold() };
+    const commands = { attention: nextAttention, rail, thinner, fold: () => fold(undefined, true) };
     cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (commands[c]) commands[c](); else if (c === "update") this.applyUpdate(cx); else if (c === "worktrees") openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: focused()?.space, folder: focused()?.cwd, action: "open" } }); else if (PANELS.some(([id]) => id === c)) this.toggle(c); cx.notify(); } });
     this.update = null; // { behind, busy?, error? } once main has commits this clone lacks
     cx.spawn(async (cx) => { await cx.sleep(16); this.checkUpdate(cx); }); // host calls before the first frame never resolve

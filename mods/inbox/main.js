@@ -4,7 +4,7 @@
 // Also sizes Spaces above to its rows. Marks stay still: an endless spin redraws the window every frame.
 
 import { View, div, image, svg } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
+import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared, nextCommand, focused } from "herdr";
 
 function find(node, id) {
@@ -54,6 +54,7 @@ export default class Inbox extends View {
     // The keyboard (mod.json focusable), as in spaces-plus; toggle is ⌘B's question "is it here?".
     this.fh = cx.focus_handle();
     this.cur = null; // the cursor's agent address
+    this.list = ScrollHandle.new();
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
@@ -69,8 +70,11 @@ export default class Inbox extends View {
     if (k === "ctrl-k") return run("spaces-plus.focus");
     if (k === "ctrl-l" || k === "escape") return back();
     const i = this.cards.findIndex((a) => a.address === this.cur);
-    if (k === "up" || k === "down") this.cur = this.cards[Math.max(0, Math.min(this.cards.length - 1, i + (k === "up" ? -1 : 1)))]?.address ?? null;
-    else if (k === "enter" && i >= 0) run("agent.focus", { terminal: this.cur });
+    if (k === "up" || k === "down") {
+      const j = Math.max(0, Math.min(this.cards.length - 1, i + (k === "up" ? -1 : 1)));
+      this.cur = this.cards[j]?.address ?? null;
+      if (this.cur) this.list.scroll_to_item(j);
+    } else if (k === "enter" && i >= 0) run("agent.focus", { terminal: this.cur });
     cx.notify();
   }
 
@@ -174,8 +178,9 @@ export default class Inbox extends View {
           .when(dots, (b) => b.text_size(10).font_semibold().text_color(t.blocked))
           .child(String(cards.length))));
     }
-    // Header, the list's content (measured below), the feet and the open shelf.
-    this.fitSpaces(collapsed, 41 + (this.listH ?? 32) + (working ? 32 : 0) + (settled.length ? 32 + (this.shelf ? Math.min(160, settled.length * 30) + 6 : 0) : 0));
+    // Header, the list's content (cards are alike: one is measured), the feet and the open shelf.
+    const listH = cards.length ? cards.length * ((this.cardH ?? 50) + 2) - 2 : 32;
+    this.fitSpaces(collapsed, 41 + listH + (working ? 32 : 0) + (settled.length ? 32 + (this.shelf ? Math.min(160, settled.length * 30) + 6 : 0) : 0));
     const bound = keys().find((k) => k.action === "tabs-plus.attention")?.keys;
     // Header and inset line up with Herdr's Spaces list above (16px, 11.5px label).
     return this.measured(root.border_t(1).border_color(t.border))
@@ -186,12 +191,11 @@ export default class Inbox extends View {
         .when(Boolean(bound), (el) => el.child(div().id("inbox-key").h(18).px(5).flex().items_center().rounded(4).border(1).border_color(t.border)
           .text_size(11).tooltip("Next agent that needs you")
           .child(bound.split("-").map((p) => GLYPH[p] ?? p.toUpperCase()).join("")))))
-      .child(v_flex().id("inbox-list").flex_1().min_h(0).px(6).overflow_y_scrollbar()
-        .child(v_flex().flex_none().gap(2)
-          .on_size_change((size, cx) => { const h = Math.round(size.height / (settings().zoom ?? 1)); if (h !== this.listH) { this.listH = h; cx.notify(); } })
-          .when(cards.length === 0, (el) => el.child(h_flex().h(32).px(10).gap(8).items_center().text_size(12).text_color(t.dim)
-            .child(svg("mods/workspace-chrome/circle-check.svg").size(14).flex_none()).child("All caught up")))
-          .children(cards.map((a) => this.card(t, a, tabs.get(a.tab), pane.get(a.pane), now)))))
+      .child(v_flex().id("inbox-list").flex_1().min_h(0).px(6).gap(2).overflow_y_scrollbar().track_scroll(this.list)
+        .when(cards.length === 0, (el) => el.child(h_flex().h(32).flex_none().px(10).gap(8).items_center().text_size(12).text_color(t.dim)
+          .child(svg("mods/workspace-chrome/circle-check.svg").size(14).flex_none()).child("All caught up")))
+        .children(cards.map((a, n) => this.card(t, a, tabs.get(a.tab), pane.get(a.pane), now)
+          .when(n === 0, (el) => el.on_size_change((size, cx) => { const h = Math.round(size.height / (settings().zoom ?? 1)); if (h !== this.cardH) { this.cardH = h; cx.notify(); } })))))
       .when(working > 0, (el) => el.child(this.foot(t, "inbox-working", svg("mods/workspace-chrome/spinner.svg").size(12).text_color(t.working), "Working", working,
         () => { if (find(layout(), "panel")?.hidden || find(layout(), "panel-body")?.active !== "graph") run("tabs-plus.graph"); }, false)
         .tooltip("Open the agent graph")))
