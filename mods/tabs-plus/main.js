@@ -23,19 +23,6 @@ function find(node, id) {
   return null;
 }
 
-// ⌘⇧J: the next agent the inbox shows, in its order, after the one you're on (as inbox/main.js: blocked anywhere,
-// else done or idle where its tab isn't settled and it isn't a sub-agent; blocked, done, idle, newest first).
-// The tab bar always shows, so the key works with the sidebar folded.
-const RANK = { blocked: 0, done: 1, idle: 2 };
-function nextAttention() {
-  const tabs = new Map(spaces().flatMap((s) => s.tabs).map((t) => [t.id, t]));
-  const sub = new Set(terminals().filter((x) => x.parent).map((x) => x.address));
-  const want = agents().filter((a) => a.status === "blocked" || (RANK[a.status] !== undefined && !tabs.get(a.tab)?.settled && !sub.has(a.address)))
-    .sort((x, y) => RANK[x.status] - RANK[y.status] || (tabs.get(y.tab)?.changed_at ?? 0) - (tabs.get(x.tab)?.changed_at ?? 0));
-  const i = want.findIndex((a) => a.address === focused()?.terminal);
-  if (want.length) run("agent.focus", { terminal: want[(i + 1) % want.length].address });
-}
-
 // The sidebar's three sizes, by its width (a dragged edge counts too): open, rail (48, a cell per space) and dots
 // (20, a square per space). ⌘B: folded → open with the keyboard in Spaces; open → fold to the last folded size,
 // but only when the sidebar holds the keyboard (no blur event: spaces-plus.toggle asks Spaces, then the inbox),
@@ -110,11 +97,13 @@ export default class Tabs extends View {
     this.asked = {}; // autoName's renames sent, by tab id
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
     this.widths = JSON.parse(localStorage.getItem("widths") ?? "{}");
-    // keyboard (layout:emergence): "cmd-shift-a": "tabs-plus.graph" toggles that panel; "tabs-plus.attention" jumps (⌘⇧J); "tabs-plus.rail" (⌘B)
+    // keyboard (layout:emergence): "cmd-shift-a": "tabs-plus.graph" toggles that panel; "tabs-plus.attention" goes to the Inbox (⌘⇧J); "tabs-plus.rail" (⌘B)
     // and "tabs-plus.thinner" (⌘⌥B) size the sidebar ("tabs-plus.fold" is ⌘B's fold, asked for by spaces-plus or the inbox);
     // "tabs-plus.worktrees" (⌘⇧O) lists every worktree of the repo you're in, in Herdr's own dialog (Enter opens one as a space);
     // "tabs-plus.update" applies a pending update (the chip's click).
-    const commands = { attention: nextAttention, rail, thinner, fold: () => fold(undefined, true) };
+    // ⌘⇧J: the keyboard into the Inbox (↑↓ pick, ↵ goes to the agent, Esc back), the sidebar opening if folded.
+    const attention = () => { const s = find(layout(), "sidebar"); if (!s || sizeOf(s) !== "open") open(false); run("inbox.focus"); };
+    const commands = { attention, rail, thinner, fold: () => fold(undefined, true) };
     cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (commands[c]) commands[c](); else if (c === "update") this.applyUpdate(cx); else if (c === "worktrees") openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: focused()?.space, folder: focused()?.cwd, action: "open" } }); else if (PANELS.some(([id]) => id === c)) this.toggle(c); cx.notify(); } });
     this.update = null; // { behind, busy?, error? } once main has commits this clone lacks
     cx.spawn(async (cx) => { await cx.sleep(16); this.checkUpdate(cx); }); // host calls before the first frame never resolve

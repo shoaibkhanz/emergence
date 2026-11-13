@@ -74,7 +74,7 @@ export default class Inbox extends View {
       const j = Math.max(0, Math.min(this.cards.length - 1, i + (k === "up" ? -1 : 1)));
       this.cur = this.cards[j]?.address ?? null;
       if (this.cur) this.list.scroll_to_item(j);
-    } else if (k === "enter" && i >= 0) run("agent.focus", { terminal: this.cur });
+    } else if (k === "enter" && i >= 0) { run("agent.focus", { terminal: this.cur }); run("pane.focus", { terminal: this.cur }); } // pane.focus releases our keyboard
     cx.notify();
   }
 

@@ -146,7 +146,7 @@ The installer adds these without replacing any key you already have. All but ⌘
 |---|---|---|
 | ⌘E | everywhere | Jump: every session and worktree |
 | ⌘⇧A · ⌘⇧R · ⌘⇧K · ⌘⇧U | layout | open or close Agents · PRs · Library · Usage (the panel takes the keyboard) |
-| ⌘⇧J | layout | the next agent in the inbox (needs you first, then done, then idle) |
+| ⌘⇧J | layout | the keyboard into the Inbox (the sidebar opens if folded): ↑↓ pick, ↵ goes to that agent, Esc back |
 | ⌘⇧O | layout | every worktree of the repo you're in |
 | ⌘B | layout | sidebar: open it with the keyboard in Spaces; in it, fold it (to the last folded size) |
 | ⌘⌥B | layout | sidebar one size thinner: open → rail → dots → open |

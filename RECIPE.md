@@ -86,8 +86,8 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - The ring clears when the keyboard leaves: a 250ms timer compares `is_focused()` with what was drawn.
 - **Keys** (`layout:emergence`: only the emergence layout shows tabs-plus; ⌘E is global). ⌘B and ⌘⌥B as above.
   - ⌘⇧A (Agents), ⌘⇧R (PRs: review), ⌘⇧K (Library) and ⌘⇧U (Usage) toggle the panels.
-  - ⌘⇧J jumps to the next agent the inbox shows, in its order: blocked, then done, then idle (not settled, not
-    sub-agents), newest first in each.
+  - ⌘⇧J puts the keyboard in the Inbox (`inbox.focus`), opening the sidebar first if it's folded; ↵ there runs
+    `agent.focus` then `pane.focus` on that agent's terminal (pane.focus releases the Inbox's keyboard).
   - ⌘⇧O opens Herdr's Open worktree dialog for the focused pane's repo.
   - ⌘E opens Jump.
   - Opening a panel (its ⌘⇧ key or the tab bar) gives it the keyboard: tabs-plus sets `shared("emergence.opened")` and
