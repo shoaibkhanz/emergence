@@ -35,9 +35,9 @@ every worktree and the agents that need you. Every screenshot below uses made-up
 ![Agents panel: repos, worktrees with their PRs, and agents](docs/images/agents.png)
 
 Every agent on the machine in one picture: repo → worktree, with the PR it has open → agent → its sub-agents. With a
-dozen agents running, the one that's blocked shows in red and the finished one in green, so you see where to look
-without visiting each tab. Click an agent to jump to it, a PR to review it, a repo to list its worktrees. Drag cards
-around; the wheel zooms.
+dozen agents running, the blocked one is drawn in red and the working ones in amber, and finished ones show green, so
+you see where to look without visiting each tab. **Active only** hides the idle ones. Click an agent to jump to it, a
+PR to review it, a repo to list its worktrees. Drag cards around; the wheel zooms.
 
 ### PRs (⌘⇧R): review your agents' work without leaving Herdr
 
@@ -179,13 +179,15 @@ either; the second fold size is ⌘⌥B (Option).
 
 ## Update or remove
 
-Update: click **Update** in the tab bar when it shows, or run the install command again.
-Either one reloads the layout, so the new mods run straight away.
+Update: click **Update** in the tab bar when it shows, or run the install command again. Either one relinks every mod
+(moving any old copy aside, as the install does) and reloads the layout, so the new mods run straight away.
 If you installed by copying the files, run the install command once to switch to a clone.
 
 Remove: switch back with `herdr-app do layout.switch --name main`, delete the links
 (`find ~/.config/herdr-app/mods ~/.config/herdr-app/layouts -maxdepth 1 -lname "$HOME/code/emergence/*" -delete`),
-then take the `tabs-plus.*` and `mod.open:jump` keys out of `~/.config/herdr-app/keys.json` and the `omp` entry out of `programs.json`.
+then take the `tabs-plus.*`, `mod.open:jump` and `mod.open:emergence-keys` keys and the `mod:spaces-plus` and
+`mod:inbox` sections out of `~/.config/herdr-app/keys.json`, and the `omp` entry out of `programs.json`. Old copies
+the install moved aside are in `~/.config/herdr-app/replaced/`.
 
 ## Optional: ctrl-h/j/k/l between panes
 
