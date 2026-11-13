@@ -7,8 +7,8 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
-import { parseWorktrees, parseTrack, addWorktrees } from "./lib.js";
+import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, nextCommand, focused } from "herdr";
+import { parseWorktrees, parseTrack, addWorktrees, nearest } from "./lib.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -21,6 +21,12 @@ function find(node, id) {
 
 // The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
 const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
+
+// Back to the pane the keyboard came from (focused() keeps reporting it while a mod holds the keyboard).
+export function back() {
+  const f = focused();
+  if (f) run("pane.focus", f.pane ? { pane: f.pane } : { terminal: f.terminal });
+}
 
 // Where a space is now: its first terminal's live folder, else where it was made.
 // `ps`: panes(), read once by the caller (each read copies every pane).
@@ -81,6 +87,18 @@ export default class Spaces extends View {
     this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
     this.foldedSpaces = new Set(JSON.parse(localStorage.getItem("spaces.folded") ?? "[]"));
     this.trees = {}; // repo -> { list, track }: its worktrees and their branches' ahead/behind
+    // The keyboard (mod.json focusable): pane.go or spaces-plus.focus gives it; ⌘B asks toggle whether it's here.
+    this.fh = cx.focus_handle();
+    this.cur = null; // the cursor's row key
+    this.keys = [];
+    cx.spawn(async (cx) => {
+      for (;;) {
+        const c = await nextCommand();
+        if (c === "focus") this.fh.focus();
+        else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "inbox.toggle");
+        cx.notify();
+      }
+    });
     this.refreshMachines(cx);
     cx.timer.every(15000, cx => this.refreshMachines(cx));
     // Refresh only when the refs could have changed (see `due`).
@@ -93,7 +111,8 @@ export default class Spaces extends View {
     for (const s of sp) if (!this.shown.has(s.id)) this.born[s.id] ??= now;
     const due = this.due(now, sp, panes());
     if (due.size) this.refreshGit(due, cx);
-    if (sp.some((s) => !this.shown.has(s.id)) || this.orderingDue(now)) cx.notify();
+    // No blur event: the cursor ring goes when the keyboard has left (a click elsewhere, pane.go).
+    if (sp.some((s) => !this.shown.has(s.id)) || this.orderingDue(now) || this.fh.is_focused() !== this.ringed) cx.notify();
   }
 
   // Places whose git could have changed: new ones (a new space, a cd), where a
@@ -320,6 +339,11 @@ export default class Spaces extends View {
   grouped(t, collapsed) {
     const rows = collapsed ? this.ordered() : addWorktrees(this.ordered(), this.trees, this.foldedSpaces);
     this.rows = rows;
+    if (!collapsed) {
+      const keys = rows.map((r) => r.key);
+      this.cur = nearest(keys, this.keys, this.cur ?? `s:${spaces().find((s) => s.active)?.id}`);
+      this.keys = keys;
+    }
     const draw = (r) => (collapsed ? this.compact(r, t) : r.kind === "wt" ? this.worktreeRow(r, t) : this.row(r, t));
     const remote = [...new Set([...rows.map(machineOf).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
     const want = 45 + rows.reduce((h, r) => h + (collapsed ? 26 : rowHeight(r)), 0) + (remote.length ? (remote.length + 1) * 26 : 0);
@@ -423,6 +447,7 @@ export default class Spaces extends View {
       .rounded(8)
       .when(on, (el) => el.bg(t.selected))
       .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
+      .when(this.ring(`s:${w.id}`), (el) => el.border_1().border_color(t.accent))
       .when(this.pressed === w.id && this.over !== w.id, (el) => el.opacity(0.5))
       .when(this.pressed !== null && this.over === w.id && this.pressed !== w.id, (el) => el.child(
         div().absolute().left(0).right(0).h(2).bg(t.accent)
@@ -489,11 +514,33 @@ export default class Spaces extends View {
   worktreeRow(r, t) {
     return h_flex().id(`wt-${r.key}`).px(8).h(28).flex_none().rounded(8).gap(9).items_center().text_color(t.dim)
       .hover((s) => s.bg(t.hover))
+      .when(this.ring(r.key), (el) => el.border_1().border_color(t.accent))
       .on_click(() => run("space.new", { folder: r.path, machine: r.on ?? "" }))
       .child(svg("mods/workspace-chrome/branch.svg").size(13).ml(22).flex_none())
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).child(r.label))
       .when(r.ahead > 0, (el) => el.child(div().flex_none().text_size(11.5).child(`\u2191${r.ahead}`)))
       .when(r.behind > 0, (el) => el.child(div().flex_none().text_size(11.5).child(`\u2193${r.behind}`)));
+  }
+
+  ring(key) {
+    return this.cur === key && this.ringed;
+  }
+
+  // Keys while the list holds the keyboard; the folded sizes take only ctrl-j/l and Esc. pane.go releases only
+  // a keyboard pane.go gave, not one this mod took (spaces-plus.focus, ⌘B): so ctrl-j goes to the inbox by name, and
+  // ctrl-l / Esc focus the pane focused() still reports, the one you came from.
+  key(k, cx) {
+    if (k === "ctrl-j") return run("inbox.focus");
+    if (k === "ctrl-l" || k === "escape") return back();
+    if (narrow()) return;
+    const rows = this.rows ?? [], i = rows.findIndex((r) => r.key === this.cur), r = rows[i];
+    if (k === "up" || k === "down") this.cur = rows[Math.max(0, Math.min(rows.length - 1, i + (k === "up" ? -1 : 1)))]?.key ?? null;
+    else if (!r) return;
+    else if (k === "right" && r.kids && this.foldedSpaces.has(r.w.id)) this.fold(r.w.id, cx);
+    else if (k === "left" && r.parent) this.cur = r.parent;
+    else if (k === "left" && r.kids && !this.foldedSpaces.has(r.w.id)) this.fold(r.w.id, cx);
+    else if (k === "enter") run(r.kind === "wt" ? "space.new" : "space.select", r.kind === "wt" ? { folder: r.path, machine: r.on ?? "" } : { id: r.w.id });
+    cx.notify();
   }
 
   compact({ w, i }, t) {
@@ -527,7 +574,9 @@ export default class Spaces extends View {
       changed = true;
     }
     if (changed) setShared("space.colors", kept);
+    this.ringed = this.fh.is_focused();
     return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13)
+      .track_focus(this.fh).on_key_down((e, cx) => this.key(e.keystroke, cx))
       .child(h_flex().h(31).pl(16).pr(10).items_center().justify_between().text_size(11.5).text_color(t.dim)
         .when(collapsed, el => el.pl(0).pr(0).justify_center())
         .when(!collapsed, el => el.child("Spaces"))
