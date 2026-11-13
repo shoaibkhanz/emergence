@@ -2,3 +2,4 @@ gpui-kit.d.ts
 jsconfig.json
 *.error
 __pycache__/
+.superpowers/
