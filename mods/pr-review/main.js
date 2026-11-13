@@ -876,7 +876,7 @@ export default class PrReview extends View {
             .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(p.author?.login ?? ""))
             .child(this.counts(t, p.additions, p.deletions))
             .child(this.stateChip(t, p))))))
-        .when(Boolean(empty), (el) => el.child(div().px(20).py(8).text_size(13).text_color(t.muted).child(empty))));
+        .when(Boolean(empty), (el) => el.child(div().px(20).py(8).text_center().text_size(13).text_color(t.muted).child(empty))));
   }
 
   // ---- main: entry header, files, diff ----
@@ -902,7 +902,8 @@ export default class PrReview extends View {
   // bare: the drill-down's diff level, without the entry header and file tree.
   // With room the tree sits beside the diff; without, it stands alone until a file is picked.
   main(t, s, bare) {
-    if (s.entry == null) return this.quiet(t, "Select a pull request, or this branch, to see its changes.");
+    // Centred on the whole panel, not just the room beside the 280px list (+1 border) that's always shown here.
+    if (s.entry == null) return this.quiet(t, "Select a pull request, or this branch, to see its changes.").pr(281);
     const { d, local, pr, files, title, sub, quiet } = this.entryInfo(s);
     const side = !bare && this.side();
     const treeOn = side ? this.filesOpen : !bare && d.view !== "diff";

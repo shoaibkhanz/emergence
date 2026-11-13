@@ -164,7 +164,7 @@ export default class Usage extends View {
 
   // What the work delivered: commits, lines, PRs, worktrees, and what agent spend each of them cost.
   outputView(t, r0, r, p, o0, o) {
-    if (!o) return [div().p(12).text_size(12).text_color(t.dim).child(this.busy ? "Reading git and gh in your repos…" : "No git or gh data yet: rescan (↻).")];
+    if (!o) return [div().p(12).text_center().text_size(12).text_color(t.dim).child(this.busy ? "Reading git and gh in your repos…" : "No git or gh data yet: rescan (↻).")];
     const base = (path) => path.split("/").filter(Boolean).pop();
     const tiles = this.tileRow(t, [
       ["Commits", String(o.commits), o.activeDays ? `${(o.commits / o.activeDays).toFixed(1)} per day you committed` : "none"],
@@ -588,7 +588,7 @@ export default class Usage extends View {
     return v_flex().gap(12)
       .child(kinds)
       .child(this.card(t, "Success against cost", div().text_size(11).text_color(t.dim).child(`↖ better and cheaper · across: ${byCost ? "cost of one clean run" : "tokens per clean run"}, log scale`), v_flex().gap(8)
-        .child(chart ?? div().text_size(12).text_color(t.dim).child("Nothing to plot: no harness × model has 3 runs here."))
+        .child(chart ?? div().text_center().text_size(12).text_color(t.dim).child("Nothing to plot: no harness × model has 3 runs here."))
         .when(Boolean(readout), (el) => el.child(readout))))
       .child(this.card(t, "Model comparison", null, v_flex().gap(10).child(table)
         .when(Boolean(verdict), (el) => el.child(div().text_size(12).text_color(t.muted).child(verdict)))
@@ -655,7 +655,7 @@ export default class Usage extends View {
     }
     if (!this.memo) return root.child(v_flex().flex_1().items_center().justify_center().text_size(12).text_color(t.dim).child("Adding up…"));
     const { r0, r, o0, o, cells } = this.memo, shown = present.filter((h) => on.has(h));
-    const empty = div().p(12).text_size(12).text_color(t.dim).child(`No sessions in ${p.label} for the harnesses shown.`);
+    const empty = div().p(12).text_center().text_size(12).text_color(t.dim).child(`No sessions in ${p.label} for the harnesses shown.`);
     const view = this.tab === "harnesses" ? (r0.tiles.sessions ? [this.over(t, r0, r, shown), this.models(t, r), this.effort(t, r, shown)] : [empty])
       : this.tab === "compare" ? [this.compare(t, r)]
       : this.tab === "output" ? this.outputView(t, r0, r, p, o0, o)

@@ -94,7 +94,7 @@ function chips(t, sources) {
 }
 
 function quiet(t, text) {
-  return div().p(16).text_size(12).text_color(t.muted).child(text);
+  return div().p(16).text_center().text_size(12).text_color(t.muted).child(text);
 }
 
 function find(node, id) {
