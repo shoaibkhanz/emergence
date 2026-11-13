@@ -31,7 +31,7 @@ Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` div
       the space's colour (55% unless active), in a 1.5px `blocked`/`working` ring when it needs you or is working.
       Folded, the top 36px stays clear for macOS's window buttons.
   - **Inbox** (`inbox`), the rest of the height. Its header is "Inbox N" (11.5px, `dim`) with a key chip on the right
-    showing the binding of `tabs-plus.attention` (⌘⇧J).
+    showing the binding of `tabs-plus.attention` (⌘⇧I).
     - Each row is 2 lines on an 8px-radius row: the program mark (14px), the branch (else the folder) in 12.5px
       `foreground`, and the age or "Needs you" (`blocked`); under it the task (12px `muted`), indented to the text.
     - At the foot: "Working N ›" (spinner glyph, still) and, once anything is settled, a "Settled N" shelf.
@@ -83,10 +83,13 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
     space), ↵ selects the space or opens the worktree (`space.new {folder, machine}`). Inbox: ↑/↓, ↵ focuses the agent.
   - ctrl-j (Spaces → `inbox.focus`), ctrl-k (Inbox → `spaces-plus.focus`), ctrl-l and Esc (`pane.focus` on
     `focused()`). Not `pane.go`: it releases only a keyboard `pane.go` gave, not one a mod took itself.
+    keys.json binds them in `mod:spaces-plus` / `mod:inbox` (`inbox.focus`, `spaces-plus.focus`, `<mod>.back`):
+    a binding runs before `on_key_down`, so a global ctrl-j/k/l (`pane.go:*`) would otherwise take them.
   - The ring clears when the keyboard leaves: a 250ms timer compares `is_focused()` with what was drawn.
 - **Keys** (`layout:emergence`: only the emergence layout shows tabs-plus; ⌘E is global). ⌘B and ⌘⌥B as above.
   - ⌘⇧A (Agents), ⌘⇧R (PRs: review), ⌘⇧K (Library) and ⌘⇧U (Usage) toggle the panels.
-  - ⌘⇧J puts the keyboard in the Inbox (`inbox.focus`), opening the sidebar first if it's folded; ↵ there runs
+  - ⌘⇧I (not ⌘⇧J: Homerow takes that system-wide for its scroll mode) puts the keyboard in the Inbox (`inbox.focus`),
+    opening the sidebar first if it's folded; ↵ there runs
     `agent.focus` then `pane.focus` on that agent's terminal (pane.focus releases the Inbox's keyboard).
   - ⌘⇧O opens Herdr's Open worktree dialog for the focused pane's repo.
   - ⌘E opens Jump.

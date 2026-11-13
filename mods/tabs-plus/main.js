@@ -97,11 +97,11 @@ export default class Tabs extends View {
     this.asked = {}; // autoName's renames sent, by tab id
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
     this.widths = JSON.parse(localStorage.getItem("widths") ?? "{}");
-    // keyboard (layout:emergence): "cmd-shift-a": "tabs-plus.graph" toggles that panel; "tabs-plus.attention" goes to the Inbox (⌘⇧J); "tabs-plus.rail" (⌘B)
+    // keyboard (layout:emergence): "cmd-shift-a": "tabs-plus.graph" toggles that panel; "tabs-plus.attention" goes to the Inbox (⌘⇧I); "tabs-plus.rail" (⌘B)
     // and "tabs-plus.thinner" (⌘⌥B) size the sidebar ("tabs-plus.fold" is ⌘B's fold, asked for by spaces-plus or the inbox);
     // "tabs-plus.worktrees" (⌘⇧O) lists every worktree of the repo you're in, in Herdr's own dialog (Enter opens one as a space);
     // "tabs-plus.update" applies a pending update (the chip's click).
-    // ⌘⇧J: the keyboard into the Inbox (↑↓ pick, ↵ goes to the agent, Esc back), the sidebar opening if folded.
+    // ⌘⇧I: the keyboard into the Inbox (↑↓ pick, ↵ goes to the agent, Esc back), the sidebar opening if folded.
     const attention = () => { const s = find(layout(), "sidebar"); if (!s || sizeOf(s) !== "open") open(false); run("inbox.focus"); };
     const commands = { attention, rail, thinner, fold: () => fold(undefined, true) };
     cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (commands[c]) commands[c](); else if (c === "update") this.applyUpdate(cx); else if (c === "worktrees") openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: focused()?.space, folder: focused()?.cwd, action: "open" } }); else if (PANELS.some(([id]) => id === c)) this.toggle(c); cx.notify(); } });

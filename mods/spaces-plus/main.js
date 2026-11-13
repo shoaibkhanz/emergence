@@ -100,6 +100,7 @@ export default class Spaces extends View {
         const c = await nextCommand();
         if (c === "focus") this.fh.focus();
         else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "inbox.toggle");
+        else if (c === "back") back(); // ctrl-l (keys.json mod:spaces-plus: a binding beats on_key_down)
         cx.notify();
       }
     });

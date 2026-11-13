@@ -6,10 +6,18 @@
     "cmd-shift-a": "tabs-plus.graph",
     "cmd-shift-r": "tabs-plus.prs",
     "cmd-shift-k": "tabs-plus.skills",
-    "cmd-shift-j": "tabs-plus.attention",
+    "cmd-shift-i": "tabs-plus.attention",
     "cmd-shift-o": "tabs-plus.worktrees",
     "cmd-shift-u": "tabs-plus.usage",
     "cmd-b": "tabs-plus.rail",
     "cmd-alt-b": "tabs-plus.thinner"
+  },
+  "mod:spaces-plus": {
+    "ctrl-j": "inbox.focus",
+    "ctrl-l": "spaces-plus.back"
+  },
+  "mod:inbox": {
+    "ctrl-k": "spaces-plus.focus",
+    "ctrl-l": "inbox.back"
   }
 }

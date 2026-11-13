@@ -60,6 +60,7 @@ export default class Inbox extends View {
         const c = await nextCommand();
         if (c === "focus") this.fh.focus();
         else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "spaces-plus.focus");
+        else if (c === "back") back(); // ctrl-l (keys.json mod:inbox: a binding beats on_key_down)
         cx.notify();
       }
     });

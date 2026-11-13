@@ -146,7 +146,7 @@ The installer adds these without replacing any key you already have. All but ⌘
 |---|---|---|
 | ⌘E | everywhere | Jump: every session and worktree |
 | ⌘⇧A · ⌘⇧R · ⌘⇧K · ⌘⇧U | layout | open or close Agents · PRs · Library · Usage (the panel takes the keyboard) |
-| ⌘⇧J | layout | the keyboard into the Inbox (the sidebar opens if folded): ↑↓ pick, ↵ goes to that agent, Esc back |
+| ⌘⇧I | layout | the keyboard into the Inbox (the sidebar opens if folded): ↑↓ pick, ↵ goes to that agent, Esc back |
 | ⌘⇧O | layout | every worktree of the repo you're in |
 | ⌘B | layout | sidebar: open it with the keyboard in Spaces; in it, fold it (to the last folded size) |
 | ⌘⌥B | layout | sidebar one size thinner: open → rail → dots → open |
@@ -194,10 +194,10 @@ does nothing until you bind it in `~/.config/herdr-app/keys.json`, because the k
 "terminal": { "ctrl-h": "nav-keys.left", "ctrl-j": "nav-keys.down", "ctrl-k": "nav-keys.up", "ctrl-l": "nav-keys.right" }
 ```
 
-It only runs in the `emergence` layout (a 0px block); in other layouts these keys then fail. The sidebar takes ctrl-j/k/l
-itself, with or without nav-keys. Leaving (n)vim with them needs an editor mapping this repo doesn't ship: move between
-splits and, at the edge, run `herdr-app do pane.go --direction <left|down|up|right>`. Without one the keys stay inside
-the editor.
+It only runs in the `emergence` layout (a 0px block); in other layouts these keys then fail. The sidebar takes
+ctrl-j/k/l itself (`mod:spaces-plus` and `mod:inbox` in keys.json), with or without nav-keys or a global ctrl-j/k/l.
+Leaving (n)vim with them needs an editor mapping this repo doesn't ship: move between splits and, at the edge, run
+`herdr-app do pane.go --direction <left|down|up|right>`. Without one the keys stay inside the editor.
 
 ## Develop
 
