@@ -305,10 +305,13 @@ export default class Spaces extends View {
       if (st.stdout.trim()) return notify({ title: `${label} has uncommitted changes`, body: "Not deleted. → archives it instead.", level: "warning" });
     }
     this.asked = { kind, target };
-    const closes = space ? " Its space and terminals close." : "";
-    openOverlay({ mod: "confirm-safe", kind: "dialog", width: 440, height: 240, props: kind === "delete"
-      ? { title: `Delete worktree ${label}?`, detail: `Removes ${path} from disk (git worktree remove). Its branch stays.${closes}`, command: { name: "spaces-plus.delete" } }
-      : { title: `Archive worktree ${label}?`, detail: `Hides it from the sidebar; it stays on disk at ${path}. Open it from ⌘E Jump to bring it back.${closes}`, command: { name: "spaces-plus.archive" } } });
+    const del = kind === "delete";
+    // Every close (Confirm or Cancel) gives the keyboard back to Spaces.
+    openOverlay({ mod: "confirm-safe", kind: "dialog", width: 440, height: space ? 238 : 210, props: {
+      title: `${del ? "Delete" : "Archive"} worktree ${label}?`,
+      detail: del ? "Removes this folder from disk. Its branch stays." : "Hides it from the sidebar; the folder stays. Reopen it from ⌘E Jump.",
+      path, warn: space ? "Its open space and terminals close." : null, action: del ? "Delete" : "Archive", danger: del,
+      command: { name: `spaces-plus.${kind}` }, after: { name: "spaces-plus.focus" } } });
     cx.notify();
   }
 
@@ -318,7 +321,7 @@ export default class Spaces extends View {
     if (a?.kind !== kind) return;
     const { on, path, label, space } = a.target;
     if (kind === "archive") setShared("spaces.archived", { ...(shared("spaces.archived") ?? {}), [JSON.stringify([on, path])]: space });
-    if (space) run("space.close", { id: space, confirmed: true });
+    if (space) { run("space.close", { id: space, confirmed: true }); cx.timer.after(300, () => this.fh.focus()); } // the next space's terminal takes the keyboard
     if (kind === "delete") {
       const r = await exec("git", ["-C", path, "worktree", "remove", path], { on });
       if (r.code !== 0) notify({ title: `Couldn't delete ${label}`, body: r.stderr.trim(), level: "error" });

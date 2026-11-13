@@ -84,7 +84,10 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
     the nearest row above when its row goes), → unfolds and ← folds the repo under it, ↵ selects the space or opens
     the worktree (`space.new {folder, machine}`). Inbox: ↑/↓, ↵ focuses the agent.
   - On a worktree (greyed, or an open space in a linked worktree; not a main checkout: lib.js `actionTarget`), ←
-    deletes and → archives, each after `confirm-safe` (Herdr's confirm with Cancel selected: Enter alone cancels).
+    deletes and → archives, each after `confirm-safe` (Herdr's confirm with Cancel selected: Enter alone cancels;
+    title, one sentence, the path on one mono line shortened in the middle, an amber line when a space closes, and a
+    button named for the action, red for Delete). Its `after` command (`spaces-plus.focus`) runs on every close, and
+    after a `space.close` Spaces takes the keyboard back again 300 ms later (the next space's terminal grabs it).
     Delete: `git status --porcelain` first (dirty: a warning toast, no dialog), then `space.close` if open and
     `git worktree remove` (the branch stays). Archive: shared `spaces.archived` (JSON [machine, path] → the space it
     closed), skipped by `addWorktrees`; reopening it in another space drops it from the archive (`reopened`).
