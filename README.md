@@ -201,8 +201,9 @@ then stop reaching your shell (ctrl-l clear, ctrl-k kill line):
 It only runs in the `emergence` layout (a 0px block); in other layouts these keys then fail. The sidebar takes
 ctrl-j/k/l itself (`mod:spaces-plus` and `mod:inbox` in keys.json), with or without nav-keys or a global ctrl-j/k/l.
 Leaving (n)vim with them needs a mapping in the editor: move between splits and, at the edge, hand over to Herdr.
-Without one the keys stay inside the editor. For Neovim, in `~/.config/nvim/after/plugin/herdr_nav.lua` (after/plugin
-so it wins over other ctrl-h/j/k/l maps):
+Without one the keys stay inside the editor. This part is optional, and neither this repo nor Neovim ships the file:
+for Neovim, create it yourself by pasting the snippet below into a new `~/.config/nvim/after/plugin/herdr_nav.lua`
+(any name works; after/plugin so it wins over other ctrl-h/j/k/l maps):
 
 ```lua
 for key, dir in pairs({ h = "left", j = "down", k = "up", l = "right" }) do
