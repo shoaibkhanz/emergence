@@ -80,7 +80,8 @@ Usage keeps every session it has read.</td>
 
 - **Spaces**: every worktree under its repo, with ↑/↓ commits and agent status; greyed ones aren't open yet (↵ opens).
   On a worktree, ← deletes it (`git worktree remove`; refused with uncommitted changes, branch kept) and → archives it
-  (hidden, still on disk; reopen from ⌘E). Right-click for the same. Both ask first, Cancel selected.
+  (hidden, still on disk; reopen from ⌘E). Right-click for the same. Both ask first (Cancel selected), then leave
+  the keyboard in Spaces.
 - **Inbox**: every agent waiting on you, newest first; Settle puts one away. **Working N** opens the graph on what's
   working (everything at 0).
 - **Sizes**: open, rail, dots (⌘B, ⌘⌥B).
