@@ -34,16 +34,45 @@ function nextAttention() {
   if (want.length) run("agent.focus", { terminal: want[(i + 1) % want.length].address });
 }
 
-// ⌘B (emergence only): the sidebar folds to a 14px strip where the inbox shows only a dot per agent that
-// needs you (brand, Spaces and footer hide), and back. Herdr's ⌘B hides it outright. A hidden one comes back.
+// The sidebar's three sizes, by its width (a dragged edge counts too): open, rail (48, a cell per space) and dots
+// (20, a square per space). ⌘B: folded → open with the keyboard in Spaces; open → fold to the last folded size,
+// but only when the sidebar holds the keyboard (no blur event: spaces-plus.toggle asks Spaces, then the inbox),
+// else it takes the keyboard. ⌘⌥B: one size thinner, dots wrapping to open. A hidden sidebar comes back.
+const sizeOf = (s) => ((s.size?.px ?? Infinity) < 34 ? "dots" : (s.size?.px ?? Infinity) < 160 ? "rail" : "open");
+
+function open() {
+  for (const id of ["brand", "spaces", "sidebar-footer"]) run("layout.show", { id });
+  run("layout.resize", { id: "sidebar", px: shared("sidebar.width") ?? 268 });
+  run("spaces-plus.focus");
+}
+
+function fold(to = shared("sidebar.folded") ?? "rail") {
+  const s = find(layout(), "sidebar");
+  if (!s) return;
+  if (sizeOf(s) === "open") setShared("sidebar.width", s.size?.px);
+  for (const id of ["brand", "sidebar-footer"]) run("layout.hide", { id });
+  run("layout.show", { id: "spaces" }); // the old 14px fold hid it
+  run("layout.resize", { id: "sidebar", px: to === "dots" ? 20 : 48 });
+  setShared("sidebar.folded", to);
+  // The keyboard goes back to the pane it came from (focused() keeps reporting it while a mod holds it).
+  const f = focused();
+  if (f) run("pane.focus", f.pane ? { pane: f.pane } : { terminal: f.terminal });
+}
+
 function rail() {
   const s = find(layout(), "sidebar");
   if (!s) return;
-  if (s.hidden) return run("layout.show", { id: "sidebar" });
-  const narrow = (s.size?.px ?? Infinity) < 160;
-  if (!narrow) setShared("sidebar.width", s.size?.px);
-  for (const id of ["brand", "spaces", "sidebar-footer"]) run(narrow ? "layout.show" : "layout.hide", { id });
-  run("layout.resize", { id: "sidebar", px: narrow ? (shared("sidebar.width") ?? 268) : 14 });
+  if (s.hidden) { run("layout.show", { id: "sidebar" }); return open(); }
+  if (sizeOf(s) !== "open") return open();
+  run("spaces-plus.toggle");
+}
+
+function thinner() {
+  const s = find(layout(), "sidebar");
+  if (!s) return;
+  if (s.hidden) run("layout.show", { id: "sidebar" });
+  const size = s.hidden ? "open" : sizeOf(s);
+  size === "open" ? fold("rail") : size === "rail" ? fold("dots") : open();
 }
 
 // Updates. The curl install links every mod into a clone of this repo, so this mod can find it: every 6 h it
@@ -78,10 +107,12 @@ export default class Tabs extends View {
     this.asked = {}; // autoName's renames sent, by tab id
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
     this.widths = JSON.parse(localStorage.getItem("widths") ?? "{}");
-    // keys.json (layout:emergence): "cmd-shift-a": "tabs-plus.graph" toggles that panel; "tabs-plus.attention" jumps (⌘⇧J); "tabs-plus.rail" (⌘B);
+    // keyboard (layout:emergence): "cmd-shift-a": "tabs-plus.graph" toggles that panel; "tabs-plus.attention" jumps (⌘⇧J); "tabs-plus.rail" (⌘B)
+    // and "tabs-plus.thinner" (⌘⌥B) size the sidebar ("tabs-plus.fold" is ⌘B's fold, asked for by spaces-plus or the inbox);
     // "tabs-plus.worktrees" (⌘⇧O) lists every worktree of the repo you're in, in Herdr's own dialog (Enter opens one as a space);
     // "tabs-plus.update" applies a pending update (the chip's click).
-    cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (c === "attention") nextAttention(); else if (c === "rail") rail(); else if (c === "update") this.applyUpdate(cx); else if (c === "worktrees") openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: focused()?.space, folder: focused()?.cwd, action: "open" } }); else if (PANELS.some(([id]) => id === c)) this.toggle(c); cx.notify(); } });
+    const commands = { attention: nextAttention, rail, thinner, fold: () => fold() };
+    cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (commands[c]) commands[c](); else if (c === "update") this.applyUpdate(cx); else if (c === "worktrees") openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: focused()?.space, folder: focused()?.cwd, action: "open" } }); else if (PANELS.some(([id]) => id === c)) this.toggle(c); cx.notify(); } });
     this.update = null; // { behind, busy?, error? } once main has commits this clone lacks
     cx.spawn(async (cx) => { await cx.sleep(16); this.checkUpdate(cx); }); // host calls before the first frame never resolve
     cx.timer.every(6 * 3600000, (cx) => this.checkUpdate(cx));

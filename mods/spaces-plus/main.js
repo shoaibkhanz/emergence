@@ -21,6 +21,7 @@ function find(node, id) {
 
 // The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
 const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
+const dotsSize = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 34;
 
 // Back to the pane the keyboard came from (focused() keeps reporting it while a mod holds the keyboard).
 export function back() {
@@ -48,21 +49,23 @@ const FALLBACK = 60000;
 // that draws space avatars): one strong color per hue, light and dark alike.
 const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
 
-// A space speaks up only when something in it needs you.
-export function glyph(status) {
-  return status === "blocked" || status === "done" ? "●" : "·";
-}
-
-export function tone(t, status) {
-  return t[status] ?? t.unknown;
-}
-
-// A space's avatar: its colour (shared space.colors, MARK as every Herdr mod draws it) as a soft tile.
-function avatar(w, t, size) {
+// A space's colour (shared space.colors, MARK as every Herdr mod draws it).
+function fill(w, t) {
   const color = (shared("space.colors") ?? {})[w.id] ?? "ansi6";
-  const fill = color.startsWith("#") ? color : (MARK[color] ?? t[color]);
-  return h_flex().size(size).flex_none().rounded(5).bg(fill + "26").border(1).border_color(fill + "33").items_center().justify_center()
-    .text_size(11).font_semibold().text_color(fill).child([...w.name][0]?.toUpperCase() ?? "?");
+  return color.startsWith("#") ? color : (MARK[color] ?? t[color]);
+}
+
+// A space's avatar: its colour as a soft tile with its letter.
+function avatar(w, t, size) {
+  const c = fill(w, t);
+  return h_flex().size(size).flex_none().rounded(5).bg(c + "26").border(1).border_color(c + "33").items_center().justify_center()
+    .text_size(11).font_semibold().text_color(c).child([...w.name][0]?.toUpperCase() ?? "?");
+}
+
+// Folded, the brand row hides and macOS's window buttons sit over the top of this block: room for them.
+function lights() {
+  const w = window();
+  return w?.platform === "macos" && w.titlebar === "none" && !w.fullscreen && find(layout(), "brand")?.hidden ? 36 : 0;
 }
 
 export default class Spaces extends View {
@@ -335,7 +338,8 @@ export default class Spaces extends View {
     return out.filter(r => this.shown.has(r.w.id));
   }
 
-  // The rows, under a header per machine once one isn't this computer. Open, each repo's worktrees go under it.
+  // The rows, under a header per machine once one isn't this computer. Open, each repo's worktrees go under it;
+  // dots: a square per space, nothing else.
   grouped(t, collapsed) {
     const rows = collapsed ? this.ordered() : addWorktrees(this.ordered(), this.trees, this.foldedSpaces);
     this.rows = rows;
@@ -344,10 +348,14 @@ export default class Spaces extends View {
       this.cur = nearest(keys, this.keys, this.cur ?? `s:${spaces().find((s) => s.active)?.id}`);
       this.keys = keys;
     }
+    const publish = (want) => { if (want !== shared("spaces.want")) setShared("spaces.want", want); };
+    if (collapsed && dotsSize()) {
+      publish(lights() + 16 + rows.length * 22);
+      return rows.map((r) => this.dot(r, t));
+    }
     const draw = (r) => (collapsed ? this.compact(r, t) : r.kind === "wt" ? this.worktreeRow(r, t) : this.row(r, t));
     const remote = [...new Set([...rows.map(machineOf).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
-    const want = 45 + rows.reduce((h, r) => h + (collapsed ? 26 : rowHeight(r)), 0) + (remote.length ? (remote.length + 1) * 26 : 0);
-    if (want !== shared("spaces.want")) setShared("spaces.want", want);
+    publish(45 + lights() + rows.reduce((h, r) => h + (collapsed ? 26 : rowHeight(r)), 0) + (remote.length ? (remote.length + 1) * 26 : 0));
     const loading = m => {
       const layout = machines().find(k => k.name === m)?.layout;
       return layout === "loading" || (!layout && this.machines.some(k => k.name === m && k.state === "connected"))
@@ -556,12 +564,21 @@ export default class Spaces extends View {
       .when(!w.active, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click(() => run("space.select", { id: w.id }))
       .child(avatar(w, t, 16))
-      .child(div().absolute().right(5).text_color(tone(t, w.status)).child(glyph(w.status))));
+      .when(w.status === "blocked" || w.status === "working", (el) => el.child(div().absolute().top(1).right(4).size(7).rounded(4).border(1).border_color(t.chrome).bg(t[w.status]))));
+  }
+
+  // The dots size: the space's colour as an 8px square, ringed when it needs you or is working; dim unless active.
+  dot({ w }, t) {
+    const ring = w.status === "blocked" || w.status === "working" ? t[w.status] : null;
+    return h_flex().id(`space-${w.id}`).w_full().h(22).flex_none().justify_center().items_center().cursor_pointer()
+      .tooltip(w.name).on_click(() => run("space.select", { id: w.id }))
+      .child(h_flex().size(14).rounded(4).justify_center().items_center().when(Boolean(ring), (el) => el.border(1.5).border_color(ring))
+        .child(div().size(8).rounded(2).bg(fill(w, t)).when(!w.active, (el) => el.opacity(0.55))));
   }
 
   render() {
     const t = theme();
-    const collapsed = narrow();
+    const collapsed = narrow(), dots = collapsed && dotsSize(), top = lights();
     const palette = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
     const sp = spaces();
     const ids = new Set(sp.map(p => p.id));
@@ -577,12 +594,12 @@ export default class Spaces extends View {
     this.ringed = this.fh.is_focused();
     return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13)
       .track_focus(this.fh).on_key_down((e, cx) => this.key(e.keystroke, cx))
-      .child(h_flex().h(31).pl(16).pr(10).items_center().justify_between().text_size(11.5).text_color(t.dim)
+      .when(!dots, (el) => el.child(h_flex().h(31 + top).pt(top).pl(16).pr(10).flex_none().items_center().justify_between().text_size(11.5).text_color(t.dim)
         .when(collapsed, el => el.pl(0).pr(0).justify_center())
         .when(!collapsed, el => el.child("Spaces"))
         .child(div().id("space-new").size(26).flex_none().flex().items_center().justify_center().rounded(6).hover(s => s.bg(t.hover).text_color(t.foreground))
-          .on_click(() => run("space.new")).child(svg("mods/workspace-chrome/plus.svg").size(14))))
-      .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pb(14).overflow_y_scrollbar().mode("always")
+          .on_click(() => run("space.new")).child(svg("mods/workspace-chrome/plus.svg").size(14)))))
+      .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pt(dots ? top + 8 : 0).pb(dots ? 8 : 14).overflow_y_scrollbar().mode("always")
         .on_mouse_up("left", (_e, cx) => { this.pressed = null; cx.notify(); })
         .children(this.grouped(t, collapsed)));
   }
