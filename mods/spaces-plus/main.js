@@ -102,6 +102,7 @@ export default class Spaces extends View {
         else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "inbox.toggle");
         else if (c === "back") back(); // ctrl-l (keys.json mod:spaces-plus: a binding beats on_key_down)
         else if (c === "archive" || c === "delete") this.act(c, cx); // the confirm dialog's OK (see ask)
+        else if (c === "ask-archive" || c === "ask-delete") { if (this.menuFor) this.ask(c.slice(4), this.menuFor, cx); } // row-menu
         cx.notify();
       }
     });
@@ -325,6 +326,22 @@ export default class Spaces extends View {
     this.refreshGit(Object.keys(this.git), cx);
   }
 
+  // Right-click on a worktree (greyed, or an open space in one): Herdr's menu can't take items, so row-menu, with
+  // archive and delete (their target waits in this.menuFor, as ask's does). Open spaces keep Rename and Close.
+  worktreeMenu(target) {
+    this.menuFor = target;
+    const I = "mods/workspace-chrome/";
+    const items = [
+      ...(target.space
+        ? [["Rename", "space.rename", { id: target.space }, I + "square-pen.svg"], ["Close space", "space.close", { id: target.space }, I + "x.svg"]]
+        : [["Open", "space.new", { folder: target.path, machine: target.on ?? "" }, I + "plus.svg", "↵"]]),
+      ["—"],
+      ["Archive worktree…", "spaces-plus.ask-archive", {}, I + "archive.svg", "→"],
+      ["Delete worktree…", "spaces-plus.ask-delete", {}, "mods/row-menu/trash.svg", "←"],
+    ];
+    openOverlay({ mod: "row-menu", kind: "popup", width: 230, height: 160, props: { items } });
+  }
+
   menu(w) {
     // A popup is as tall as its items; height is only the most.
     openOverlay({ mod: "menu", kind: "popup", width: 200, height: 260, props: { tab: "space", target: { id: w.id } } });
@@ -530,7 +547,7 @@ export default class Spaces extends View {
         } else if (from === w.id) run("space.select", { id: w.id });
         cx.notify();
       })
-      .on_mouse_down("right", () => this.menu(w))
+      .on_mouse_down("right", () => { const a = actionTarget({ kind: "space", g, w }); a ? this.worktreeMenu(a) : this.menu(w); })
       .child(
         h_flex()
           .gap(9)
@@ -569,6 +586,7 @@ export default class Spaces extends View {
       .hover((s) => s.bg(t.hover))
       .when(this.ring(r.key), (el) => el.border_1().border_color(t.accent))
       .on_click(() => run("space.new", { folder: r.path, machine: r.on ?? "" }))
+      .on_mouse_down("right", () => this.worktreeMenu(actionTarget(r)))
       .child(svg("mods/workspace-chrome/branch.svg").size(13).ml(22).flex_none())
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).child(r.label))
       .when(r.ahead > 0, (el) => el.child(div().flex_none().text_size(11.5).child(`\u2191${r.ahead}`)))

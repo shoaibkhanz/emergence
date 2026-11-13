@@ -86,6 +86,9 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
     Delete: `git status --porcelain` first (dirty: a warning toast, no dialog), then `space.close` if open and
     `git worktree remove` (the branch stays). Archive: shared `spaces.archived` (JSON [machine, path] → the space it
     closed), skipped by `addWorktrees`; reopening it in another space drops it from the archive (`reopened`).
+  - Right-click on a worktree opens `row-menu` (Herdr's `menu` has fixed items): Open (greyed) or Rename and Close
+    space (open), then Archive worktree… (→) and Delete worktree… (←), which run `spaces-plus.ask-archive` /
+    `ask-delete`; the target waits in `menuFor`. Main checkouts keep Herdr's space menu.
   - ctrl-j (Spaces → `inbox.focus`), ctrl-k (Inbox → `spaces-plus.focus`), ctrl-l and Esc (`pane.focus` on
     `focused()`). Not `pane.go`: it releases only a keyboard `pane.go` gave, not one a mod took itself.
     keys.json binds them in `mod:spaces-plus` / `mod:inbox` (`inbox.focus`, `spaces-plus.focus`, `<mod>.back`):
