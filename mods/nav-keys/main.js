@@ -17,10 +17,12 @@ const hosted = (n) => n?.content?.mod === "nav-keys" || (n?.children ?? []).some
 const KEY = { left: "h", down: "j", up: "k", right: "l" };
 const EDITORS = ["nvim", "vim"];
 
-// Neovim takes the key over its own socket, $TMPDIR/nvim.$USER/*/nvim.<pid>.0 (since 0.10 the server is the TUI's
-// child). `hc keys` waits for ~3 s without a person's key, so ctrl-h pressed while typing landed seconds late.
+// Neovim takes the key over its own socket, $TMPDIR/nvim.$USER/*/nvim.<pid>.0, owned by some process under the
+// pane's foreground one (the TUI's child since 0.10; deeper under a wrapper like `uv run nvim`). `hc keys` waits for
+// ~3 s without a person's key, so ctrl-h pressed while typing landed seconds late.
 // Not found (vim, another machine, no socket): exit 3, and hc keys it is.
-const NVIM_SEND = 'for p in "$1" $(pgrep -P "$1"); do for s in "${TMPDIR:-/tmp}"/nvim."$USER"/*/nvim."$p".0; do ' +
+const NVIM_SEND = 'all=$1; ps=$1; while [ -n "$ps" ]; do ps=$(for p in $ps; do pgrep -P "$p"; done); all="$all $ps"; done; ' +
+  'for p in $all; do for s in "${TMPDIR:-/tmp}"/nvim."$USER"/*/nvim."$p".0; do ' +
   '[ -S "$s" ] && exec nvim --clean --headless --server "$s" --remote-send "$2"; done; done; exit 3';
 
 async function nvimSend(terminal, dir) {
