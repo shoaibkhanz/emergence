@@ -23,13 +23,15 @@ function find(node, id) {
   return null;
 }
 
-// ⌘⇧J: the next agent the inbox shows that needs you, blocked ones before done ones, after the one you're on
-// (as inbox/main.js: a done one only where its tab isn't settled and it isn't a sub-agent).
-// The tab bar always shows, so the key works with the sidebar collapsed.
+// ⌘⇧J: the next agent the inbox shows, in its order, after the one you're on (as inbox/main.js: blocked anywhere,
+// else done or idle where its tab isn't settled and it isn't a sub-agent; blocked, done, idle, newest first).
+// The tab bar always shows, so the key works with the sidebar folded.
+const RANK = { blocked: 0, done: 1, idle: 2 };
 function nextAttention() {
-  const all = agents(), settled = new Set(spaces().flatMap((s) => s.tabs).filter((t) => t.settled).map((t) => t.id));
+  const tabs = new Map(spaces().flatMap((s) => s.tabs).map((t) => [t.id, t]));
   const sub = new Set(terminals().filter((x) => x.parent).map((x) => x.address));
-  const want = [...all.filter((a) => a.status === "blocked"), ...all.filter((a) => a.status === "done" && !settled.has(a.tab) && !sub.has(a.address))];
+  const want = agents().filter((a) => a.status === "blocked" || (RANK[a.status] !== undefined && !tabs.get(a.tab)?.settled && !sub.has(a.address)))
+    .sort((x, y) => RANK[x.status] - RANK[y.status] || (tabs.get(y.tab)?.changed_at ?? 0) - (tabs.get(x.tab)?.changed_at ?? 0));
   const i = want.findIndex((a) => a.address === focused()?.terminal);
   if (want.length) run("agent.focus", { terminal: want[(i + 1) % want.length].address });
 }
