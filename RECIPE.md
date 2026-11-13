@@ -134,12 +134,15 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - The wheel zooms, a trackpad scroll pans, ⌘-scroll zooms. The − / % / + control sits bottom-right, and the % fits.
   - A narrow panel shows the same tree as a list.
 - **PRs panel.**
-  - GitHub or GitLab by the origin remote (`forgeOf`: a `github` host, else GitLab); main.js calls `s.api`. GitLab:
+  - GitHub or GitLab: the likelier by the origin remote first (`forgeOrder`: a `github` host → GitHub), else the other
+    (a GitHub Enterprise host or ssh alias needn't say "github"); main.js calls `s.api`. The Agents graph likewise runs
+    `glab mr list` for a non-GitHub remote and falls back to `gh`. GitLab:
     `glab api --paginate --output ndjson` for reads (plain `--paginate` glues pages as `][`), no `--paginate` on writes;
     a line comment POSTs `position` as one JSON value with `old_line` and/or `new_line` (both on an unchanged line),
     base/start SHAs from the MR version its head belongs to (`versions`), and a range as `line_range` line codes
     (`sha1(path)_<old>_<new>`), read back from the code since GitLab returns no numbers there. MR lists carry no
-    +/- counts (blank). Verified live on a throwaway MR: every line kind, range, reply, edit, delete, resolve, MR comment,
+    +/- counts (blank). An outdated thread (written at an older head) gets no line, so it shows apart from the diff as on
+    GitHub (GitLab keeps the old version's numbers). Verified live on a throwaway MR: every line kind, range, reply, edit, delete, resolve, MR comment,
     tag badge.
   - Shows the focused repo's PRs (Open, Closed, All, search) and "This branch vs main". Under "This branch"'s header a
     bar reads Compare [head ▾] with [base ▾]: each dropdown opens a picker of local and remote branches (`git
