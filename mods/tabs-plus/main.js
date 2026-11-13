@@ -29,6 +29,14 @@ function find(node, id) {
 // else it takes the keyboard. ⌘⌥B: one size thinner, dots wrapping to open. A hidden sidebar comes back.
 const sizeOf = (s) => ((s.size?.px ?? Infinity) < 34 ? "dots" : (s.size?.px ?? Infinity) < 160 ? "rail" : "open");
 
+// The widest a panel may be: the window (layout px) less the sidebar, the work row's gaps (25) and 200 for the
+// terminal beside it. pr-review's full size leaves the terminal the open sidebar's width (≥ 268), so it fits.
+// (`window` here is herdr's; the size is GPUI's.)
+function maxPanel() {
+  const s = find(layout(), "sidebar"), side = !s || s.hidden ? 0 : s.size?.px ?? 0;
+  return Math.round(globalThis.window.viewport_size().width / (settings().zoom ?? 1)) - side - 25 - 200;
+}
+
 // ⌘B moves the keyboard with the sidebar (`keys`); ⌘⌥B only changes the size.
 function open(keys) {
   for (const id of ["brand", "spaces", "sidebar-footer"]) run("layout.show", { id });
@@ -141,18 +149,25 @@ export default class Tabs extends View {
   }
 
   // Each panel keeps its own width: what the person last dragged it to, else its default. Not PRs gone full size
-  // (pr-review's widen() sets shared "pr-review.wide"): that width is the window's, not a choice.
+  // (pr-review's widen() sets shared "pr-review.wide"): that width is the window's, not a choice. Nor any width the
+  // window can't hold (maxPanel): saved before that guard, or by a stale flag, it reopened every panel over the terminal.
   remember(panel, body) {
     const px = panel?.size?.px;
-    if (panel && !panel.hidden && body?.active && px && !(body.active === "prs" && shared("pr-review.wide"))) {
+    if (panel && !panel.hidden && body?.active && px && px <= maxPanel() && !(body.active === "prs" && shared("pr-review.wide"))) {
       this.widths[body.active] = px;
       localStorage.setItem("widths", JSON.stringify(this.widths));
     }
   }
 
+  // A saved width the window can't hold was never a choice: the default instead (and never past maxPanel).
+  widthOf(id) {
+    const max = maxPanel(), saved = this.widths[id];
+    return Math.min(saved && saved <= max ? saved : PANELS.find(p => p[0] === id)?.[3] ?? 368, max);
+  }
+
   show(id) {
     run("layout.select", { stack: "panel-body", child: id });
-    run("layout.resize", { id: "panel", px: this.widths[id] ?? PANELS.find(p => p[0] === id)?.[3] ?? 368 });
+    run("layout.resize", { id: "panel", px: this.widthOf(id) });
     run("layout.show", { id: "panel" });
   }
 
@@ -276,6 +291,10 @@ export default class Tabs extends View {
     const blocks = new Set((body?.children ?? []).map(c => c.id));
     const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), ...OURS].filter(id => blocks.has(id));
     this.syncPanel(space, panel, body, enabled);
+    // A panel wider than the window can hold (the layout's saved state, another window's width) comes back in.
+    // Not PRs at full size: widen() folds the sidebar as it resizes, and the old sidebar width would undo it.
+    const wide = body?.active === "prs" && shared("pr-review.wide");
+    if (panel && !panel.hidden && !wide && (panel.size?.px ?? 0) > maxPanel()) run("layout.resize", { id: "panel", px: this.widthOf(body?.active) });
     const panelButton = ([id, label, icon]) => {
       const on = panel && !panel.hidden && body?.active === id;
       return h_flex().id(`panel-${id}`).h(26).px(8).gap(5).flex_none().items_center().rounded(6)
