@@ -66,7 +66,9 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - Clicking a card focuses its agent (`agent.focus`).
   - Hovering swaps the age for **Settle** (`tab.settle`). Settled tabs go to the shelf; Herdr brings one back when its
     agent needs you. Clicking a shelf row shows the tab.
-  - "Working N" opens the Agents panel.
+  - "Working N" is always there (N may be 0) and opens the Agents panel: on what's working (active only, shared
+    `graph.want`) while N > 0, else on everything. The graph draws working agents in `t.working` (border and tint)
+    as it draws blocked ones in `t.blocked`.
   - The inbox order drives ⌘] / ⌘[ (`setAgentOrder`).
 - **Sidebar sizes (`tabs-plus`, in this layout only).**
   - ⌘B (`tabs-plus.rail`): folded or hidden → open at the last open width with the keyboard in Spaces. Open → fold to

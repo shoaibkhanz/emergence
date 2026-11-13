@@ -188,6 +188,9 @@ export default class AgentGraph extends View {
     if (this.raw) this.size = { width: this.raw.width / this.Z, height: this.raw.height / this.Z };
     const shown = this.shown();
     if (shown && !this.wasShown) this.refresh(cx);
+    // The inbox's Working row opens the graph on what's working (active only) or, with nothing working, everything.
+    const want = shared("graph.want");
+    if (want && want.at !== this.wantAt) { this.wantAt = want.at; this.activeOnly = want.activeOnly; localStorage.setItem("activeOnly", want.activeOnly ? "1" : "0"); }
     const o = this.panel && shown && shared("emergence.opened"); // opened (⌘⇧A, the tab bar; tabs-plus says so): the keys are its own at once
     if (o?.id === "graph" && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.h.focus()); }
     this.wasShown = shown;
@@ -278,11 +281,11 @@ export default class AgentGraph extends View {
     const rows = [];
     const row = (id, depth) => h_flex().id(id).h(28).flex_none().pl(8 + depth * 16).pr(8).gap(8).items_center().rounded(7);
     const agent = (a, depth) => {
-      const loud = a.status === "blocked", sel = this.sel === a.id, p = a.program;
+      const loud = a.status === "blocked", tone = loud ? t.blocked : a.status === "working" ? t.working : null, sel = this.sel === a.id, p = a.program;
       const ic = p?.icon ? (p.tint ? svg(p.icon).size(14).flex_none().text_color(t.foreground) : image(p.icon).w(14).h(14).flex_none()) : null;
       rows.push(row(`l:${a.id}`, depth).border_1().border_color(foc === a.id ? t.accent : alpha(t.border, 0)).cursor_pointer()
-        .when(loud, (el) => el.bg(alpha(t.blocked, 0.08))).when(sel && !loud, (el) => el.bg(t.selected))
-        .hover((s) => s.bg(loud ? alpha(t.blocked, 0.14) : t.hover))
+        .when(!!tone, (el) => el.bg(alpha(tone, 0.08))).when(sel && !tone, (el) => el.bg(t.selected))
+        .hover((s) => s.bg(tone ? alpha(tone, 0.14) : t.hover))
         .when(!!a.tab, (el) => el.tooltip(a.tab))
         .on_click(() => this.focusAgent(a))
         .child(this.dot(t, a.status, 8))
@@ -403,9 +406,10 @@ export default class AgentGraph extends View {
   }
 
   // A card at the canvas position, every length scaled by the view's zoom. Dragging a card moves just that card.
-  card(t, n, x, y, z, loud) {
+  // `tone`: the colour an agent that needs looking at is drawn in (blocked, working), else none.
+  card(t, n, x, y, z, tone) {
     return v_flex().id(n.id).absolute().left(x).top(y).w(n.w * z).h(n.h * z).px(12 * z).justify_center().gap(4 * z)
-      .rounded(10 * z).border(1).border_color(loud ? alpha(t.blocked, 0.8) : t.border).bg(loud ? alpha(t.blocked, 0.08) : t.surface)
+      .rounded(10 * z).border(1).border_color(tone ? alpha(tone, 0.8) : t.border).bg(tone ? alpha(tone, 0.08) : t.surface)
       .when(this.drag?.node === n.id && this.drag.moved, (el) => el.cursor_grabbing().shadow_lg())
       .on_mouse_down("left", (e, cx) => {
         cx.stop_propagation();
@@ -441,15 +445,15 @@ export default class AgentGraph extends View {
           .child(div().flex_1().min_w(0).truncate().text_size(11 * z).font_family(MONO).text_color(t.dim).child(path))
           .when(!!d.pr, (el) => el.child(this.chip(t, d, z))));
     }
-    const loud = d.status === "blocked";
+    const loud = d.status === "blocked", tone = loud ? t.blocked : d.status === "working" ? t.working : null; // working stands out too
     const sel = this.sel === d.id, isFoc = foc === d.id;
     const p = d.program;
     const icon = p?.icon ? (p.tint ? svg(p.icon).size(16 * z).flex_none().text_color(t.foreground) : image(p.icon).w(16 * z).h(16 * z).flex_none()) : null;
-    return this.card(t, n, x, y, z, loud)
-      .when(sel && !loud, (el) => el.bg(t.selected))
+    return this.card(t, n, x, y, z, tone)
+      .when(sel && !tone, (el) => el.bg(t.selected))
       .when(isFoc, (el) => el.border_color(t.accent))
       .cursor_pointer()
-      .hover((s) => s.bg(loud ? alpha(t.blocked, 0.14) : sel ? t.selected : t.raised).border_color(isFoc ? t.accent : loud ? t.blocked : t.input).shadow_sm())
+      .hover((s) => s.bg(tone ? alpha(tone, 0.14) : sel ? t.selected : t.raised).border_color(isFoc ? t.accent : tone ?? t.input).shadow_sm())
       .on_click(() => { if (!this.drag?.moved) this.focusAgent(d); }) // a pan that started on the card isn't a click
       .when(isFoc, (el) => el.child(div().absolute().left(-4 * z).top(-4 * z).w(n.w * z + 8 * z).h(n.h * z + 8 * z)
         .rounded(13 * z).border(2).border_color(alpha(t.accent, 0.3))))

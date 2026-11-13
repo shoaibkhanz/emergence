@@ -120,7 +120,8 @@ prunes it. Raise `cleanupPeriodDays` to keep more.
   the same two. Both ask first, with Cancel selected.
 - **Inbox** (after [T3 Inbox](https://github.com/JinJieBeWater/herdr-t3-inbox)): a two-line row for every agent
   waiting on you (blocked, finished, or idle for its next prompt): branch and age, then its task. Working agents fold
-  into one row that opens the graph. Settle puts a row away until its agent needs you again.
+  into one "Working N" row (0 too) that opens the graph on what's working, or on everything when nothing is, with
+  working agents highlighted. Settle puts a row away until its agent needs you again.
 - **Three sizes**: open, a rail of letter cells with a status dot, or dots (one square per space, ringed when it needs
   you or is working). Folded, the inbox shows only how many need you.
 - **Keyboard**: ⌘B (Spaces) or ⌘⇧I (Inbox); the rest under [Keys](#keys).

@@ -5,7 +5,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared, nextCommand, focused } from "herdr";
+import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared, setShared, nextCommand, focused } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -181,7 +181,7 @@ export default class Inbox extends View {
     }
     // Header, the list's content (cards are alike: one is measured), the feet and the open shelf.
     const listH = cards.length ? cards.length * ((this.cardH ?? 50) + 2) - 2 : 32;
-    this.fitSpaces(collapsed, 41 + listH + (working ? 32 : 0) + (settled.length ? 32 + (this.shelf ? Math.min(160, settled.length * 30) + 6 : 0) : 0));
+    this.fitSpaces(collapsed, 41 + listH + 32 + (settled.length ? 32 + (this.shelf ? Math.min(160, settled.length * 30) + 6 : 0) : 0));
     const bound = keys().find((k) => k.action === "tabs-plus.attention")?.keys;
     // Header and inset line up with Herdr's Spaces list above (16px, 11.5px label).
     return this.measured(root.border_t(1).border_color(t.border))
@@ -197,9 +197,10 @@ export default class Inbox extends View {
           .child(svg("mods/workspace-chrome/circle-check.svg").size(14).flex_none()).child("All caught up")))
         .children(cards.map((a, n) => this.card(t, a, tabs.get(a.tab), pane.get(a.pane), now)
           .when(n === 0, (el) => el.on_size_change((size, cx) => { const h = Math.round(size.height / (settings().zoom ?? 1)); if (h !== this.cardH) { this.cardH = h; cx.notify(); } })))))
-      .when(working > 0, (el) => el.child(this.foot(t, "inbox-working", svg("mods/workspace-chrome/spinner.svg").size(12).text_color(t.working), "Working", working,
-        () => { if (find(layout(), "panel")?.hidden || find(layout(), "panel-body")?.active !== "graph") run("tabs-plus.graph"); }, false)
-        .tooltip("Open the agent graph")))
+      // Always there: opens the graph on what's working, or (Working 0) on everything.
+      .child(this.foot(t, "inbox-working", svg("mods/workspace-chrome/spinner.svg").size(12).text_color(working ? t.working : t.dim), "Working", working,
+        () => { setShared("graph.want", { activeOnly: working > 0, at: Date.now() }); if (find(layout(), "panel")?.hidden || find(layout(), "panel-body")?.active !== "graph") run("tabs-plus.graph"); }, false)
+        .tooltip(working ? "Open the agent graph on what's working" : "Open the agent graph"))
       .when(settled.length > 0, (el) => el
         .child(this.foot(t, "inbox-settled", svg("mods/workspace-chrome/archive.svg").size(12), "Settled", settled.length,
           (_e, cx) => { this.shelf = !this.shelf; cx.notify(); }, this.shelf))
