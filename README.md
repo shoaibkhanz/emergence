@@ -36,8 +36,8 @@ Every agent as repo → worktree (with its PR) → agent → sub-agents. Blocked
 
 ![PRs window](docs/images/prs.png)
 
-The repo's PRs and any two-branch compare: file tree, unified or side-by-side diffs, inline threads. Comments carry a
-tag (Statement · Question · Nit · Minor · Major) that posts as a badge on GitHub. Find (⌘F) across code and comments,
+The repo's GitHub PRs or GitLab merge requests, and any two-branch compare: file tree, unified or side-by-side diffs,
+inline threads. Comments carry a tag (Statement · Question · Nit · Minor · Major) that posts as a badge. Find (⌘F) across code and comments,
 step through commits with [ ], reply, edit, resolve. Refreshes every 5 s. Full size keeps the agent's terminal beside
 it; it also opens in its own window.
 
@@ -116,8 +116,8 @@ Not ⌘⇧J (Homerow's scroll mode); not ⌘⇧B (Blueprint).
 
 ## What it runs
 
-- **Agents**: `git rev-parse` per agent folder; `gh pr list` per repo each minute.
-- **PRs**: `git` and `gh` in the focused repo; comments go through the GitHub API.
+- **Agents**: `git rev-parse` per agent folder; `gh pr list` (or `glab mr list`) per repo each minute.
+- **PRs**: `git` and `gh` (or `glab`, by the repo's remote) in the focused repo; comments go through that forge's API.
 - **Library**: lists the skill folders above and `~/.claude/plugins/installed_plugins.json`.
 - **Usage**: `mods/usage/scan.py` reads session logs (counts, models, timestamps; never prompts), cached in Herdr's
   `data/usage/`; `output.py` runs `git log`, `gh`/`glab` and `git worktree list`.

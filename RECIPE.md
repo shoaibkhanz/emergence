@@ -134,6 +134,13 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - The wheel zooms, a trackpad scroll pans, ⌘-scroll zooms. The − / % / + control sits bottom-right, and the % fits.
   - A narrow panel shows the same tree as a list.
 - **PRs panel.**
+  - GitHub or GitLab by the origin remote (`forgeOf`: a `github` host, else GitLab); main.js calls `s.api`. GitLab:
+    `glab api --paginate --output ndjson` for reads (plain `--paginate` glues pages as `][`), no `--paginate` on writes;
+    a line comment POSTs `position` as one JSON value with `old_line` and/or `new_line` (both on an unchanged line),
+    base/start SHAs from the MR version its head belongs to (`versions`), and a range as `line_range` line codes
+    (`sha1(path)_<old>_<new>`), read back from the code since GitLab returns no numbers there. MR lists carry no
+    +/- counts (blank). Verified live on a throwaway MR: every line kind, range, reply, edit, delete, resolve, MR comment,
+    tag badge.
   - Shows the focused repo's PRs (Open, Closed, All, search) and "This branch vs main". Under "This branch"'s header a
     bar reads Compare [head ▾] with [base ▾]: each dropdown opens a picker of local and remote branches (`git
     for-each-ref`, most recent first, filtered as you type, ↵ takes the first; the head's list starts with this branch
@@ -243,7 +250,8 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   its last list. Commands `focus`, `toggle`.
 - **`mods/agent-graph`**: `lib.js` builds the tree and lays it out. It runs `git rev-parse` per folder (30s cache) and
   `gh pr list` per repo (60s), and draws edges with `PathBuilder` + `window.paint_path`.
-- **`mods/pr-review`**: `github.js` (gh api); `lib.js` parses diffs, builds the file tree and handles tag bodies.
+- **`mods/pr-review`**: `github.js` (gh api) and `gitlab.js` (glab api), the same functions and shapes; `gitlab-map.js`
+  maps GitLab's JSON to them (pure, tested); `lib.js` parses diffs, builds the file tree and handles tag bodies.
 - **`mods/skills`**: finds skills with `find` and reads `~/.claude/plugins/installed_plugins.json`.
 - **`mods/usage`**:
   - `scan.py` (python3 stdlib, `git`, optional `zstd`) turns the harness logs into one record per session (tokens by
