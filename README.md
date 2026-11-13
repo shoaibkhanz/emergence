@@ -18,18 +18,16 @@ Or run one command yourself:
 curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/emergence/main/install.sh | bash
 ```
 
-It clones this repo to `~/code/emergence`, links every mod into Herdr, adds the keys below without replacing any you
-have (all but ⌘E act only in the `emergence` layout, whose tab bar runs them), and switches to that layout (`⌘⇧L`
-cycles back to Herdr's own). When this repo changes, an **Update** chip appears in the tab bar; click it to pull,
-relink and reload.
+It clones this repo to `~/code/emergence`, links every mod into Herdr, adds the [keys](#keys) and switches to the
+`emergence` layout (`⌘⇧L` cycles back to Herdr's own).
 
 Needs Herdr 0.1.15 or newer, `git` and `python3`; `gh` signed in for pull requests, `glab` for GitLab merge requests.
 The fonts (Geist, Geist Mono) ship with Herdr.
 
 ## What you get
 
-Four panels open from buttons in the tab bar (each also opens large from its corner button), and the sidebar becomes
-an inbox. Every screenshot below uses made-up data.
+Four panels open from buttons in the tab bar (each also opens large from its corner button), and the sidebar shows
+every worktree and the agents that need you. Every screenshot below uses made-up data.
 
 ### Agents (⌘⇧A): who's running, where, and who needs you
 
@@ -52,9 +50,8 @@ Find (⌘F) searches the code and review comments of the whole PR (or just the o
 Comment authors and @mentions stand out from the text. The commit history lists the PR's commits; open one to review
 just its changes, and step through them with [ and ]. Click a hunk header to show the unchanged lines it hides, or
 show the whole file from the file's header. Comments on the PR itself and reviews sit under the conversation, with a box
-to answer (tags too); edit or delete your comments there, and ⌘F searches it. It all refreshes every 5 seconds, so you
-watch an agent's comments and pushes land. Reply, edit,
-delete and resolve threads here too. For more room, hide the PR list beside an open PR, or go full size: the
+to answer (tags too); edit or delete your comments there, and ⌘F searches it. Reply, edit, delete and resolve threads
+here too. It all refreshes every 5 seconds. For more room, hide the PR list beside an open PR, or go full size: the
 sidebar folds away and the agent's terminal stays on the left, so you watch its comments land as it works. The review
 also opens in its own window, centred and nearly full screen; drag its right or bottom edge to any size.
 
@@ -122,9 +119,8 @@ prunes it. Raise `cleanupPeriodDays` to keep more.
   waiting on you (blocked, finished, or idle for its next prompt): branch and age, then its task. Working agents fold
   into one row that opens the graph. Settle puts a row away until its agent needs you again.
 - **Three sizes**: open, a rail of letter cells with a status dot, or dots (one square per space, ringed when it needs
-  you or is working). Folded, the inbox shows only how many need you. ⌘B opens and folds it, ⌘⌥B goes one size thinner.
-- **Keyboard**: ⌘B puts the keyboard in Spaces and ⌘⇧I in the Inbox (so does ctrl-h from the leftmost terminal, with
-  nav-keys bound); ctrl-j and ctrl-k move between the two, ctrl-l or Esc go back. See [Keys](#keys).
+  you or is working). Folded, the inbox shows only how many need you.
+- **Keyboard**: ⌘B (Spaces) or ⌘⇧I (Inbox); the rest under [Keys](#keys).
 
 ### Jump (⌘E): every session and worktree, most recent first
 
@@ -135,8 +131,6 @@ new branch name to make a worktree for it.
 
 Unnamed tabs take the name of their branch (or the repo, on main), and follow it as the branch changes; a name you
 give a tab stays.
-
-Its keys are with every other under [Keys](#keys).
 
 ## Keys
 
@@ -179,7 +173,7 @@ either; the second fold size is ⌘⌥B (Option).
 
 ## Update or remove
 
-Update: click **Update** in the tab bar when it shows (it checks every 6 hours), or run the install command again.
+Update: click **Update** in the tab bar when it shows, or run the install command again.
 Either one reloads the layout, so the new mods run straight away.
 If you installed by copying the files, run the install command once to switch to a clone.
 
@@ -189,29 +183,23 @@ then take the `tabs-plus.*` and `mod.open:jump` keys out of `~/.config/herdr-app
 
 ## Optional: ctrl-h/j/k/l between panes
 
-`nav-keys` moves focus between panes, but where the focused terminal runs (n)vim it passes the key to the editor
-(Neovim over its own socket, at once, also under a wrapper such as `uv run nvim`; vim through `hc keys`, which waits
-for ~3 s without a keypress). It does nothing until you bind it in `~/.config/herdr-app/keys.json`, because the keys
-then stop reaching your shell (ctrl-l clear, ctrl-k kill line):
+`nav-keys` moves focus between panes, but where the focused terminal runs (n)vim it passes the key to the editor. It
+does nothing until you bind it in `~/.config/herdr-app/keys.json`, because the keys then stop reaching your shell
+(ctrl-l clear, ctrl-k kill line):
 
 ```json
 "terminal": { "ctrl-h": "nav-keys.left", "ctrl-j": "nav-keys.down", "ctrl-k": "nav-keys.up", "ctrl-l": "nav-keys.right" }
 ```
 
-It only runs in the `emergence` layout (a 0px block); in other layouts these keys then fail. The sidebar takes
-ctrl-j/k/l itself (`mod:spaces-plus` and `mod:inbox` in keys.json), with or without nav-keys or a global ctrl-j/k/l.
-Leaving (n)vim with them needs a mapping in the editor: move between splits and, at the edge, hand over to Herdr.
-Without one the keys stay inside the editor. This part is optional, and Neovim doesn't ship the file: take it from
-[herdr-nav-plus](https://github.com/shoaibkhanz/herdr-nav-plus) (`editor/nvim.lua`; `editor/vim.vim` for Vim), which
-works in this app and in the herdr terminal app:
+It only runs in the `emergence` layout (a 0px block); in other layouts these keys then fail. Optional: to leave (n)vim
+at a split edge too, install the editor map from [herdr-nav-plus](https://github.com/shoaibkhanz/herdr-nav-plus)
+(`editor/vim.vim` for Vim):
 
 ```sh
-mkdir -p ~/.config/nvim/after/plugin
+mkdir -p ~/.config/nvim/after/plugin   # after/plugin wins over other ctrl-h/j/k/l maps
 curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/editor/nvim.lua \
   -o ~/.config/nvim/after/plugin/herdr_nav.lua
 ```
-
-after/plugin, so it wins over other ctrl-h/j/k/l maps.
 
 ## Develop
 
