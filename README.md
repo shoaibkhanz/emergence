@@ -1,8 +1,7 @@
 # Emergence
 
-A layout for the [Herdr app](https://herdr.dev) for running many coding agents at once: every agent as a graph, a
-pull request reviewer, a skills and plugins library, usage analytics across harnesses, and an inbox for the agents
-that need you.
+A [Herdr](https://herdr.dev) layout for running many coding agents at once: an agent graph, a PR reviewer, a skills
+library, usage analytics, and a sidebar with every worktree and the agents that need you.
 
 ![Emergence](preview.png)
 
@@ -12,199 +11,141 @@ Tell your Herdr agent:
 
 > Read ~/.config/herdr-app/AGENTS.md, then add this layout by running its install.sh: https://github.com/shoaibkhanz/emergence
 
-Or run one command yourself:
+Or run it yourself:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/emergence/main/install.sh | bash
 ```
 
-It clones this repo to `~/code/emergence`, links every mod into Herdr, adds the [keys](#keys) and switches to the
-`emergence` layout (`⌘⇧L` cycles back to Herdr's own). An old copy of one of its mods (copied by hand, or linked into
-another clone) is moved aside to `~/.config/herdr-app/replaced/`, so nothing stale keeps running.
-
-Needs Herdr 0.1.15 or newer, `git` and `python3`; `gh` signed in for pull requests, `glab` for GitLab merge requests.
-The fonts (Geist, Geist Mono) ship with Herdr.
+It clones to `~/code/emergence`, links every mod, adds the [keys](#keys) and switches to the `emergence` layout
+(`⌘⇧L` cycles back). Old copies of its mods are moved to `~/.config/herdr-app/replaced/`. Needs Herdr 0.1.15+, `git`,
+`python3`; `gh` (or `glab`) for pull requests.
 
 ## What you get
 
-Four panels open from buttons in the tab bar (each also opens large from its corner button), and the sidebar shows
-every worktree and the agents that need you. Every screenshot below uses made-up data.
+Screenshots use made-up data.
 
-### Agents (⌘⇧A): who's running, where, and who needs you
+### Agents (⌘⇧A)
 
-![Agents panel: repos, worktrees with their PRs, and agents](docs/images/agents.png)
+![Agents panel](docs/images/agents.png)
 
-Every agent on the machine in one picture: repo → worktree, with the PR it has open → agent → its sub-agents. With a
-dozen agents running, the blocked one is drawn in red and the working ones in amber, and finished ones show green, so
-you see where to look without visiting each tab. **Active only** hides the idle ones. Click an agent to jump to it, a
-PR to review it, a repo to list its worktrees. Drag cards around; the wheel zooms.
+Every agent as repo → worktree (with its PR) → agent → sub-agents. Blocked in red, working in amber, done in green;
+**Active only** hides idle ones. Click an agent to jump to it, a PR to review it.
 
-### PRs (⌘⇧R): review your agents' work without leaving Herdr
+### PRs (⌘⇧R)
 
-![PRs window: a pull request's files, diff and tagged review threads, with Find across all files](docs/images/prs.png)
+![PRs window](docs/images/prs.png)
 
-The PRs of the repo you're in, plus a compare of any two branches (this one against main to start). Changed files form a tree, with
-one diff at a time, unified or side by side, and review threads inline; long lines scroll sideways. Select lines and
-comment, tagged Statement · Question · Nit · Minor · Major. The tag posts as a coloured badge on GitHub, so whoever
-picks up the review (you, or the agent) can tell a nit from a blocker at a glance.
-Find (⌘F) searches the code and review comments of the whole PR (or just the open file), stepping from match to match.
-Comment authors and @mentions stand out from the text. The commit history lists the PR's commits; open one to review
-just its changes, and step through them with [ and ]. Click a hunk header to show the unchanged lines it hides, or
-show the whole file from the file's header. Comments on the PR itself and reviews sit under the conversation, with a box
-to answer (tags too); edit or delete your comments there, and ⌘F searches it. Reply, edit, delete and resolve threads
-here too. It all refreshes every 5 seconds. For more room, hide the PR list beside an open PR, or go full size: the
-sidebar folds away and the agent's terminal stays on the left, so you watch its comments land as it works. The review
-also opens in its own window, centred and nearly full screen; drag its right or bottom edge to any size.
+The repo's PRs and any two-branch compare: file tree, unified or side-by-side diffs, inline threads. Comments carry a
+tag (Statement · Question · Nit · Minor · Major) that posts as a badge on GitHub. Find (⌘F) across code and comments,
+step through commits with [ ], reply, edit, resolve. Refreshes every 5 s. Full size keeps the agent's terminal beside
+it; it also opens in its own window.
 
-### Library (⌘⇧K): every skill your agents can load
+### Library (⌘⇧K)
 
-![Library panel: skills from every harness folder, with where each lives](docs/images/library.png)
+![Library panel](docs/images/library.png)
 
-Skills from `~/.agents`, `~/.claude`, `~/.codex`, `~/.config/opencode` and the repo, plus your installed Claude Code
-plugins and the skills they ship. It's one searchable list that shows where each skill lives, so you can check what's
-already installed before writing or copying another. Each skill opens in a reusable window.
+Every skill in `~/.agents`, `~/.claude`, `~/.codex`, `~/.config/opencode` and the repo, plus Claude Code plugins, in
+one searchable list showing where each lives.
 
-### Usage (⌘⇧U): what your agents cost, and what they deliver
+### Usage (⌘⇧U)
 
-How you work across omp, Claude Code, Codex, OpenCode and pi, read from their own logs and your git history. Pick 7,
-30 or 90 days, a year, or two dates. It rescans every minute while it's open. Nothing leaves your machine.
+Cost and output across omp, Claude Code, Codex, OpenCode and pi, from their local logs and your git history. Any
+period; drag across a chart and every number follows. Nothing leaves your machine.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/usage-overview.png" alt="Usage overview"></td>
-<td width="50%"><img src="docs/images/usage-compare.png" alt="Usage compare"></td>
+<td width="50%"><img src="docs/images/usage-overview.png" alt="Usage overview"><br><b>Overview.</b> Sessions, tokens,
+spend and cache share against the period before.</td>
+<td width="50%"><img src="docs/images/usage-compare.png" alt="Usage compare"><br><b>Compare.</b> Clean-run rate (95%
+range), cost per clean run and commits, per harness and model.</td>
 </tr>
 <tr>
-<td valign="top"><b>Overview.</b> Sessions, active days, tokens and spend, against the period before. A calendar shows
-every day, and the breakdowns show where tokens go (fresh input, cache writes, cache reads, output) and what kind of
-work it was. Agents re-read their context on every step, so the cache share tells you whether long runs are cheap or
-expensive.</td>
-<td valign="top"><b>Compare.</b> For each harness and model: the share of runs that went cleanly (no abort, API error
-or compaction, few failed tools) with its 95% range, what one clean run costs, tool calls per run, and how often a run
-led to a commit. A winner is only named when the ranges don't overlap, so you switch tools on evidence.</td>
+<td><img src="docs/images/usage-harnesses.png" alt="Usage harnesses"><br><b>Harnesses.</b> Tokens, models and effort
+per harness over time.</td>
+<td><img src="docs/images/usage-output.png" alt="Usage output"><br><b>Output.</b> Commits, lines, PRs, worktrees, and
+their cost.</td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/images/usage-harnesses.png" alt="Usage harnesses"></td>
-<td width="50%"><img src="docs/images/usage-output.png" alt="Usage output"></td>
-</tr>
-<tr>
-<td valign="top"><b>Harnesses.</b> Tokens by harness over time, the models that carry the load, and the effort level each
-harness runs at. A move from one harness or model to another shows up week by week.</td>
-<td valign="top"><b>Output.</b> What the spend produced: commits, lines changed, pull and merge requests, worktrees. Then
-what that delivery cost, per commit, per merged PR and per 1K lines.</td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/images/usage-rhythm.png" alt="Usage rhythm"></td>
-<td valign="top"><b>Rhythm.</b> When you start work, how many agents run at once on each day, and how long runs last.
-Find the hours you run the most agents, and the runs that drag on.<br><br>
-Hover any bar or square for its numbers. Press or drag across days, bars or hours (say 09:00–12:00) and every other
-number follows; ✕ shows the whole period again. Cost is what each harness recorded, at API prices (Codex records none). The
-kind of work comes from each run's mix of tool calls, never from your prompts.</td>
+<td><img src="docs/images/usage-rhythm.png" alt="Usage rhythm"><br><b>Rhythm.</b> When you work, agents at once, run
+lengths.</td>
+<td valign="top">Only this machine's logs count. Claude Code prunes transcripts after 30 days (<code>cleanupPeriodDays</code>);
+Usage keeps every session it has read.</td>
 </tr>
 </table>
 
-**Usage only sees what's on this machine.** It reads the session logs each harness keeps locally and the git repos
-those sessions ran in. Work done on another computer isn't counted, and neither is history a harness already deleted.
-Claude Code deletes transcripts after 30 days by default (`cleanupPeriodDays` in `~/.claude/settings.json`), so a first
-scan sees about a month of Claude Code. From then on, Usage keeps every session it has read, even after Claude Code
-prunes it. Raise `cleanupPeriodDays` to keep more.
-
 ### Sidebar
 
-![The sidebar at its three sizes: open with worktrees under their space, the rail, and dots](docs/images/sidebar.png)
+![The sidebar at its three sizes](docs/images/sidebar.png)
 
-- **Spaces**: every worktree sits under its repo's space, with its ↑/↓ commits and what its agent is doing (amber dot:
-  needs you, spinner: working, check: done). Worktrees with no space yet are greyed; click one (or ↵) to open it.
-  Fold a repo with its chevron (or ←/→); folds are remembered. Spaces grows with its rows and pushes the inbox down.
-  On a worktree, ← deletes it (`git worktree remove`; not with uncommitted changes, and its branch stays) and →
-  archives it (off the sidebar, still on disk; opening it from ⌘E Jump brings it back). Right-click a worktree for
-  the same two. Both ask first, with Cancel selected.
-- **Inbox** (after [T3 Inbox](https://github.com/JinJieBeWater/herdr-t3-inbox)): a two-line row for every agent
-  waiting on you (blocked, finished, or idle for its next prompt): branch and age, then its task. Working agents fold
-  into one "Working N" row (0 too) that opens the graph on what's working, or on everything when nothing is, with
-  working agents highlighted. Settle puts a row away until its agent needs you again.
-- **Three sizes**: open, a rail of letter cells with a status dot, or dots (one square per space, ringed when it needs
-  you or is working). Folded, the inbox shows only how many need you.
-- **Keyboard**: ⌘B (Spaces) or ⌘⇧I (Inbox); the rest under [Keys](#keys).
+- **Spaces**: every worktree under its repo, with ↑/↓ commits and agent status; greyed ones aren't open yet (↵ opens).
+  On a worktree, ← deletes it (`git worktree remove`; refused with uncommitted changes, branch kept) and → archives it
+  (hidden, still on disk; reopen from ⌘E). Right-click for the same. Both ask first, Cancel selected.
+- **Inbox**: every agent waiting on you, newest first; Settle puts one away. **Working N** opens the graph on what's
+  working (everything at 0).
+- **Sizes**: open, rail, dots (⌘B, ⌘⌥B).
 
-### Jump (⌘E): every session and worktree, most recent first
+### Jump (⌘E)
 
-One list of every tab in every space, plus the worktrees of your open repos that aren't open yet. The tab you're on is
-at the top and the one before it is picked, so ⌘E ↵ flips between your last two. Each row shows what its agent is
-working on and for how long, so you can tell sessions apart at a glance. Type to filter by tab, branch, folder, agent or task. Type a
-new branch name to make a worktree for it.
-
-Unnamed tabs take the name of their branch (or the repo, on main), and follow it as the branch changes; a name you
-give a tab stays.
+Every tab and unopened worktree, most recent first; ⌘E ↵ flips between your last two. Type to filter, or a new branch
+name to make a worktree. Unnamed tabs follow their branch.
 
 ## Keys
 
-The installer adds these without replacing any key you already have. All but ⌘E act only in the `emergence` layout.
+Added without replacing yours; all but ⌘E only in the `emergence` layout. ⌘⇧/ (or the tab bar's keyboard button)
+lists them all.
 
 | Key | Where | What |
 |---|---|---|
-| ⌘E | everywhere | Jump: every session and worktree |
-| ⌘⇧/ | layout | every Emergence key in one dialog, filterable (also the keyboard button in the tab bar; ⌘/ is Herdr's) |
-| ⌘⇧A · ⌘⇧R · ⌘⇧K · ⌘⇧U | layout | open or close Agents · PRs · Library · Usage (the panel takes the keyboard) |
-| ⌘⇧I | layout | the keyboard into the Inbox (the sidebar opens if folded): ↑↓ pick, ↵ goes to that agent, Esc back |
-| ⌘⇧O | layout | every worktree of the repo you're in |
-| ⌘B | layout | sidebar: open it with the keyboard in Spaces; in it, fold it (to the last folded size) |
-| ⌘⌥B | layout | sidebar one size thinner: open → rail → dots → open |
-| ↑ ↓ · ↵ | sidebar | move · open the space or worktree, or go to the agent |
-| ← → | Spaces | on a repo: fold or unfold it; on a worktree: delete · archive it (asks first; also on right-click) |
-| ctrl-j · ctrl-k | sidebar | Spaces → Inbox · Inbox → Spaces |
-| ctrl-l · Esc | sidebar | back to the terminal you came from |
-| ↑ ↓ · ← → · ↵ · Esc | panels | step through the list · switch tabs (PR states in PRs) · open · close |
-| ⌘F · [ ] | PRs | find across the PR · previous and next commit |
-| ctrl-h/j/k/l | terminals | move between panes, with [nav-keys](#optional-ctrlhjkl-between-panes) bound (optional) |
+| ⌘E | everywhere | Jump |
+| ⌘⇧/ | layout | every Emergence key (⌘/ is Herdr's) |
+| ⌘⇧A · ⌘⇧R · ⌘⇧K · ⌘⇧U | layout | Agents · PRs · Library · Usage |
+| ⌘⇧I | layout | keyboard into the Inbox |
+| ⌘⇧O | layout | worktrees of this repo |
+| ⌘B · ⌘⌥B | layout | sidebar open/fold · one size thinner |
+| ↑ ↓ · ↵ | sidebar | move · open |
+| ← → | Spaces | repo: fold · worktree: delete / archive |
+| ctrl-j · ctrl-k · ctrl-l | sidebar | to Inbox · to Spaces · back to the terminal (also Esc) |
+| ↑ ↓ · ← → · ↵ · Esc | panels | list · tabs · open · close |
+| ⌘F · [ ] | PRs | find · previous / next commit |
+| ctrl-h/j/k/l | terminals | between panes ([optional](#optional-ctrlhjkl-between-panes)) |
 
-Not ⌘⇧J for the Inbox: Homerow, if you run it, takes ⌘⇧J system-wide for its scroll mode. ⌘⇧B isn't a sidebar key
-either; the second fold size is ⌘⌥B (Option).
+Not ⌘⇧J (Homerow's scroll mode); not ⌘⇧B (Blueprint).
 
 ## What it runs
 
-- **Agents**: `git rev-parse` in each agent's folder, and `gh pr list` once a minute per repo.
-- **PRs**: `git` and `gh` in the focused repo; posting a comment, reply, edit, delete or resolve calls the GitHub API.
-- **Library**: lists skill folders under `~/.agents`, `~/.claude`, `~/.config/opencode`, `~/.codex` and the repo, and
-  reads `~/.claude/plugins/installed_plugins.json`.
-- **Usage**: `python3 mods/usage/scan.py` reads the harnesses' session logs (omp, Claude Code, Codex, OpenCode, pi) and
-  keeps a cache in Herdr's `data/usage/`; `python3 mods/usage/output.py` runs `git log`, `gh pr list` or `glab mr list`
-  and `git worktree list` in the repos those sessions name. Only counts, models and timestamps are read, never prompts.
-- **Tab bar**: every hour, `git fetch` of this repo's `main` (public HTTPS) into your clone; **Update** runs
-  `git merge --ff-only` and `install.sh` there. Nothing for a copy that isn't a clone of this repo, or one on another
-  branch or with your own commits.
-- **Spaces**: `git rev-parse`, `symbolic-ref` and `rev-list` in each space's folder (branch, ahead/behind), and per
-  repo `git worktree list` and `git for-each-ref` (its worktrees and their ahead/behind).
+- **Agents**: `git rev-parse` per agent folder; `gh pr list` per repo each minute.
+- **PRs**: `git` and `gh` in the focused repo; comments go through the GitHub API.
+- **Library**: lists the skill folders above and `~/.claude/plugins/installed_plugins.json`.
+- **Usage**: `mods/usage/scan.py` reads session logs (counts, models, timestamps; never prompts), cached in Herdr's
+  `data/usage/`; `output.py` runs `git log`, `gh`/`glab` and `git worktree list`.
+- **Spaces**: `git rev-parse`, `rev-list`, `worktree list`, `for-each-ref`; delete runs `git worktree remove`.
+- **Tab bar**: hourly `git fetch` of `main` into your clone. Only for a clone on `main` with no commits of its own.
 - **Inbox**: nothing outside Herdr.
 
 ## Update or remove
 
-Update: click **Update** in the tab bar when it shows, or run the install command again. Either one relinks every mod
-(moving any old copy aside, as the install does) and reloads the layout, so the new mods run straight away.
-If you installed by copying the files, run the install command once to switch to a clone.
+**Update**: click **Update** in the tab bar, or rerun the install. Both relink, move old copies aside and reload.
 
-Remove: switch back with `herdr-app do layout.switch --name main`, delete the links
+**Remove**: `herdr-app do layout.switch --name main`, delete the links
 (`find ~/.config/herdr-app/mods ~/.config/herdr-app/layouts -maxdepth 1 -lname "$HOME/code/emergence/*" -delete`),
-then take the `tabs-plus.*`, `mod.open:jump` and `mod.open:emergence-keys` keys and the `mod:spaces-plus` and
-`mod:inbox` sections out of `~/.config/herdr-app/keys.json`, and the `omp` entry out of `programs.json`. Old copies
-the install moved aside are in `~/.config/herdr-app/replaced/`.
+then remove the `tabs-plus.*`, `mod.open:jump`, `mod.open:emergence-keys`, `mod:spaces-plus` and `mod:inbox` entries
+from `~/.config/herdr-app/keys.json` and `omp` from `programs.json`.
 
 ## Optional: ctrl-h/j/k/l between panes
 
-`nav-keys` moves focus between panes, but where the focused terminal runs (n)vim it passes the key to the editor. It
-does nothing until you bind it in `~/.config/herdr-app/keys.json`, because the keys then stop reaching your shell
-(ctrl-l clear, ctrl-k kill line):
+`nav-keys` moves between panes, handing the key to (n)vim where it runs. Bind it (the keys then stop reaching your
+shell):
 
 ```json
 "terminal": { "ctrl-h": "nav-keys.left", "ctrl-j": "nav-keys.down", "ctrl-k": "nav-keys.up", "ctrl-l": "nav-keys.right" }
 ```
 
-It only runs in the `emergence` layout (a 0px block); in other layouts these keys then fail. Optional: to leave (n)vim
-at a split edge too, install the editor map from [herdr-nav-plus](https://github.com/shoaibkhanz/herdr-nav-plus)
-(`editor/vim.vim` for Vim):
+To also leave (n)vim at a split edge, add [herdr-nav-plus](https://github.com/shoaibkhanz/herdr-nav-plus)'s editor
+map (`editor/vim.vim` for Vim):
 
 ```sh
-mkdir -p ~/.config/nvim/after/plugin   # after/plugin wins over other ctrl-h/j/k/l maps
+mkdir -p ~/.config/nvim/after/plugin
 curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/editor/nvim.lua \
   -o ~/.config/nvim/after/plugin/herdr_nav.lua
 ```
@@ -215,22 +156,22 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/edi
 |---|---|
 | `mods/agent-graph`, `pr-review`, `skills`, `usage` | the four panels |
 | `mods/inbox`, `spaces-plus` | the sidebar |
-| `mods/confirm-safe` | Herdr's confirm dialog with Cancel selected, for worktree delete and archive |
-| `mods/emergence-keys` | the ⌘⇧/ dialog: every Emergence key, grouped (its list is `lib.js`) |
-| `mods/row-menu` | a right-click menu with the items its opener passes (Herdr's menu has fixed ones) |
-| `mods/tabs-plus` | Herdr's tab bar with the panel buttons; names tabs and records the order you visit them |
-| `mods/jump` | the ⌘E switcher |
-| `layouts/emergence.json` | Herdr's `main` layout with all of the above |
-| `RECIPE.md` | the brief to rebuild it from scratch |
+| `mods/tabs-plus` | tab bar, panel buttons, tab names, updates |
+| `mods/jump` | ⌘E |
+| `mods/emergence-keys` | ⌘⇧/ |
+| `mods/confirm-safe`, `row-menu` | Cancel-first confirm; right-click menu |
+| `mods/nav-keys` | ctrl-h/j/k/l |
+| `layouts/emergence.json` | the layout |
+| `RECIPE.md` | how to rebuild it |
 
-`spaces-plus`, `tabs-plus` and the layout are copies of Herdr 0.1.15's own; Herdr updates don't flow into them.
+`spaces-plus`, `tabs-plus` and the layout are copies of Herdr 0.1.15's own.
 
 ```sh
-herdr-app check ~/.config/herdr-app/mods/<name>   # loads and renders once
-(cd mods/<name> && bun test)                      # logic tests; Usage also: python3 mods/usage/test_scan.py
+herdr-app check ~/.config/herdr-app/mods/<name>   # load and render once
+(cd mods/<name> && bun test)                      # Usage also: python3 mods/usage/test_scan.py
 ```
 
-Edits don't reach open panels: switch layouts (`main`, then `emergence`) to restart them. Read
-[`docs/platform-notes.md`](docs/platform-notes.md) before changing anything.
+Edits need a reload: switch to `main`, then back to `emergence`. Read [`docs/platform-notes.md`](docs/platform-notes.md)
+first.
 
-MIT licensed (see [`LICENSE`](LICENSE)). Icons from [Lucide](https://lucide.dev) (ISC); omp's icon is its own (MIT).
+MIT ([`LICENSE`](LICENSE)). Icons: [Lucide](https://lucide.dev) (ISC); omp's icon is its own (MIT).
