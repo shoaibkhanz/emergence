@@ -259,6 +259,8 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - A collapsed column counts as not shown, so `<mod>.<command>` fails there. That's why `nav-keys` and every command
     live in the work column, and ⌘B lives in tabs-plus.
   - An invisible window takes every click: host resident mods in a 0px block.
+  - `hc keys` presses keys only after ~3 s without a person's keypress (bound keys count), so nav-keys gives Neovim
+    its ctrl-h/j/k/l over its socket (`nvim --server … --remote-send`) and keeps `hc keys` for vim.
   - More in `docs/platform-notes.md`.
 - **Limits.**
   - Usage's first scan reads every log (about 30s on a heavy machine); later runs read only what changed.

@@ -10,12 +10,26 @@
 // for good: an invisible window takes presses (and drags when pressed), and once
 // dragged over a panel it swallowed its clicks.
 import { View, div } from "gpui-kit";
-import { run, hc, panes, focused, nextCommand, props, openOverlay, closeOverlay, layout } from "herdr";
+import { run, hc, exec, panes, focused, nextCommand, props, openOverlay, closeOverlay, layout } from "herdr";
 
 const hosted = (n) => n?.content?.mod === "nav-keys" || (n?.children ?? []).some(hosted);
 
 const KEY = { left: "h", down: "j", up: "k", right: "l" };
 const EDITORS = ["nvim", "vim"];
+
+// Neovim takes the key over its own socket, $TMPDIR/nvim.$USER/*/nvim.<pid>.0 (since 0.10 the server is the TUI's
+// child). `hc keys` waits for ~3 s without a person's key, so ctrl-h pressed while typing landed seconds late.
+// Not found (vim, another machine, no socket): exit 3, and hc keys it is.
+const NVIM_SEND = 'for p in "$1" $(pgrep -P "$1"); do for s in "${TMPDIR:-/tmp}"/nvim."$USER"/*/nvim."$p".0; do ' +
+  '[ -S "$s" ] && exec nvim --clean --headless --server "$s" --remote-send "$2"; done; done; exit 3';
+
+async function nvimSend(terminal, dir) {
+  const r = await hc(["get", terminal, "--json"]);
+  let pid = null;
+  try { pid = JSON.parse(r.stdout).foreground?.pid; } catch { return false; }
+  if (!pid) return false;
+  return (await exec("sh", ["-c", NVIM_SEND, "sh", String(pid), `<C-${KEY[dir]}>`])).code === 0;
+}
 
 export default class NavKeys extends View {
   init(_props, cx) {
@@ -35,7 +49,8 @@ export default class NavKeys extends View {
         const f = focused();
         const pane = f && panes().find((p) => p.pane === f.pane);
         if (pane && pane.terminal && EDITORS.includes(pane.program.key)) {
-          await hc(["keys", pane.terminal, `ctrl+${KEY[dir]}`]);
+          const sent = pane.program.key === "nvim" && await nvimSend(pane.terminal, dir);
+          if (!sent) await hc(["keys", pane.terminal, `ctrl+${KEY[dir]}`]);
         } else {
           run("pane.go", { direction: dir });
         }

@@ -186,8 +186,8 @@ then take the `tabs-plus.*` and `mod.open:jump` keys out of `~/.config/herdr-app
 
 ## Optional: ctrl-h/j/k/l between panes
 
-`nav-keys` moves focus between panes, but where the focused terminal runs (n)vim it passes the key to the editor. It
-does nothing until you bind it in `~/.config/herdr-app/keys.json`, because the keys then stop reaching your shell
+`nav-keys` moves focus between panes, but where the focused terminal runs (n)vim it passes the key to the editor
+(Neovim over its own socket, at once; vim through `hc keys`, which waits for ~3 s without a keypress). It does nothing until you bind it in `~/.config/herdr-app/keys.json`, because the keys then stop reaching your shell
 (ctrl-l clear, ctrl-k kill line):
 
 ```json
