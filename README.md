@@ -201,25 +201,17 @@ then stop reaching your shell (ctrl-l clear, ctrl-k kill line):
 It only runs in the `emergence` layout (a 0px block); in other layouts these keys then fail. The sidebar takes
 ctrl-j/k/l itself (`mod:spaces-plus` and `mod:inbox` in keys.json), with or without nav-keys or a global ctrl-j/k/l.
 Leaving (n)vim with them needs a mapping in the editor: move between splits and, at the edge, hand over to Herdr.
-Without one the keys stay inside the editor. This part is optional, and neither this repo nor Neovim ships the file:
-for Neovim, create it yourself by pasting the snippet below into a new `~/.config/nvim/after/plugin/herdr_nav.lua`
-(any name works; after/plugin so it wins over other ctrl-h/j/k/l maps):
+Without one the keys stay inside the editor. This part is optional, and Neovim doesn't ship the file: take it from
+[herdr-nav-plus](https://github.com/shoaibkhanz/herdr-nav-plus) (`editor/nvim.lua`; `editor/vim.vim` for Vim), which
+works in this app and in the herdr terminal app:
 
-```lua
-for key, dir in pairs({ h = "left", j = "down", k = "up", l = "right" }) do
-  vim.keymap.set("n", "<C-" .. key .. ">", function()
-    local win = vim.api.nvim_get_current_win()
-    vim.cmd("wincmd " .. key)
-    if vim.api.nvim_get_current_win() == win and vim.env.HC_TERMINAL_ID then -- at the edge, inside Herdr
-      vim.fn.system({ "herdr-app", "do", "pane.go", "--direction", dir })
-    end
-  end, { desc = "Move to the split or Herdr pane " .. dir })
-end
+```sh
+mkdir -p ~/.config/nvim/after/plugin
+curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/editor/nvim.lua \
+  -o ~/.config/nvim/after/plugin/herdr_nav.lua
 ```
 
-The same idea for the herdr terminal app (and tmux), with workspace walking on ctrl-j/k, is
-[herdr-nav-plus](https://github.com/shoaibkhanz/herdr-nav-plus); its `editor/nvim.lua` doesn't cover this desktop app
-yet, so here use the snippet above (or add its `HC_TERMINAL_ID` branch to that file).
+after/plugin, so it wins over other ctrl-h/j/k/l maps.
 
 ## Develop
 
