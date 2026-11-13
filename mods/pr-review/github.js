@@ -1,6 +1,6 @@
 // GitHub through `gh`. Every function takes the repo identity { repo, machine }
 // (repo: the git toplevel, where gh runs) and throws Error(gh's message) on failure.
-// A gitlab.js would export the same functions.
+// gitlab.js exports the same functions.
 import { exec } from "herdr";
 
 async function gh(id, args, timeout) {
@@ -58,8 +58,8 @@ export async function threads(id, nwo, number) {
 // A comment on the pull request itself, not on a line.
 export const postComment = (id, nwo, number, body) => json(id, ["api", "-X", "POST", `repos/${nwo}/issues/${number}/comments`, ...fields({ body })]);
 
-// payload: { body, commit_id, path, line, side, start_line?, start_side? }
-export const createComment = (id, nwo, number, payload) =>
+// payload: { body, commit_id, path, line, side, start_line?, start_side? } (anchor and old_path are GitLab's)
+export const createComment = (id, nwo, number, { anchor, old_path, ...payload }) =>
   json(id, ["api", "-X", "POST", `repos/${nwo}/pulls/${number}/comments`, ...fields(payload)]);
 export const reply = (id, nwo, number, commentId, body) =>
   json(id, ["api", "-X", "POST", `repos/${nwo}/pulls/${number}/comments/${commentId}/replies`, ...fields({ body })]);
