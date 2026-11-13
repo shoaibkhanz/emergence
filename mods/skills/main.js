@@ -67,18 +67,25 @@ async function scanPlugins() {
   return plugins;
 }
 
-// Resolved listings only: a window never awaits work the (closing) palette started.
+// Resolved listings only: a window never awaits work the (closing) palette started; a window refetches its own.
 async function listing(dir) {
   if (!listings.has(dir)) listings.set(dir, parseListing((await exec("sh", ["-c", LIST, "skills", dir])).stdout, "."));
   return listings.get(dir);
 }
 
-// The one skill window: opening another skill (or resizing) replaces it in place (same key).
-// Its size follows the person's last pick, shared by every copy.
+// The one skill window: opening another skill (or a size pick) replaces it. Unkeyed, so it opens centred
+// (a keyed window reopens where it was last dropped). Frameless and as big as its content: the view sets its
+// size, the last hand-dragged size (shared by every copy) else the Bigger/Smaller preset, never past the screen.
+function winSize() {
+  const v = window.viewport_size(), z = settings().zoom ?? 1, vw = v.width / z, vh = v.height / z;
+  const [w, h] = shared("skills.wsize") ?? (shared("skills.big") === true ? [vw * 0.94, vh * 0.9] : [760, vh * 0.8]);
+  return [Math.max(520, Math.round(Math.min(w, vw))), Math.max(360, Math.round(Math.min(h, vh)))];
+}
 function openWindow(p) {
-  const big = shared("skills.big") === true, v = window.viewport_size();
-  const size = big ? { width: 0.94, height: 0.9, at: { x: Math.round(v.width * 0.03), y: Math.round(v.height * 0.05) } } : { width: 760, height: 0.8 };
-  openOverlay({ kind: "window", mod: "skills", key: "skill", ...size, props: { role: "window", ...p } });
+  const v = window.viewport_size(), z = settings().zoom ?? 1, [w, h] = winSize(), prev = shared("skills.window");
+  if (prev) closeOverlay(prev);
+  setShared("skills.window", openOverlay({ kind: "window", mod: "skills", frame: "none", props: { role: "window", ...p },
+    at: { x: Math.max(0, Math.round((v.width - w * z) / 2)), y: Math.max(0, Math.round((v.height - h * z) / 2)) } }));
 }
 
 function chips(t, sources) {
@@ -181,6 +188,10 @@ export default class Skills extends View {
 
   renderPalette(cx) {
     const panel = this.panel, wide = !panel || (this.width ?? 0) >= 720;
+    if (panel && shown()) {
+      const o = shared("emergence.opened"); // opened (⌘⇧K, the tab bar; tabs-plus says so): the keys are its own at once
+      if (o?.id === "skills" && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.input.focus()); }
+    }
     if (panel && shown() && !this.loading) {
       // Like Changes: follow the focused terminal's folder (a focused mod has none). this.cwd starts undefined, so the first show scans.
       const f = focused(), cwd = f?.terminal ? (f.cwd ?? null) : (this.cwd ?? null);
@@ -258,11 +269,15 @@ export default class Skills extends View {
       : this.tab === "skills" ? "No skills in ~/.agents, ~/.claude, ~/.config/opencode or ~/.codex." : "No Claude Code plugins installed.");
     const key = (k) => div().px(5).h(18).flex().items_center().rounded(4).border_1().border_color(t.border).text_size(11).text_color(t.muted).child(k);
     const keys = (e, cx) => {
-      if (e.key === "escape" && this.plugin) { this.goto("plugins", null); cx.notify(); }
-      else if (e.key === "escape" && !panel) closeOverlay(this.overlay);
-      else if (e.key === "down") move(1, cx);
-      else if (e.key === "up") move(-1, cx);
-      else if (e.key === "r" && e.modifiers.platform) this.load(cx, true);
+      const k = e.keystroke; // exact chords: ⇧↑ and ⇧↓ stay the search box's, ⌘⇧R isn't a rescan
+      if (k === "escape" && this.plugin) { this.goto("plugins", null); cx.notify(); }
+      else if (k === "escape" && !panel) closeOverlay(this.overlay);
+      else if (k === "down") move(1, cx);
+      else if (k === "up") move(-1, cx);
+      // ← / →: Skills ↔ Plugins (out of an open plugin), as every panel's arrows walk its tabs; with text in the
+      // search box they move its caret instead.
+      else if ((k === "left" || k === "right") && !this.input.value()) { this.goto(this.plugin || this.tab === "skills" ? "plugins" : "skills", null); cx.notify(); }
+      else if (k === "cmd-r") this.load(cx, true);
       else return;
       cx.stop_propagation();
     };
@@ -277,8 +292,9 @@ export default class Skills extends View {
       const button = (id, name, tip, onClick) => h_flex().id(id).flex_none().size(24).items_center().justify_center().rounded(6).cursor_pointer()
         .text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip).on_click(onClick)
         .child(icon(name).size(14).when(name === "refresh" && this.loading, (el) => el.spin(900)));
+      // Keys are read with the search box focused (↵ is its submit), so a press anywhere in the panel focuses it.
       return v_flex().id("skills").track_focus(this.handle).size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
-        .text_color(t.foreground).text_size(13).on_key_down(keys)
+        .text_color(t.foreground).text_size(13).on_key_down(keys).on_mouse_down("left", () => this.input.focus())
         .on_size_change((size, cx) => { this.width = size.width / (settings().zoom ?? 1); cx.notify(); })
         .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
           .child(div().text_size(13).font_semibold().child("Library"))
@@ -316,17 +332,21 @@ export default class Skills extends View {
 
   // ── Window role ────────────────────────────────────────────────────────────
 
+  // Closing (by hand, ⌘W or a replacing open) frees the shared slot this window held.
+  async close() { if (this.dir && shared("skills.window") === this.overlay) setShared("skills.window", null); }
+
   initWindow(p, cx) {
     this.dir = p.path;
     this.name = p.name ?? p.path.split("/").pop();
     this.sources = p.sources ?? [];
     this.files = null;
+    [this.W, this.H] = winSize();
     cx.timer.after(50, () => this.handle.focus());
     // `herdr-app do skills.close` closes the skill window (scripts, agents).
     cx.spawn(async () => { for (;;) if ((await nextCommand()) === "close") closeOverlay(this.overlay); });
     cx.spawn(async (cx) => {
       await cx.sleep(16); // host reads started before the window's first frame never resolve (seen live)
-      try { this.files = await listing(this.dir); } catch (e) { this.listError = `Couldn't list this skill: ${e?.message ?? e}`; }
+      try { listings.delete(this.dir); this.files = await listing(this.dir); } catch (e) { this.listError = `Couldn't list this skill: ${e?.message ?? e}`; }
       const has = (f) => f && this.files?.some((x) => x.path === f);
       await this.read([p.file, "SKILL.md", "README.md"].find(has) ?? this.files?.find((x) => fileKind(x.path) === "md")?.path ?? "SKILL.md");
       cx.notify();
@@ -363,6 +383,27 @@ export default class Skills extends View {
       this.code = EditorState.new({ language: LANG[ext] ?? ext, value: text, readonly: true, font_family: MONO, font_size: 12,
         syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6, boolean: t.ansi6 } });
     }
+  }
+
+  // The window's right and bottom edges, as in pr-review: ax / ay is 1 when that edge moves.
+  grip(id, ax, ay, place) {
+    return place(div().id(id).absolute())[ax && ay ? "cursor_nwse_resize" : ax ? "cursor_ew_resize" : "cursor_ns_resize"]()
+      .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.handle.focus(); this.rs = { x: e.position.x, y: e.position.y, w: this.W, h: this.H, ax, ay }; cx.notify(); });
+  }
+
+  resizeMove(e, cx) {
+    const r = this.rs, z = settings().zoom ?? 1;
+    if (!r) return;
+    if (r.ax) this.W = Math.max(520, Math.round(r.w + (r.ax * (e.position.x - r.x)) / z));
+    if (r.ay) this.H = Math.max(360, Math.round(r.h + (r.ay * (e.position.y - r.y)) / z));
+    cx.notify();
+  }
+
+  resizeEnd(cx) {
+    if (!this.rs) return;
+    this.rs = null;
+    setShared("skills.wsize", [this.W, this.H]);
+    cx.notify();
   }
 
   renderWindow(cx) {
@@ -417,11 +458,12 @@ export default class Skills extends View {
             .on_link_click((url, cx) => this.follow(url, cx)))));
     }
 
-    return v_flex().id("skill-window").track_focus(this.handle).size_full().min_h(0).bg(t.background).text_color(t.foreground)
+    const ui = v_flex().id("skill-window").track_focus(this.handle).relative().w(this.W).h(this.H).min_h(0).bg(t.background).text_color(t.foreground)
+      .rounded(10).overflow_hidden().border_1().border_color(t.border).shadow_lg()
       .on_key_down((e, cx) => {
-        if (e.key === "escape") close();
-        else if (e.key === "down") step(1, cx);
-        else if (e.key === "up") step(-1, cx);
+        if (e.keystroke === "escape") close();
+        else if (e.keystroke === "down") step(1, cx);
+        else if (e.keystroke === "up") step(-1, cx);
         else return;
         cx.stop_propagation();
       })
@@ -431,7 +473,7 @@ export default class Skills extends View {
         .child(div().flex_1())
         .child(h_flex().id("skw-size").flex_none().size(24).items_center().justify_center().rounded(6).cursor_pointer().text_color(t.dim)
           .tooltip(big ? "Smaller window" : "Bigger window").hover((s) => s.bg(t.hover).text_color(t.foreground)).on_mouse_down("left", stop)
-          .on_click(() => { setShared("skills.big", !big); openWindow({ path: this.dir, name: this.name, sources: this.sources, file: cur }); })
+          .on_click(() => { setShared("skills.big", !big); setShared("skills.wsize", null); openWindow({ path: this.dir, name: this.name, sources: this.sources, file: cur }); })
           .child(icon(big ? "shrink" : "expand").size(14)))
         .child(h_flex().id("skw-close").flex_none().size(24).items_center().justify_center().rounded(6).cursor_pointer().text_color(t.dim)
           .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_mouse_down("left", stop).on_click(close)
@@ -439,6 +481,16 @@ export default class Skills extends View {
       .child(h_flex().flex_1().min_h(0).items_stretch().on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.handle.focus(); })
         .child(v_flex().id("skw-files").w(232).flex_none().min_h(0).py(8).gap(2).bg(t.surface).border_r(1).border_color(t.border).overflow_y_scrollbar()
           .children(this.files ? strip : [quiet(t, this.listError ? "" : "Loading files…")]))
-        .child(content));
+        .child(content))
+      .child(this.grip("grip-r", 1, 0, (g) => g.top(14).bottom(14).right(0).w(4)))
+      .child(this.grip("grip-b", 0, 1, (g) => g.left(14).right(14).bottom(0).h(4)))
+      .child(this.grip("grip-rb", 1, 1, (g) => g.right(0).bottom(0).size(14)));
+    // While an edge is held a transparent halo grows the window to the screen's edges so the pointer stays on it.
+    // ponytail: a release outside Herdr is missed; the next press anywhere ends the resize instead.
+    return div().when(Boolean(this.rs), (el) => el.pr(4000).pb(4000).cursor_nwse_resize()
+      .on_mouse_move((e, cx) => this.resizeMove(e, cx))
+      .on_mouse_up("left", (_e, cx) => this.resizeEnd(cx))
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.resizeEnd(cx); }))
+      .child(ui);
   }
 }

@@ -19,8 +19,9 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/emergence/main/install.
 ```
 
 It clones this repo to `~/code/emergence`, links every mod into Herdr, adds the keys below without replacing any you
-have, and switches to the `emergence` layout (`ctrl-shift-l` cycles back to Herdr's own). When this repo changes, an
-**Update** chip appears in the tab bar; click it to pull, relink and reload.
+have (all but ⌘E act only in the `emergence` layout, whose tab bar runs them), and switches to that layout (`⌘⇧L`
+cycles back to Herdr's own). When this repo changes, an **Update** chip appears in the tab bar; click it to pull,
+relink and reload.
 
 Needs Herdr 0.1.15 or newer, `git` and `python3`; `gh` signed in for pull requests, `glab` for GitLab merge requests.
 The fonts (Geist, Geist Mono) ship with Herdr.
@@ -30,7 +31,7 @@ The fonts (Geist, Geist Mono) ship with Herdr.
 Four panels open from buttons in the tab bar (each also opens large from its corner button), and the sidebar becomes
 an inbox. Every screenshot below uses made-up data.
 
-### Agents (⌘⇧G): who's running, where, and who needs you
+### Agents (⌘⇧A): who's running, where, and who needs you
 
 ![Agents panel: repos, worktrees with their PRs, and agents](docs/images/agents.png)
 
@@ -39,13 +40,14 @@ dozen agents running, the one that's blocked shows in red and the finished one i
 without visiting each tab. Click an agent to jump to it, a PR to review it, a repo to list its worktrees. Drag cards
 around; the wheel zooms.
 
-### PRs (⌘⇧U): review your agents' work without leaving Herdr
+### PRs (⌘⇧R): review your agents' work without leaving Herdr
 
 ![PRs window: a pull request's files, diff and tagged review threads, with Find across all files](docs/images/prs.png)
 
-The PRs of the repo you're in, plus this branch against main. Changed files form a tree, with one diff at a time and
-review threads inline. Select lines and comment, tagged Statement · Question · Nit · Minor · Major. The tag posts as a
-coloured badge on GitHub, so whoever picks up the review (you, or the agent) can tell a nit from a blocker at a glance.
+The PRs of the repo you're in, plus a compare of any two branches (this one against main to start). Changed files form a tree, with
+one diff at a time, unified or side by side, and review threads inline; long lines scroll sideways. Select lines and
+comment, tagged Statement · Question · Nit · Minor · Major. The tag posts as a coloured badge on GitHub, so whoever
+picks up the review (you, or the agent) can tell a nit from a blocker at a glance.
 Find (⌘F) searches the code and review comments of the whole PR (or just the open file), stepping from match to match.
 Comment authors and @mentions stand out from the text. The commit history lists the PR's commits; open one to review
 just its changes, and step through them with [ and ]. Click a hunk header to show the unchanged lines it hides, or
@@ -54,7 +56,7 @@ to answer (tags too); edit or delete your comments there, and ⌘F searches it. 
 watch an agent's comments and pushes land. Reply, edit,
 delete and resolve threads here too. For more room, hide the PR list beside an open PR, or go full size: the
 sidebar folds away and the agent's terminal stays on the left, so you watch its comments land as it works. The review
-also opens in its own window, centred and nearly full screen; drag its edge or corner to any size.
+also opens in its own window, centred and nearly full screen; drag its right or bottom edge to any size.
 
 ### Library (⌘⇧K): every skill your agents can load
 
@@ -64,7 +66,7 @@ Skills from `~/.agents`, `~/.claude`, `~/.codex`, `~/.config/opencode` and the r
 plugins and the skills they ship. It's one searchable list that shows where each skill lives, so you can check what's
 already installed before writing or copying another. Each skill opens in a reusable window.
 
-### Usage (⌘⇧M): what your agents cost, and what they deliver
+### Usage (⌘⇧U): what your agents cost, and what they deliver
 
 How you work across omp, Claude Code, Codex, OpenCode and pi, read from their own logs and your git history. Pick 7,
 30 or 90 days, a year, or two dates. It rescans every minute while it's open. Nothing leaves your machine.
@@ -127,7 +129,8 @@ new branch name to make a worktree for it.
 Unnamed tabs take the name of their branch (or the repo, on main), and follow it as the branch changes; a name you
 give a tab stays.
 
-**Keys**: ⌘⇧J jumps to the next agent that needs you. ⌘⇧O lists every worktree of the repo you're in.
+**Keys** (in the `emergence` layout): ⌘⇧J jumps to the next agent in the inbox that needs you. ⌘⇧O lists every
+worktree of the repo you're in.
 
 ## What it runs
 
@@ -155,12 +158,17 @@ then take the `tabs-plus.*` and `mod.open:jump` keys out of `~/.config/herdr-app
 
 ## Optional: ctrl-h/j/k/l between panes
 
-`nav-keys` moves between panes, and hands the key to (n)vim when it's focused. It does nothing until you bind it in
-`~/.config/herdr-app/keys.json`, because the keys then stop reaching your shell (ctrl-l clear, ctrl-k kill line):
+`nav-keys` moves focus between panes, but where the focused terminal runs (n)vim it passes the key to the editor. It
+does nothing until you bind it in `~/.config/herdr-app/keys.json`, because the keys then stop reaching your shell
+(ctrl-l clear, ctrl-k kill line):
 
 ```json
 "terminal": { "ctrl-h": "nav-keys.left", "ctrl-j": "nav-keys.down", "ctrl-k": "nav-keys.up", "ctrl-l": "nav-keys.right" }
 ```
+
+It only runs in the `emergence` layout (a 0px block); in other layouts these keys then fail. Leaving (n)vim with
+them needs an editor mapping this repo doesn't ship: move between splits and, at the edge, run
+`herdr-app do pane.go --direction <left|down|up|right>`. Without one the keys stay inside the editor.
 
 ## Develop
 

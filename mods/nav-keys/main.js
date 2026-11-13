@@ -1,13 +1,14 @@
 // ctrl-h/j/k/l: Herdr moves focus, except where the focused terminal runs
-// (n)vim: there the key goes to the editor, which moves between its splits
-// and hands off to `herdr-app do pane.go` at its edge (nvim after/plugin/herdr_nav.lua).
+// (n)vim: there the key goes to the editor. Leaving the editor at its edge needs
+// a mapping in it that this repo doesn't ship: move between splits and, at the
+// edge, run `herdr-app do pane.go --direction <dir>`. Without one the keys stay in (n)vim.
 //
-// A mod only receives key commands while shown, and no shipped layout shows it, so it
-// lives in a 1px frameless window that Herdr reopens on every start (`keep`).
-// Run `herdr-app do mod.open --name nav-keys` once to create that window.
-// A personal layout can host it instead: a 0px block with props {resident: true}.
-// There the window closes itself for good: an invisible window takes presses
-// (and drags when pressed), and once dragged over a panel it swallowed its clicks.
+// A mod only receives key commands while shown. The emergence layout shows it in
+// a 0px block with props {resident: true}; elsewhere the bound keys fail, unless
+// `herdr-app do mod.open --name nav-keys` makes a 1px frameless window that Herdr
+// reopens on every start (`keep`). Where a layout hosts it, that window closes itself
+// for good: an invisible window takes presses (and drags when pressed), and once
+// dragged over a panel it swallowed its clicks.
 import { View, div } from "gpui-kit";
 import { run, hc, panes, focused, nextCommand, props, openOverlay, closeOverlay, layout } from "herdr";
 

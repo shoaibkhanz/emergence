@@ -8,13 +8,17 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, TextView, ScrollHandle } from "gpui-base";
 import { exec, focused, panes, spaces, theme, settings, props, shared, setShared, openOverlay, closeOverlay, run, layout } from "herdr";
 import * as gh from "./github.js";
-import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, TAGS, tagBody, splitTag, shown, findAll, findTalk, mentions, gapBefore, hiddenRows } from "./lib.js";
+import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, TAGS, tagBody, splitTag, shown, findAll, findTalk, mentions, gapBefore, hiddenRows, pairRows } from "./lib.js";
 
 const MONO = "Geist Mono";
 const icon = (name) => svg(`mods/pr-review/${name}.svg`);
 const tint = (c, a) => c.slice(0, 7) + a;
 const H = { file: 40, row: 20, hunk: 28, note: 36, thread: 132, resolved: 44 };
 const GUTTER = 104; // two line-number columns + sign: cards and notes line up with the code
+// ponytail: a code character's width, guessed from Geist Mono's 0.6em advance at 12px; wide (CJK) glyphs run past it.
+const CH = 7.2;
+const field = (_e, cx) => cx.stop_propagation(); // a text box's own press: it takes the keyboard, not the view
+const holds = (it, ri) => (it.k === "row" && it.ri === ri) || (it.k === "pair" && (it.l === ri || it.r === ri)); // a laid-out line showing row ri
 const STATES = [["open", "Open"], ["closed", "Closed"], ["all", "All"]];
 const BLOCK = "prs"; // this mod's block id in the layout's panel-body stack
 const NARROW = 760; // panel width below which it drills down: list → PR → diff
@@ -28,12 +32,12 @@ function find(node, id) {
   return null;
 }
 
-// The floating window: 90% of the screen until resized by hand, never bigger than the screen; opened
-// unkeyed at the centre (a keyed window reopens wherever it was last dropped). One that `mod.open` put up
-// (mod.json, Herdr-centred, so it would jump while resized) hands over to this at once.
+// The floating window: 94% × 90% of the screen until resized by hand (⤢ from the panel always opens it that big),
+// never bigger than the screen; opened unkeyed at the centre (a keyed window reopens wherever it was last dropped).
+// One that `mod.open` put up (mod.json, Herdr-centred, so it would jump while resized) hands over to this at once.
 function winSize() {
   const v = window.viewport_size(), z = settings().zoom ?? 1, [w, h] = shared("pr-review.wsize") ?? [Infinity, Infinity];
-  return [Math.max(640, Math.min(w, Math.round((v.width * 0.9) / z))), Math.max(420, Math.min(h, Math.round((v.height * 0.9) / z)))];
+  return [Math.max(640, Math.min(w, Math.round((v.width * 0.94) / z))), Math.max(420, Math.min(h, Math.round((v.height * 0.9) / z)))];
 }
 function openWindow() {
   const v = window.viewport_size(), z = settings().zoom ?? 1, [w, h] = winSize();
@@ -77,6 +81,10 @@ export default class PrReview extends View {
       cx.timer.after(350, (cx) => seq === this.searchSeq && this.loadPRs(s, cx));
     });
     this.findQ = InputState.new({ placeholder: "Find in code and comments" }); // ⌘F over the diff
+    this.baseQ = InputState.new({ placeholder: "Filter branches" }); // the compare's picker, either side
+    this.baseQ.on("focus", () => (this.typing = true));
+    this.baseQ.on("blur", () => (this.typing = false));
+    this.baseQ.on("submit", (_e, cx) => { const s = this.cur, l = s ? this.bases(s) : []; if (l.length) this.pickBase(s, l[0], cx); cx.notify(); });
     this.findEvery = true; // All files; This file narrows it
     this.findQ.on("focus", () => (this.typing = this.inFind = true));
     this.findQ.on("blur", () => (this.typing = this.inFind = false));
@@ -87,8 +95,9 @@ export default class PrReview extends View {
     this.talkScroll = ScrollHandle.new();
     // A hidden panel skips polling and catches up when shown again.
     this.ticks = 0;
+    if (this.panel) setShared("pr-review.wide", false); // full size doesn't outlive the copy (widen's wideFrom)
     // The panel leaves polling to the window while one is open on top (one set of GitHub calls, not two).
-    cx.timer.every(5000, (cx) => (this.shown() && !(this.panel && shared("pr-review.window")) ? this.poll(this.cur, cx) : (this.stale = true)));
+    cx.timer.every(5000, (cx) => (this.shown() && !this.yields() ? this.poll(this.cur, cx) : (this.stale = true)));
     if (this.panel) return;
     this.handle.focus();
     cx.timer.after(150, () => this.handle.focus());
@@ -96,6 +105,8 @@ export default class PrReview extends View {
 
   // The window forgets its id when it goes, so a later open never closes some other overlay that reuses it.
   async close() { if (!this.panel && props()?.overlay && shared("pr-review.window") === props().overlay) setShared("pr-review.window", null); }
+
+  yields() { return this.panel && Boolean(shared("pr-review.window")); } // the window polls instead
 
   shown() {
     if (!this.panel) return true;
@@ -116,10 +127,14 @@ export default class PrReview extends View {
       try {
         if (entry !== "local") await this.fetchThreads(s, entry);
         if ((entry === "local" || (d.at && d.headOid !== d.at)) && !d.commit && !s.sel && !this.draft) {
-          const text = await this.diffText(s, entry, d);
-          if (text === d.text) d.at = d.headOid; // a new head with the same changes (base merged in, message amended)
-          if (entry !== "local") d.commits = await gh.prCommits(s.id, entry).catch(() => d.commits);
-          if (text !== d.text && !d.loading && !d.commit && !s.sel) this.applyDiff(d, text); // a selection made meanwhile keeps its lines
+          const pair = entry === "local" && this.compareTitle(s), got = {}; // a side picked meanwhile reloads on its own: drop this one
+          const text = await this.diffText(s, entry, got);
+          if (pair === (entry === "local" && this.compareTitle(s))) {
+            if (got.commits) d.commits = got.commits;
+            if (text === d.text) d.at = d.headOid; // a new head with the same changes (base merged in, message amended)
+            if (entry !== "local") d.commits = await gh.prCommits(s.id, entry).catch(() => d.commits);
+            if (text !== d.text && !d.loading && !d.commit && !s.sel) this.applyDiff(d, text); // a selection made meanwhile keeps its lines
+          }
         }
       } catch { /* the next poll tries again */ }
       d.polling = false;
@@ -138,19 +153,20 @@ export default class PrReview extends View {
 
   dismiss() { closeOverlay(props().overlay); }
 
-  // Panel → the window, carrying the open PR over.
-  expand() {
+  // Panel → the window, carrying the open PR over. (Not `expand`: that's the hidden lines' below.)
+  popOut() {
     const s = this.cur;
-    if (typeof s?.entry === "number") {
-      this.handledAt = Date.now();
-      setShared("pr-review.open", { repo: s.id.repo, machine: s.id.machine, number: s.entry, at: this.handledAt });
-    }
+    this.handledAt = Date.now();
+    // "This branch" too: a stale request (another PR, within 30 s) would reopen that PR instead.
+    setShared("pr-review.open", typeof s?.entry === "number" ? { repo: s.id.repo, machine: s.id.machine, number: s.entry, at: this.handledAt } : null);
+    setShared("pr-review.wsize", null); // a hand-made size stays with the window it was made in: ⤢ opens big
     openWindow();
   }
 
   // Panel: full size for reviewing beside an agent. The sidebar folds away as ⌘B does (tabs-plus.rail),
   // the terminal keeps the sidebar's width on the left, the PR takes the rest. Again: all back.
   widen() {
+    setShared("pr-review.wide", !this.wideFrom); // tabs-plus doesn't remember the PRs width while it's full size
     const s = find(layout(), "sidebar"), sb = s?.hidden ? 0 : s?.size?.px ?? 0, fold = sb >= 160;
     if (this.wideFrom) {
       run("layout.resize", { id: "panel", px: this.wideFrom[0] });
@@ -164,7 +180,8 @@ export default class PrReview extends View {
     run("layout.resize", { id: "panel", px: Math.round(window.viewport_size().width / this.zoom) - side - 25 - term });
   }
 
-  back(s) { s.level = s.level === "diff" ? "pr" : "list"; if (this.inFind) this.closeFind(); }
+  // Narrow: back from the diff to its PR, then out of the PR (as Esc in the wide view), find closed either way.
+  back(s) { if (s.level === "diff") s.level = "pr"; else { s.level = "list"; s.entry = null; } if (this.finding) this.closeFind(); }
 
   // ---- target: the focused pane's repo, or a deep link ----
 
@@ -193,7 +210,7 @@ export default class PrReview extends View {
       await cx.sleep(16); // host calls started before a copy's first frame never resolve
       const top = (await git({ repo: want.dir, machine: want.machine }, ["rev-parse", "--show-toplevel"]).catch(() => "")).trim();
       if (this.wantKey !== key) return;
-      if (!top) { this.cur = { none: "This folder isn't a git repository." }; cx.notify(); return; }
+      if (!top) { if (this.cur?.id) this.dropWork(); this.cur = { none: "This folder isn't a git repository." }; cx.notify(); return; }
       const rk = `${want.machine}|${top}`;
       let s = this.repos.get(rk);
       if (!s) {
@@ -202,6 +219,7 @@ export default class PrReview extends View {
         this.loadRepo(s, cx, want.number);
       } else if (want.number) this.open(s, want.number, cx);
       if (want.number) s.level = "pr";
+      if (this.cur !== s && this.cur?.id) this.dropWork(); // a half-written comment stays with its repo's PR
       this.cur = s;
       if (this.repoll) { this.repoll = false; this.poll(s, cx); }
       this.search.set_value(s.search);
@@ -244,11 +262,7 @@ export default class PrReview extends View {
   }
 
   open(s, entry, cx, reload) {
-    if (s.entry !== entry) {
-      s.entry = entry; s.sel = null; this.tag = this.talkTag = this.talkError = null; this.dropDraft(); this.composeError = null;
-      this.talkBox.set_value(""); // a half-written PR comment doesn't follow you to another PR
-      if (this.actError?.thread === TALK.id) this.actError = null;
-    }
+    if (s.entry !== entry) { s.entry = entry; this.dropWork(s); }
     const d = s.diffs.get(entry) ?? {};
     d.pr = s.prs?.find((p) => p.number === entry) ?? d.pr; // kept so the header survives filtering the PR out of the list
     if (s.diffs.has(entry) && !reload) return;
@@ -267,21 +281,94 @@ export default class PrReview extends View {
     cx.spawn(async (cx) => { d.commits = await gh.prCommits(s.id, entry).catch(() => d.commits); cx.notify(); });
   }
 
-  // The entry's diff; for this branch, since the merge-base with main (uncommitted work included), with its commits.
+  // The two sides "This branch" compares, picked per repo: the base (else the default branch) and the head (else
+  // null: the checked-out branch with its uncommitted work).
+  baseOf(s) { return shared("pr-review.bases")?.[s.id.repo] ?? s.info.defaultBranch; }
+  headOf(s) { return shared("pr-review.heads")?.[s.id.repo] ?? null; }
+  compareTitle(s) { return `${this.headOf(s) ?? "This branch"} vs ${this.baseOf(s)}`; }
+
+  // The entry's diff; for the compare, since the merge-base of its two sides (uncommitted work included when the head
+  // is this branch), with its commits. The default branch is taken from origin when it can be (a stale local main
+  // would add others' work); a picked one, as is.
   async diffText(s, entry, d) {
     if (entry !== "local") return gh.prDiff(s.id, entry);
-    const base = s.info.defaultBranch;
-    const mb = (await git(s.id, ["merge-base", `origin/${base}`, "HEAD"]).catch(() => git(s.id, ["merge-base", base, "HEAD"]))).trim();
-    d.commits = (await git(s.id, ["log", "--reverse", "--format=%H%x09%an%x09%cI%x09%s", `${mb}..HEAD`])).split("\n").filter(Boolean)
+    const base = this.baseOf(s), head = this.headOf(s), to = head ?? "HEAD", picked = base !== s.info.defaultBranch;
+    const mb = (await (picked ? git(s.id, ["merge-base", base, to]) : git(s.id, ["merge-base", `origin/${base}`, to]).catch(() => git(s.id, ["merge-base", base, to])))).trim();
+    d.commits = (await git(s.id, ["log", "--reverse", "--format=%H%x09%an%x09%cI%x09%s", `${mb}..${to}`])).split("\n").filter(Boolean)
       .map((l) => { const [oid, author, at, ...h] = l.split("\t"); return { oid, author, at, headline: h.join("\t") }; });
-    return git(s.id, ["diff", "--no-color", "--no-ext-diff", mb]);
+    return git(s.id, ["diff", "--no-color", "--no-ext-diff", mb, ...(head ? [head] : [])]);
+  }
+
+  // The picker for one side of the compare ("base" or "head"): local and remote branches, most recent first, filtered as you type.
+  openBase(s, cx, side) {
+    this.basePick = side;
+    this.baseQ.set_value("");
+    this.baseQ.focus();
+    cx.spawn(async (cx) => {
+      const out = await git(s.id, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads", "refs/remotes"]).catch(() => "");
+      s.branches = out.split("\n").filter((b) => b && !b.endsWith("/HEAD") && b !== "origin"); // origin: origin/HEAD, shortened
+      cx.notify();
+    });
+  }
+
+  pickBase(s, b, cx) {
+    const key = this.basePick === "head" ? "pr-review.heads" : "pr-review.bases";
+    setShared(key, { ...shared(key), [s.id.repo]: b });
+    this.closeBase();
+    if (s.diffs.has("local")) this.open(s, "local", cx, true);
+  }
+
+  closeBase() { this.basePick = false; this.unfocus(); }
+
+  // The branches matching the picker's filter, the other side left out. The head side starts with this branch (null).
+  bases(s) {
+    const q = this.baseQ.value().trim().toLowerCase(), head = this.basePick === "head", here = s.branch ?? "";
+    const other = head ? this.baseOf(s) : this.headOf(s) ?? here;
+    const list = (s.branches ?? []).filter((b) => b !== other && !(head && b === here) && b.toLowerCase().includes(q));
+    return head && here.toLowerCase().includes(q) ? [null, ...list] : list;
+  }
+
+  basePicker(t, s) {
+    const cur = this.basePick === "head" ? this.headOf(s) : this.baseOf(s), list = this.bases(s).slice(0, 60);
+    return v_flex().flex_none().border_b(1).border_color(t.border).bg(t.surface)
+      .child(h_flex().h(44).px(12).gap(8).items_center()
+        .child(h_flex().flex_1().min_w(0).h(30).px(10).gap(8).items_center().rounded(8).bg(t.background).border_1().border_color(t.accent).on_mouse_down("left", field)
+          .child(icon("git-branch").size(14).flex_none().text_color(t.dim))
+          .child(Input.new(this.baseQ).id("base-input").flex_1().h_full().text_size(13)))
+        .child(this.iconBtn("base-close", "x", "Close  Esc", () => this.closeBase())))
+      .child(v_flex().id("base-list").max_h(240).overflow_y_scrollbar().pb(6)
+        .children(list.map((b) => h_flex().id(`base-${b ?? "here"}`).h(28).px(16).gap(8).items_center().cursor_pointer().font_family(MONO).text_size(12)
+          .text_color(b === cur ? t.accent : t.foreground).hover((x) => x.bg(t.hover))
+          .on_click((_e, cx) => { this.pickBase(s, b, cx); cx.notify(); })
+          .child(div().min_w(0).truncate().child(b ?? `${s.branch} (with uncommitted)`))))
+        .when(!list.length, (el) => el.child(div().px(16).py(6).text_size(12).text_color(t.muted).child(s.branches ? "No branch matches." : "Loading branches…"))));
+  }
+
+  // The compare's own bar, under "This branch"'s header: Compare [head ▾] with [base ▾], each a dropdown, and the
+  // open side's picker under it.
+  compareBar(t, s) {
+    const chip = (side) => {
+      const on = this.basePick === side, head = side === "head";
+      return h_flex().id(`${side}-chip`).h(28).min_w(0).px(10).gap(6).items_center().rounded(6).border_1().cursor_pointer().text_size(12)
+        .border_color(on ? t.accent : t.border).bg(on ? t.selected : t.background).hover((x) => x.border_color(t.accent))
+        .tooltip(head ? "Pick the branch whose changes to show" : "Pick the branch to compare with").on_mouse_down("left", field)
+        .on_click((_e, cx) => { if (on) this.closeBase(); else this.openBase(s, cx, side); cx.notify(); })
+        .child(icon(head ? "git-branch" : "git-compare").size(14).flex_none().text_color(t.dim))
+        .child(div().min_w(0).truncate().font_family(MONO).child(head ? this.headOf(s) ?? `${s.branch} (this branch)` : this.baseOf(s)))
+        .child(icon("chevron-down").size(12).flex_none().text_color(t.dim));
+    };
+    return v_flex().flex_none()
+      .child(h_flex().h(44).flex_none().px(16).gap(8).items_center().border_b(1).border_color(t.border).text_size(12).text_color(t.muted)
+        .child("Compare").child(chip("head")).child("with").child(chip("base")))
+      .when(Boolean(this.basePick), (el) => el.child(this.basePicker(t, s)));
   }
 
   // A diff in place: it stays on the same file, wherever that now sits. `at` (the head it's from) comes with the next comments.
   applyDiff(d, text) {
-    const keep = d.files?.[d.fi]?.path;
+    const keep = d.files?.[d.fi]?.path, hx = new Map(d.files?.map((f) => [f.path, f.hx])); // the file shown and the sideways scrolls stay
     d.text = text;
     d.files = parseDiff(text);
+    for (const f of d.files) f.hx = hx.get(f.path);
     d.order = fileTree(d.files).filter((r) => !r.dir).map((r) => r.fi); // the tree's (and the arrows') file order
     const at = d.files.findIndex((f) => f.path === keep);
     Object.assign(d, { fi: at >= 0 ? at : d.order[0] ?? 0, error: null, at: null });
@@ -336,6 +423,21 @@ export default class PrReview extends View {
 
   // ---- writes: never retried, errors stay inline ----
 
+  // Everything half-written or pending about the shown PR, dropped when another PR or repo shows.
+  dropWork(s = this.cur) {
+    this.unfocus();
+    if (s) s.sel = null;
+    this.tag = this.talkTag = this.talkError = this.composeError = this.confirm = null;
+    this.basePick = false;
+    this.dropDraft();
+    this.composer.set_value("");
+    this.talkBox.set_value("");
+    if (this.actError?.thread === TALK.id) this.actError = null;
+  }
+
+  // A focused text box that goes away takes the keyboard with it: hand it back to the view.
+  unfocus() { if (this.typing) { this.typing = false; this.handle.focus(); } }
+
   post(cx) {
     const s = this.cur, d = s?.diffs.get(s.entry), f = s?.sel && d?.files[s.sel.fi];
     const text = this.composer.value().trim();
@@ -345,10 +447,11 @@ export default class PrReview extends View {
     this.composeError = null;
     cx.spawn(async (cx) => {
       try {
-        await gh.createComment(s.id, s.info.nwo, s.entry, { body: tagBody(this.tag, text), commit_id: d.headOid, ...where });
+        await gh.createComment(s.id, s.info.nwo, s.entry, { body: tagBody(this.tag, text), commit_id: d.at ?? d.headOid, ...where }); // the lines are the shown diff's
         this.composer.set_value("");
         this.tag = null;
         s.sel = null;
+        this.unfocus();
         await this.fetchThreads(s, s.entry);
       } catch (e) { this.composeError = e.message; }
       this.posting = false;
@@ -380,7 +483,7 @@ export default class PrReview extends View {
     state.focus();
   }
 
-  dropDraft() { this.draft?.state.release(); this.draft = null; this.typing = false; }
+  dropDraft() { this.draft?.state.release(); if (this.draft) this.unfocus(); this.draft = null; this.typing = false; }
 
   saveDraft(cx) {
     const dr = this.draft, s = this.cur;
@@ -399,32 +502,39 @@ export default class PrReview extends View {
     const k = e.key;
     if (k === "f" && e.modifiers.platform && s && this.findable(s)) this.openFind(s);
     else if (k === "escape") {
-      if (this.finding && (this.inFind || !this.typing)) this.closeFind();
+      if (this.basePick) this.closeBase();
+      else if (this.finding && (this.inFind || !this.typing)) this.closeFind();
       else if (this.draft) this.dropDraft();
       else if (this.confirm) this.confirm = null;
-      else if (s?.sel) { s.sel = null; this.tag = null; this.typing = false; }
-      else if (s?.diffs.get(s.entry)?.pane) s.diffs.get(s.entry).pane = null;
+      else if (s?.sel) { s.sel = null; this.tag = null; this.unfocus(); }
+      else if (s?.diffs.get(s.entry)?.pane) { s.diffs.get(s.entry).pane = null; this.unfocus(); }
       else if (this.narrow && s?.entry != null && (s.level ?? "list") !== "list") this.back(s);
       // Wide: back from a stacked diff to its tree, then out of the entry (the arrows walk the PR list again).
       else if (!this.narrow && s?.entry != null) { const d = s.diffs.get(s.entry); if (!this.side() && d?.view === "diff") d.view = "files"; else s.entry = null; }
       else if (!this.panel) return this.dismiss();
       else return;
     } else if (this.typing) return;
-    else if (k === "/" && !this.inSearch) this.search.focus();
+    // The PR list's search and ← / → over its Open / Closed / All (as every panel's arrows walk its tabs), only where the list shows.
+    else if (k === "/" && !this.inSearch && s && this.listShows(s)) this.search.focus();
+    else if (s && (e.keystroke === "left" || e.keystroke === "right") && this.listShows(s)) {
+      const i = STATES.findIndex(([x]) => x === s.state);
+      s.state = STATES[(i + (k === "right" ? 1 : STATES.length - 1)) % STATES.length][0];
+      this.loadPRs(s, cx);
+    }
     // [ / ]: the previous / next commit, from all changes (before the first) to the last.
-    else if (s && (k === "[" || k === "]") && !e.modifiers.platform && s.diffs.get(s.entry)?.commits?.length) {
+    else if (s && (k === "[" || k === "]") && !e.modifiers.platform && !this.inSearch && s.diffs.get(s.entry)?.commits?.length) {
       const d = s.diffs.get(s.entry), cs = d.commits, j = cs.findIndex((c) => c.oid === d.commit) + (k === "]" ? 1 : -1);
       if (j < -1 || j >= cs.length) return;
       this.pickCommit(s, d, j < 0 ? null : cs[j].oid, cx);
     }
-    else if (s && (k === "up" || k === "down")) {
+    else if (s && (k === "up" || k === "down") && !s.diffs.get(s.entry)?.pane) { // a pane over the files keeps them still
       const d = this.openFiles(s);
       if (d) this.stepFile(s, d, k === "down" ? 1 : -1);
       else {
         const n = 1 + (s.prs?.length ?? 0);
         s.cursor = (s.cursor + (k === "down" ? 1 : n - 1)) % n;
       }
-    } else if (s && k === "enter") {
+    } else if (s && k === "enter" && !s.diffs.get(s.entry)?.pane) {
       const d = this.openFiles(s);
       if (d && (this.narrow ? s.level === "pr" : !this.side() && d.view !== "diff")) this.pickFile(s, d, d.fi);
       else if (d) return; // the file is already showing
@@ -436,6 +546,8 @@ export default class PrReview extends View {
     cx.stop_propagation();
     cx.notify();
   }
+
+  listShows(s) { return this.narrow ? s.entry == null : this.railOpen || s.entry == null; }
 
   // ---- files ----
 
@@ -505,8 +617,11 @@ export default class PrReview extends View {
     const h = (this.findHit = hs[by && i >= 0 && hs[i].fi === d.fi ? (i + by + n) % n : by < 0 ? (j - 1 + n) % n : j]);
     if (h.fi !== d.fi) { this.pickFile(s, d, h.fi); this.treeScroll.scroll_to_item(fileTree(d.files).findIndex((r) => r.fi === h.fi)); }
     if (h.th) this.expanded.add(h.th); // a resolved thread opens to show it
-    const L = this.layout(s, d), at = L.items.findIndex((x) => (h.th ? x.k === "thread" && x.th.id === h.th : x.k === "row" && x.ri === h.ri));
+    const L = this.layout(s, d), at = L.items.findIndex((x) => (h.th ? x.k === "thread" && x.th.id === h.th : holds(x, h.ri)));
     s.scroll[s.entry] = L.tops[at] - (this.diffH ?? 600) / 3;
+    // A match past the code column's edge scrolls sideways into view, a third in (render clamps).
+    const f = d.files[h.fi], w = this.codeW ?? 680, hx = f.hx ?? 0;
+    if (!h.th && (h.start * CH < hx || h.end * CH > hx + w)) f.hx = h.start * CH - w / 3;
     this.reveal = false;
   }
 
@@ -519,7 +634,7 @@ export default class PrReview extends View {
       .on_click((_e, cx) => { if (this.findEvery !== all) { this.findEvery = all; this.jump(0); } cx.notify(); })
       .child(label);
     return h_flex().h(44).flex_none().px(12).gap(8).items_center().bg(t.surface).border_b(1).border_color(t.border)
-      .child(h_flex().flex_1().min_w(0).h(30).px(10).gap(8).items_center().rounded(8).bg(t.background).border_1().border_color(this.inFind ? t.accent : t.input)
+      .child(h_flex().flex_1().min_w(0).h(30).px(10).gap(8).items_center().rounded(8).bg(t.background).border_1().border_color(this.inFind ? t.accent : t.input).on_mouse_down("left", field)
         .child(icon("search").size(14).flex_none().text_color(t.dim))
         .child(Input.new(this.findQ).id("find-input").flex_1().h_full().text_size(13))
         .when(Boolean(q), (el) => el.child(div().flex_none().text_size(11).text_color(hs.length ? t.dim : t.blocked).child(hs.length ? `${at} of ${hs.length}` : "No results"))))
@@ -551,21 +666,23 @@ export default class PrReview extends View {
   barMove(e, cx) {
     const s = this.cur, b = this.bar;
     if (!b || s?.entry !== b.entry) return;
-    s.scroll[s.entry] = b.scroll + ((e.position.y - b.y) / this.zoom) * b.k;
+    if (b.f) b.f.hx = b.from + ((e.position.x - b.x) / this.zoom) * b.k; // the sideways bar; render clamps both
+    else s.scroll[s.entry] = b.scroll + ((e.position.y - b.y) / this.zoom) * b.k;
     cx.notify();
   }
 
-  // The window's edges: a press records where it started; moves (see render's halo) grow or shrink it.
+  // The window's right and bottom edges: a press records where it started; moves (see render's halo) grow or
+  // shrink it. ax / ay: 1 when that edge moves. Herdr can't place a window, so the left and top edges stay put.
   grip(id, ax, ay, place) {
     return place(div().id(id).absolute())[ax && ay ? "cursor_nwse_resize" : ax ? "cursor_ew_resize" : "cursor_ns_resize"]()
-      .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.rs = { x: e.position.x, y: e.position.y, w: this.W, h: this.H, ax, ay }; cx.notify(); });
+      .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.handle.focus(); this.rs = { x: e.position.x, y: e.position.y, w: this.W, h: this.H, ax, ay }; cx.notify(); });
   }
 
   resizeMove(e, cx) {
     const r = this.rs;
     if (!r) return;
-    if (r.ax) this.W = Math.max(640, Math.round(r.w + (e.position.x - r.x) / this.zoom));
-    if (r.ay) this.H = Math.max(420, Math.round(r.h + (e.position.y - r.y) / this.zoom));
+    if (r.ax) this.W = Math.max(640, Math.round(r.w + (r.ax * (e.position.x - r.x)) / this.zoom));
+    if (r.ay) this.H = Math.max(420, Math.round(r.h + (r.ay * (e.position.y - r.y)) / this.zoom));
     cx.notify();
   }
 
@@ -575,8 +692,11 @@ export default class PrReview extends View {
     if (this.handoff) return div();
     if (this.shown()) {
       // Shown again after a while: re-resolve the target and poll it once.
-      if (this.stale) { this.stale = false; this.wantKey = null; this.repoll = true; }
+      if (this.stale && !this.yields()) { this.stale = false; this.wantKey = null; this.repoll = true; }
       this.syncTarget(cx);
+      // Opened (⌘⇧R, the tab bar; tabs-plus says so): the keys are its own at once, after this frame puts it in the tree.
+      const o = shared("emergence.opened");
+      if (o?.id === BLOCK && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.handle.focus()); }
     } else this.stale = true;
     const t = theme();
     const s = this.cur;
@@ -600,12 +720,14 @@ export default class PrReview extends View {
       .on_mouse_up("left", (_e, cx) => this.mouseUp(cx))
       .on_mouse_move((e, cx) => this.barMove(e, cx))
       .child(this.header(t, s, view))
-      // The window drags by any press nobody stops: only the header bar drags it.
-      .child(h_flex().flex_1().min_h(0).on_mouse_down("left", (_e, cx) => cx.stop_propagation()).children([body].flat()))
+      // The window drags by any press nobody stops: only the header bar drags it. A press here gives the view the
+      // keyboard (a layout panel doesn't get it by being clicked); text boxes stop their own presses first.
+      .child(h_flex().flex_1().min_h(0).on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.handle.focus(); }).children([body].flat()))
+      // ponytail: Herdr drags both ways, so a slanted left or top drag also nudges the window along the other axis.
       .when(!this.panel, (el) => el
-        .child(this.grip("grip-r", true, false, (g) => g.top(0).bottom(14).right(0).w(3)))
-        .child(this.grip("grip-b", false, true, (g) => g.left(0).right(14).bottom(0).h(4)))
-        .child(this.grip("grip-rb", true, true, (g) => g.right(0).bottom(0).size(14))));
+        .child(this.grip("grip-r", 1, 0, (g) => g.top(14).bottom(14).right(0).w(4)))
+        .child(this.grip("grip-b", 0, 1, (g) => g.left(14).right(14).bottom(0).h(4)))
+        .child(this.grip("grip-rb", 1, 1, (g) => g.right(0).bottom(0).size(14))));
     if (this.panel) return ui;
     // Herdr windows are as big as their content and don't resize themselves. While an edge is held, a
     // transparent halo (frame "none") grows the window to the screen's edges so the pointer stays on it.
@@ -641,7 +763,7 @@ export default class PrReview extends View {
         .child(div().flex_1())
         .child(refresh)
         .child(btn("pr-widen", this.wideFrom ? "chevrons-right" : "chevrons-left", this.wideFrom ? "Back to the panel" : "Full size, beside the agent", () => this.widen()))
-        .child(btn("pr-expand", "maximize-2", "Open in window", () => this.expand()));
+        .child(btn("pr-expand", "maximize-2", "Open in window", () => this.popOut()));
     }
     return where(h_flex().h(40).flex_none().pl(16).pr(6).gap(8).items_center().bg(t.surface).border_b(1).border_color(t.border)
       .child(icon("git-compare").size(15).flex_none().text_color(t.dim))
@@ -708,7 +830,7 @@ export default class PrReview extends View {
       .when(full, (el) => el.flex_1().min_w(0))
       .when(!full, (el) => el.w(280).flex_none().bg(t.surface).border_r(1).border_color(t.border))
       .child(v_flex().p(12).gap(8).flex_none()
-        .child(h_flex().h(32).px(10).gap(8).items_center().rounded(8).bg(t.background).border_1().border_color(this.inSearch ? t.accent : t.input)
+        .child(h_flex().h(32).px(10).gap(8).items_center().rounded(8).bg(t.background).border_1().border_color(this.inSearch ? t.accent : t.input).on_mouse_down("left", field)
           .child(icon("search").size(14).flex_none().text_color(t.dim))
           .child(Input.new(this.search).id("pr-search").flex_1().h_full().text_size(13)))
         .child(h_flex().h(28).p(2).gap(2).rounded(8).bg(t.raised)
@@ -721,8 +843,8 @@ export default class PrReview extends View {
         .child(row(0, s.entry === "local", "local", h_flex().flex_1().min_w(0).gap(10).items_center()
           .child(icon("git-branch").size(14).flex_none().text_color(t.muted))
           .child(v_flex().flex_1().min_w(0).gap(4)
-            .child(div().truncate().child(`This branch vs ${s.info.defaultBranch}`))
-            .child(div().truncate().font_family(MONO).text_size(11).text_color(t.dim).child(s.branch)))))
+            .child(div().truncate().child(this.compareTitle(s)))
+            .child(div().truncate().font_family(MONO).text_size(11).text_color(t.dim).child(this.headOf(s) ?? s.branch)))))
         .child(div().h(1).flex_none().mx(20).my(8).bg(t.border))
         .children(prs.map((p, i) => row(i + 1, s.entry === p.number, p.number, v_flex().flex_1().min_w(0).gap(4)
           .child(h_flex().gap(8).items_center()
@@ -743,11 +865,11 @@ export default class PrReview extends View {
     const d = s.diffs.get(s.entry);
     const local = s.entry === "local";
     const pr = local ? null : s.prs?.find((p) => p.number === s.entry) ?? d.pr;
-    const base = s.info.defaultBranch;
+    const base = local ? this.baseOf(s) : pr?.baseRefName ?? s.info.defaultBranch, head = local && this.headOf(s);
     return {
       d, local, pr, files: d.files ?? [],
-      title: pr?.title ?? (local ? `This branch vs ${base}` : "Pull request"),
-      sub: pr ? `${pr.headRefName} → ${base}` : local ? `${s.branch} · since merge-base with ${base} · includes uncommitted` : "",
+      title: pr?.title ?? (local ? this.compareTitle(s) : "Pull request"),
+      sub: pr ? `${pr.headRefName} → ${base}` : head ? `${head} · since merge-base with ${base}` : local ? `${s.branch} · since merge-base with ${base} · includes uncommitted` : "",
       quiet: d.loading && !d.files ? "Loading diff…" : d.error ?? (d.files?.length ? null : "No changes."),
     };
   }
@@ -782,7 +904,8 @@ export default class PrReview extends View {
           .child(`${files.length} file${files.length === 1 ? "" : "s"}`)))
       .when(Boolean(d.talk), (el) => el.child(this.paneToggle(t, d, "talk")))
       .when(d.commits?.length > 0, (el) => el.child(this.paneToggle(t, d, "commits")));
-    const top = v_flex().flex_1().min_w(0).h_full().when(!bare, (el) => el.child(head)).when(Boolean(d.commit), (el) => el.child(this.commitBar(t, s, d)));
+    const top = v_flex().flex_1().min_w(0).h_full().when(!bare, (el) => el.child(head)).when(local && !bare, (el) => el.child(this.compareBar(t, s)))
+      .when(Boolean(d.commit), (el) => el.child(this.commitBar(t, s, d)));
     if (d.pane) return top.child(this.paneView(t, s, d));
     if (quiet) return top.child(this.quiet(t, quiet));
     if (treeOn && !side) return top.when(Boolean(d.threadsError), (el) => el.child(this.threadsBanner(t, d))).child(this.treeColumn(t, s, d, true));
@@ -834,7 +957,7 @@ export default class PrReview extends View {
       .child(v_flex().id("talk").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.talkScroll).children(d.talk.map(card)))
       .child(v_flex().flex_none().p(12).gap(8).border_t(1).border_color(t.border)
         .child(this.tagRow(t, "talk", this.talkTag, (k) => (this.talkTag = k)))
-        .child(div().rounded(6).bg(t.background).border_1().border_color(t.input).px(8).py(6).child(Textarea.new(this.talkBox).id("talk-box").h(56).w_full().text_size(13)))
+        .child(div().rounded(6).bg(t.background).border_1().border_color(t.input).px(8).py(6).on_mouse_down("left", field).child(Textarea.new(this.talkBox).id("talk-box").h(56).w_full().text_size(13)))
         .when(Boolean(err), (el) => el.child(div().text_size(12).text_color(t.blocked).child(err)))
         .child(h_flex().justify_end().child(this.button(t, "talk-post", this.talkPosting ? "Posting…" : "Comment  ⌘↵", (cx) => this.postTalk(cx), true, this.talkPosting))));
   }
@@ -903,6 +1026,7 @@ export default class PrReview extends View {
           .when(Boolean(d.talk), (el) => el.child(this.paneToggle(t, d, "talk")))
           .when(d.commits?.length > 0, (el) => el.child(this.paneToggle(t, d, "commits"))))
         .child(div().font_family(MONO).text_size(11).text_color(t.dim).child(sub)))
+      .when(local, (el) => el.child(this.compareBar(t, s)))
       .when(Boolean(d.commit), (el) => el.child(this.commitBar(t, s, d)))
       .when(Boolean(d.threadsError), (el) => el.child(this.threadsBanner(t, d)))
       .when(Boolean(d.pane), (el) => el.child(this.paneView(t, s, d)))
@@ -948,8 +1072,15 @@ export default class PrReview extends View {
     if (note) push({ k: "note", key: `note-${fi}`, text: note, h: H.note });
     loose.forEach(card);
     const range = s.sel?.fi === fi ? selectRange(f.rows, s.sel.anchor, s.sel.focus) : null;
-    f.rows.forEach((row, ri) => {
-      push({ k: "row", key: `r-${fi}-${ri}`, fi, ri, row, on: Boolean(range) && ri >= range.from && ri <= range.to, h: row.kind === "hunk" ? H.hunk : H.row });
+    const on = (ri) => ri != null && Boolean(range) && ri >= range.from && ri <= range.to;
+    if (this.splitOn()) for (const p of pairRows(f.rows)) {
+      // Side by side: a pair per line (context on both sides), hunk headers across; cards under the pair.
+      if (p.hunk != null) push({ k: "row", key: `r-${fi}-${p.hunk}`, fi, ri: p.hunk, row: f.rows[p.hunk], h: H.hunk });
+      else push({ k: "pair", key: `p-${fi}-${p.l}-${p.r}`, fi, l: p.l, r: p.r, onL: on(p.l), onR: on(p.r), h: H.row });
+      new Set([p.hunk ?? p.l, p.r]).forEach((ri) => ri != null && (at.get(ri) ?? []).forEach(card));
+    }
+    else f.rows.forEach((row, ri) => {
+      push({ k: "row", key: `r-${fi}-${ri}`, fi, ri, row, on: on(ri), h: row.kind === "hunk" ? H.hunk : H.row });
       (at.get(ri) ?? []).forEach(card);
     });
     if (this.tailLeft(f)) push({ k: "tail", key: `tail-${fi}`, h: H.hunk });
@@ -973,7 +1104,7 @@ export default class PrReview extends View {
         if (!f.lines) {
           let text;
           if (s.entry !== "local") text = await gh.fileAt(s.id, s.info.nwo, f.path, d.commit ?? d.at ?? d.headOid ?? d.pr?.headRefName);
-          else if (d.commit) text = await git(s.id, ["show", `${d.commit}:${f.path}`]);
+          else if (d.commit || this.headOf(s)) text = await git(s.id, ["show", `${d.commit ?? this.headOf(s)}:${f.path}`]);
           else { const r = await exec("cat", [f.path], { cwd: s.id.repo, on: s.id.machine }); if (r.code !== 0) throw new Error(r.stderr.trim() || "can't read it"); text = r.stdout; }
           f.lines = text.replace(/\n$/, "").split("\n");
         }
@@ -1005,7 +1136,7 @@ export default class PrReview extends View {
     const view = this.diffH ?? 600;
     const max = Math.max(0, L.total - view);
     // Once a selection is made (until the next scroll), its last line stays above the docked comment box.
-    const end = this.reveal && L.range ? L.items.findIndex((it) => it.k === "row" && it.ri === L.range.to) : -1;
+    const end = this.reveal && L.range ? L.items.findIndex((it) => holds(it, L.range.to)) : -1;
     if (end >= 0) s.scroll[s.entry] = Math.max(s.scroll[s.entry] ?? 0, L.tops[end] + L.heights[end] + 8 - view);
     const scroll = (s.scroll[s.entry] = Math.max(0, Math.min(s.scroll[s.entry] ?? 0, max)));
     // Find: this file's matches by row, for row() to mark.
@@ -1015,13 +1146,32 @@ export default class PrReview extends View {
     const vis = [];
     for (let i = firstVisible(L.tops, L.heights, scroll); i < L.items.length && L.tops[i] < scroll + view; i++) vis.push(i);
     const thumbH = Math.max(32, (view * view) / Math.max(L.total, 1));
+    // Sideways: lines longer than the code column scroll by trackpad, shift-wheel or the bottom bar.
+    // The code column: the diff less the line numbers and sign (per side when side by side; 1: the divider).
+    const f = d.files[d.fi], dw = this.diffW ?? 800, codeW = (this.codeW = this.splitOn() ? (dw - 1) / 2 - 76 : dw - GUTTER - 16);
+    if (f.colsAt !== f.rows.length) { f.colsAt = f.rows.length; f.cols = f.rows.reduce((m, r) => Math.max(m, shown(r.text ?? "").length), 0); }
+    const maxX = Math.max(0, Math.ceil(f.cols * CH) + 8 - codeW);
+    const hx = (this.hx = f.hx = Math.max(0, Math.min(f.hx ?? 0, maxX)));
+    const thumbW = Math.max(32, (codeW * codeW) / (codeW + maxX)), track = codeW + 8 - thumbW;
     return div().id("diff").relative().flex_1().min_w(0).min_h(0).overflow_hidden()
-      .on_size_change((size, cx) => { const h = size.height / this.zoom; if (Math.abs(h - (this.diffH ?? 0)) > 0.5) { this.diffH = h; cx.notify(); } })
-      .on_scroll_wheel((e, cx) => { this.reveal = false; s.scroll[s.entry] = Math.max(0, Math.min((s.scroll[s.entry] ?? 0) - e.delta.y, max)); cx.notify(); })
+      .on_size_change((size, cx) => {
+        const w = size.width / this.zoom, h = size.height / this.zoom;
+        if (Math.abs(h - (this.diffH ?? 0)) > 0.5 || Math.abs(w - (this.diffW ?? 0)) > 0.5) { this.diffH = h; this.diffW = w; cx.notify(); }
+      })
+      .on_scroll_wheel((e, cx) => {
+        const side = e.modifiers.shift && !e.delta.x; // a plain mouse wheel scrolls sideways with shift
+        const dx = side ? e.delta.y : e.delta.x, dy = side ? 0 : e.delta.y;
+        if (dy) { this.reveal = false; s.scroll[s.entry] = Math.max(0, Math.min((s.scroll[s.entry] ?? 0) - dy, max)); }
+        f.hx = Math.max(0, Math.min((f.hx ?? 0) - dx, maxX)); // f.hx, not the render's: wheel events can outrun frames
+        cx.notify();
+      })
       .children(vis.map((i) => this.item(t, s, d, L.items[i]).absolute().left(0).right(0).top(L.tops[i] - scroll)))
       .when(max > 0, (el) => el.child(div().id("diff-bar").absolute().right(2).w(6).top((scroll / max) * (view - thumbH)).h(thumbH).rounded(3)
-        .bg(tint(t.foreground, this.bar ? "55" : "26")).hover((x) => x.bg(tint(t.foreground, "40")))
-        .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.bar = { y: e.position.y, scroll, k: max / (view - thumbH), entry: s.entry }; cx.notify(); })));
+        .bg(tint(t.foreground, this.bar && !this.bar.f ? "55" : "26")).hover((x) => x.bg(tint(t.foreground, "40")))
+        .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.bar = { y: e.position.y, scroll, k: max / (view - thumbH), entry: s.entry }; cx.notify(); })))
+      .when(maxX > 0, (el) => el.child(div().id("diff-hbar").absolute().bottom(2).h(6).left(GUTTER + (hx / maxX) * track).w(thumbW).rounded(3)
+        .bg(tint(t.foreground, this.bar?.f ? "55" : "26")).hover((x) => x.bg(tint(t.foreground, "40")))
+        .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.bar = { x: e.position.x, from: hx, k: maxX / track, entry: s.entry, f }; cx.notify(); })));
   }
 
   // Cards size to their content: measured once drawn, laid out by that from then on.
@@ -1037,6 +1187,7 @@ export default class PrReview extends View {
     if (it.k === "row" && it.row.kind === "hunk") return this.gapRow(t, s, d, d.files[it.fi], it, it.ri, it.row.text);
     if (it.k === "tail") return this.gapRow(t, s, d, d.files[d.fi], it, d.files[d.fi].rows.length, "");
     if (it.k === "row") return this.row(t, s, it);
+    if (it.k === "pair") return this.pair(t, s, d, it);
     if (it.k === "note") return h_flex().h(it.h).pl(this.narrow ? 16 : GUTTER).pr(16).items_center().text_size(12).text_color(t.muted).child(div().min_w(0).truncate().child(it.text));
     return this.measured(it, this.thread(t, s, it.th));
   }
@@ -1057,6 +1208,8 @@ export default class PrReview extends View {
       .when(f.additions + f.deletions > 0, (el) => el.child(this.counts(t, f.additions, f.deletions)))
       .when(this.canExpand(f) && (this.tailLeft(f) || f.rows.some((r, i) => r.kind === "hunk" && this.gapAt(f, i) > 0)), (el) => el.child(this.iconBtn("expand-all", "unfold-vertical", "Show the whole file", (cx) => this.expandAll(s, d, f, cx))))
       .child(this.iconBtn("find-open", "search", "Find  ⌘F", () => this.openFind(s)))
+      .when(!this.narrow, (el) => el.child(this.iconBtn("split", this.splitOn() ? "rows-2" : "columns-2", this.splitOn() ? "Unified diff" : "Side by side",
+        () => setShared("pr-review.split", !this.splitOn()))))
       .when(d.files.length > 1, (el) => el.child(nav(-1, "chevron-up", "Previous file  ↑")).child(nav(1, "chevron-down", "Next file  ↓")));
   }
 
@@ -1066,36 +1219,51 @@ export default class PrReview extends View {
       const on = cur === k, c = t[ink];
       return h_flex().id(`${key}-tag-${k}`).h(22).px(8).flex_none().items_center().rounded(6).border_1().text_size(11).cursor_pointer()
         .border_color(on ? c : t.border).bg(on ? tint(c, "26") : t.background).text_color(on ? c : t.muted)
-        .hover((x) => x.border_color(c).text_color(c))
+        .hover((x) => x.border_color(c).text_color(c)).on_mouse_down("left", field) // the comment box keeps the keyboard
         .on_click((_e, cx) => { set(on ? null : k); cx.notify(); })
         .child(label);
     }));
   }
 
-  row(t, s, it) {
-    const r = it.row;
+  // Side by side needs room: a narrow panel stays unified.
+  splitOn() { return !this.narrow && Boolean(shared("pr-review.split")); }
+
+  row(t, s, it) { return this.line(t, s, it.key, it.fi, it.ri, it.row, it.on, [it.row.old, it.row.new]).h(it.h); }
+
+  // Side by side: the old line on the left, the new on the right, blank where a side has none.
+  pair(t, s, d, it) {
+    const rows = d.files[it.fi].rows;
+    const half = (ri, on, left) => ri == null ? div().flex_1().min_w(0).h_full().bg(t.surface)
+      : this.line(t, s, `${it.key}-${left ? "l" : "r"}`, it.fi, ri, rows[ri], on, [left ? rows[ri].old : rows[ri].new]).flex_1().min_w(0).h_full();
+    return h_flex().id(it.key).h(it.h).child(half(it.l, it.onL, true)).child(div().w(1).h_full().flex_none().bg(t.border)).child(half(it.r, it.onR, false));
+  }
+
+  // One diff line: coloured by kind, selected by click, shift-click or drag. nums: the line numbers it shows.
+  line(t, s, key, fi, ri, r, on, nums) {
     const add = r.kind === "add", del = r.kind === "del";
-    const num = (n) => div().w(44).flex_none().pr(8).text_right().text_size(11).text_color(it.on ? t.accent : t.dim).child(n == null ? "" : String(n));
-    return h_flex().id(it.key).h(it.h).items_center().font_family(MONO).text_size(12).cursor_pointer()
+    const num = (n) => div().w(44).flex_none().pr(8).text_right().text_size(11).text_color(on ? t.accent : t.dim).child(n == null ? "" : String(n));
+    return h_flex().id(key).items_center().font_family(MONO).text_size(12).cursor_pointer()
       .when(add, (el) => el.bg(tint(t.done, "1a"))).when(del, (el) => el.bg(tint(t.blocked, "1a")))
-      .when(it.on, (el) => el.bg(t.selected))
-      .hover((x) => x.bg(it.on ? t.selected : t.hover))
+      .when(on, (el) => el.bg(t.selected))
+      .hover((x) => x.bg(on ? t.selected : t.hover))
       .on_mouse_down("left", (e, cx) => {
         cx.stop_propagation();
-        if (e.modifiers.shift && s.sel?.fi === it.fi) s.sel.focus = it.ri;
-        else s.sel = { fi: it.fi, anchor: it.ri, focus: it.ri };
+        this.handle.focus(); // the keyboard to the view; a comment box takes it on release (mouseUp)
+        if (e.modifiers.shift && s.sel?.fi === fi) s.sel.focus = ri;
+        else s.sel = { fi, anchor: ri, focus: ri };
         this.dragging = true;
         cx.notify();
       })
       .on_mouse_move((_e, cx) => {
-        if (!this.dragging || s.sel?.fi !== it.fi || s.sel.focus === it.ri) return;
-        s.sel.focus = it.ri;
+        if (!this.dragging || s.sel?.fi !== fi || s.sel.focus === ri) return;
+        s.sel.focus = ri;
         cx.notify();
       })
-      .child(div().w(2).h_full().flex_none().when(it.on, (el) => el.bg(t.accent)))
-      .child(num(r.old)).child(num(r.new))
+      .child(div().w(2).h_full().flex_none().when(on, (el) => el.bg(t.accent)))
+      .children(nums.map(num))
       .child(div().w(14).flex_none().text_color(add ? t.done : del ? t.blocked : t.dim).child(add ? "+" : del ? "−" : ""))
-      .child(div().flex_1().min_w(0).pr(16).whitespace_nowrap().overflow_hidden().when(Boolean(r.extra), (el) => el.text_color(t.muted)).child(this.marks?.has(it.ri) ? this.marked(t, shown(r.text), this.marks.get(it.ri)) : shown(r.text)));
+      .child(div().flex_1().min_w(0).pr(16).whitespace_nowrap().overflow_hidden().when(Boolean(r.extra), (el) => el.text_color(t.muted))
+        .child(div().relative().left(-(this.hx ?? 0)).child(this.marks?.has(ri) ? this.marked(t, shown(r.text), this.marks.get(ri)) : shown(r.text))));
   }
 
   // Selected lines get the comment box docked under the diff, not inline: selecting stays free until you write.
@@ -1110,10 +1278,10 @@ export default class PrReview extends View {
         .child(div().flex_1())
         .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child("⌘↵ post · Esc cancel")))
       .child(this.tagRow(t, "compose", this.tag, (k) => (this.tag = k)))
-      .child(div().rounded(6).bg(t.background).border_1().border_color(t.input).px(8).py(6).child(Textarea.new(this.composer).id("composer").h(64).w_full().text_size(13)))
+      .child(div().rounded(6).bg(t.background).border_1().border_color(t.input).px(8).py(6).on_mouse_down("left", field).child(Textarea.new(this.composer).id("composer").h(64).w_full().text_size(13)))
       .when(Boolean(this.composeError), (el) => el.child(div().text_size(12).text_color(t.blocked).child(this.composeError)))
       .child(h_flex().gap(8).items_center().justify_end()
-        .child(this.button(t, "compose-cancel", "Cancel", () => { s.sel = null; this.tag = null; this.composeError = null; this.typing = false; }))
+        .child(this.button(t, "compose-cancel", "Cancel", () => { s.sel = null; this.tag = null; this.composeError = null; this.unfocus(); }))
         .child(this.button(t, "compose-post", this.posting ? "Posting…" : "Comment", (cx) => this.post(cx), true, this.posting || !d.headOid)));
   }
 
@@ -1149,7 +1317,7 @@ export default class PrReview extends View {
       .child(dr?.kind === "reply"
         ? v_flex().p(12).gap(8).border_t(1).border_color(t.border)
           .child(this.tagRow(t, `reply-${th.id}`, dr.tag, (k) => (dr.tag = k)))
-          .child(div().rounded(6).bg(t.background).border_1().border_color(t.input).px(8).py(6).child(Textarea.new(dr.state).id(`reply-${th.id}`).h(48).w_full().text_size(13)))
+          .child(div().rounded(6).bg(t.background).border_1().border_color(t.input).px(8).py(6).on_mouse_down("left", field).child(Textarea.new(dr.state).id(`reply-${th.id}`).h(48).w_full().text_size(13)))
           .child(h_flex().gap(8).justify_end()
             .child(this.button(t, `reply-cancel-${th.id}`, "Cancel", () => this.dropDraft()))
             .child(this.button(t, `reply-send-${th.id}`, busy ? "Sending…" : "Reply", (cx) => this.saveDraft(cx), true, busy)))
@@ -1186,7 +1354,7 @@ export default class PrReview extends View {
     const id = dr.comment;
     return v_flex().gap(8).pt(4)
       .child(this.tagRow(t, `edit-${id}`, dr.tag, (k) => (dr.tag = k)))
-      .child(div().rounded(6).bg(t.background).border_1().border_color(t.input).px(8).py(6).child(Textarea.new(dr.state).id(`edit-box-${id}`).h(64).w_full().text_size(13)))
+      .child(div().rounded(6).bg(t.background).border_1().border_color(t.input).px(8).py(6).on_mouse_down("left", field).child(Textarea.new(dr.state).id(`edit-box-${id}`).h(64).w_full().text_size(13)))
       .child(h_flex().gap(8).justify_end()
         .child(this.button(t, `edit-cancel-${id}`, "Cancel", () => this.dropDraft()))
         .child(this.button(t, `edit-save-${id}`, "Save", (cx) => this.saveDraft(cx), true, this.busy === dr.thread)));

@@ -16,7 +16,10 @@ Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` div
 
 - **Sidebar** (268px, 14–480, `chrome`):
   - The brand row (46px, Herdr's `workspace-chrome`).
-  - **Spaces** (`spaces-plus`), sized to its rows: header 31px plus 30px a row, 8 rows at most, then it scrolls. The
+  - **Spaces** (`spaces-plus`), sized by the inbox (`fitSpaces`): 45px plus 30px a row (26px on the rail), plus a row
+    per machine once there are several. It gives way while the inbox below lacks room for its content, but not below
+    half the height the two share, never under 60px and never leaving the inbox under 90px; before the inbox has
+    measured, 285px at most. Rows past that scroll. The
     avatar is a soft tile: the space's colour at 15% with a 20% border, its letter in the colour, 18px, radius 5.
   - **Inbox** (`inbox`), the rest of the height. Its header is "Inbox N" (11.5px, `dim`) with a key chip on the right
     showing the binding of `tabs-plus.attention` (⌘⇧J).
@@ -61,11 +64,16 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - The inbox becomes a strip of 3×16px coloured lines, one per agent that needs you, starting 76px down, below the
     macOS window buttons.
   - A line focuses its agent; anywhere else on the strip unfolds the sidebar.
-- **Keys.**
-  - ⌘⇧G, ⌘⇧U, ⌘⇧K and ⌘⇧M toggle the panels.
-  - ⌘⇧J jumps to the next blocked agent, then the next done one.
+- **Keys** (`layout:emergence`: only the emergence layout shows tabs-plus; ⌘E is global).
+  - ⌘⇧A (Agents), ⌘⇧R (PRs: review), ⌘⇧K (Library) and ⌘⇧U (Usage) toggle the panels.
+  - ⌘⇧J jumps to the next agent the inbox shows that needs you: blocked ones, then done ones (not settled, not
+    sub-agents).
   - ⌘⇧O opens Herdr's Open worktree dialog for the focused pane's repo.
   - ⌘E opens Jump.
+  - Opening a panel (its ⌘⇧ key or the tab bar) gives it the keyboard: tabs-plus sets `shared("emergence.opened")` and
+    the panel focuses itself (clicking one does too). Inside every panel the same arrows: ↑/↓ walk the list (PRs and their
+    files, skills, agents), ←/→ walk the tabs along the top (PRs: Open, Closed, All while the list shows; Library:
+    Skills, Plugins, with an empty search box; Usage: Overview to Rhythm), ↵ opens, Esc goes back or closes.
 - **Tab names.** tabs-plus renames an unnamed tab after its first terminal's branch, or its repo (else folder, `~` at
   home) when the branch is main, master, trunk or develop. It remembers the names it gave in `shared("tabs.auto")`,
   so a given name keeps following the branch while a name you give (`tab.rename`) stays yours.
@@ -87,8 +95,18 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - The wheel zooms, a trackpad scroll pans, ⌘-scroll zooms. The − / % / + control sits bottom-right, and the % fits.
   - A narrow panel shows the same tree as a list.
 - **PRs panel.**
-  - Shows the focused repo's PRs (Open, Closed, All, search) and "This branch vs main".
+  - Shows the focused repo's PRs (Open, Closed, All, search) and "This branch vs main". Under "This branch"'s header a
+    bar reads Compare [head ▾] with [base ▾]: each dropdown opens a picker of local and remote branches (`git
+    for-each-ref`, most recent first, filtered as you type, ↵ takes the first; the head's list starts with this branch
+    and its uncommitted work). Picks are kept per repo in `shared("pr-review.heads")` / `shared("pr-review.bases")`.
+    The diff runs from the two sides' merge-base; the default branch diffs from `origin/<base>` when it can, a picked
+    branch as named.
   - Changed files form a folder tree with +/− and comment counts; one file's diff shows at a time; ↑/↓ steps files.
+  - Unified or side by side (the file header's columns button, shared by every copy; a narrow panel stays unified):
+    side by side puts the old line left and the new right, a deletion run paired line for line with the additions
+    after it (`pairRows` in lib.js), blank (`surface`) where a side has none, a 1px divider between.
+  - Lines longer than the code column scroll sideways (trackpad, shift-wheel, or a 6px bar along the bottom); the line
+    numbers and comment cards stay put. A Find match past the edge scrolls into view.
   - Select lines by click, shift-click or drag. The comment box then docks under the diff with tag chips: Statement
     (green), Question (blue), Nit (purple), Minor (yellow), Major (red). A tag posts as
     `![tag](https://img.shields.io/badge/<tag>-<color>)` on its own line, then the comment.
@@ -123,19 +141,22 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - Room: the panel-left button left of the PR title hides the PR list (and brings it back); the header's « goes full
     size: the sidebar folds away as ⌘B does (`tabs-plus.rail`), the terminal keeps the sidebar's old width on the left and the panel takes
     the rest; » puts all of it back. ⤢ opens the same PR in a window.
-  - The window opens unkeyed (a keyed window reopens wherever it was last dropped) at the centre, 90% of the screen.
-    It's frameless, draws its own 10px border and shadow, and resizes from its right edge, bottom edge or corner,
+  - The window opens unkeyed (a keyed window reopens wherever it was last dropped) at the centre, 94% × 90% of the
+    screen; ⤢ always opens it that big (a hand-made size only lasts until then).
+    It's frameless, draws its own 10px border and shadow, and resizes from the right and bottom edges and that corner
+    (Herdr can't place a window, so the left and top stay put), pressing gives it the keyboard so Esc still closes it,
     min 640×420, never past the screen; the size is kept in `shared("pr-review.wsize")`. A window `mod.open` puts up
     (agent-graph's deep link, the CLI) hands over to a centred one at once.
 - **Library panel.**
   - Skills and Plugins tabs. Plugins are the installed Claude Code plugins; open one to see the skills it ships.
-  - A skill opens in one reusable window (SKILL.md, references, scripts) with a bigger/smaller toggle.
+  - A skill opens in one reusable, frameless window (SKILL.md, references, scripts) that resizes from the right and bottom
+    edges and remembers its size; a bigger/smaller toggle snaps it back to a preset.
 - **Usage panel.**
   - Range: 7d, 30d, 90d, 1y, or Custom: two typed `YYYY-MM-DD` dates, or two clicks on the calendar, both days
     included.
   - Harness chips filter everything.
-  - Rescans the logs every minute while it shows (about 1.5 s: only changed logs are read); `output.py` (git, and gh,
-    whose calls share the agents' GitHub budget) reruns with it at most every 15 min, and on ↻.
+  - Rescans the logs when it shows and every minute while it shows (about 1.5 s: only changed logs are read); `output.py`
+    (git, and gh, whose calls share the agents' GitHub budget) reruns with it at most every 15 min, and on ↻.
   - Tabs:
     - **Overview:** 4 tiles, an activity calendar in 11px squares, "Where the tokens go", "What the work was".
     - **Compare:** kind-of-work chips and Same repos only; a success-vs-cost scatter (log x, dot size = runs, 95%
@@ -187,7 +208,10 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - `lib.js` does the maths: Wilson intervals, quartile levels, cost anatomy, rhythm.
   - `main.js` draws with divs only.
 - **`programs.json`**: gives omp its icon (`mods/inbox/omp.svg`, omp's MIT favicon).
-- **`keys.json`**: `global` ⌘⇧G/U/K/M/J/O and ⌘E (`mod.open:jump`); `layout:emergence` ⌘B.
+- **`keys.json`**: `layout:emergence` ⌘⇧A/R/K/U/J/O and ⌘B; `global` ⌘E (`mod.open:jump`). The layout section beats
+  `global` and still applies while a terminal is focused (only a `terminal` binding for the same key would shadow it).
+  `install.sh` drops the keys it used to add (`RETIRED`: ⌘⇧G, old ⌘⇧U, ⌘⇧M, and the panel keys in `global`) while
+  they still hold its value, but only once that action's new key is theirs or free to add; then it adds the new ones.
 
 ## Watch out
 

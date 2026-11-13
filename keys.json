@@ -1,14 +1,14 @@
 {
   "global": {
-    "cmd-shift-g": "tabs-plus.graph",
-    "cmd-shift-u": "tabs-plus.prs",
-    "cmd-shift-k": "tabs-plus.skills",
-    "cmd-shift-j": "tabs-plus.attention",
-    "cmd-shift-o": "tabs-plus.worktrees",
-    "cmd-shift-m": "tabs-plus.usage",
     "cmd-e": "mod.open:jump"
   },
   "layout:emergence": {
+    "cmd-shift-a": "tabs-plus.graph",
+    "cmd-shift-r": "tabs-plus.prs",
+    "cmd-shift-k": "tabs-plus.skills",
+    "cmd-shift-j": "tabs-plus.attention",
+    "cmd-shift-o": "tabs-plus.worktrees",
+    "cmd-shift-u": "tabs-plus.usage",
     "cmd-b": "tabs-plus.rail"
   }
 }

@@ -4,7 +4,7 @@
 
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
-import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, home, layout } from "herdr";
+import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout } from "herdr";
 import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, cleanTitle, RANK } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000;
@@ -188,15 +188,17 @@ export default class AgentGraph extends View {
     if (this.raw) this.size = { width: this.raw.width / this.Z, height: this.raw.height / this.Z };
     const shown = this.shown();
     if (shown && !this.wasShown) this.refresh(cx);
+    const o = this.panel && shown && shared("emergence.opened"); // opened (⌘⇧A, the tab bar; tabs-plus says so): the keys are its own at once
+    if (o?.id === "graph" && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.h.focus()); }
     this.wasShown = shown;
     const items = this.items();
     if (shown && !this.busy && items.some((i) => i.cwd && !this.git.has(key(i.machine, i.cwd)))) this.refresh(cx);
     const tree = buildTree(items, (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined, { activeOnly: this.activeOnly });
-    const L = graphLayout(tree);
+    const L = graphLayout(tree), M = this.moved(L); // M: with the person's dragged offsets
     const list = this.panel && this.loaded && !!this.size && (this.size.width - 2 * PANEL_PAD) / Math.max(1, L.width) < PANEL_Z;
     const walk = (a) => [{ data: a }, ...a.children.flatMap(walk)];
     const picks = list ? tree.flatMap((r) => r.worktrees.flatMap((w) => w.agents.flatMap(walk)))
-      : L.nodes.filter((n) => n.kind === "agent").sort((a, b) => a.y - b.y || a.x - b.x);
+      : M.nodes.filter((n) => n.kind === "agent").sort((a, b) => a.y - b.y || a.x - b.x);
     const foc = focused()?.terminal ?? null;
     if (!picks.some((n) => n.data.id === this.sel)) this.sel = (picks.find((n) => n.data.id === foc) ?? picks[0])?.data.id ?? null;
 
@@ -208,7 +210,8 @@ export default class AgentGraph extends View {
     return root.id("ag-root").text_size(13).text_color(t.foreground)
       .track_focus(this.h)
       .on_key_down((e, cx) => {
-        const k = e.key, i = picks.findIndex((n) => n.data.id === this.sel);
+        const k = e.key, i = picks.findIndex((n) => n.data.id === this.sel), m = e.modifiers;
+        if (m.platform || m.control || m.alt) return; // ⌘R, ⌘= … belong to the app
         if (k === "escape" && !this.panel) return this.dismiss();
         if (k === "f") this.view = null;
         else if ((k === "-" || k === "=" || k === "+") && this.fitted && this.size) this.zoomAt(k === "-" ? 0.8 : 1.25, this.size.width / 2, this.size.height / 2);
@@ -220,7 +223,7 @@ export default class AgentGraph extends View {
         cx.notify();
       })
       .child(this.header(t, items))
-      .child(list ? this.list(t, tree, foc) : this.canvas(t, items, tree, L, foc));
+      .child(list ? this.list(t, tree, foc) : this.canvas(t, items, tree, M, foc));
   }
 
   // The body reports its size (logical px times zoom); fitting and the header's width breakpoints read it.
@@ -362,7 +365,6 @@ export default class AgentGraph extends View {
     if (!this.loaded) return quiet("Reading repositories…");
     if (!tree.length) return quiet("Nothing active right now.", null, ["Show idle", () => { this.activeOnly = false; localStorage.setItem("activeOnly", "0"); }]);
 
-    L = this.moved(L);
     this.fitted = this.fitView(L);
     const v = this.view ?? this.fitted, z = v.z, W = this.size.width, H = this.size.height;
     const X = (x) => x * z + v.x, Y = (y) => y * z + v.y;
@@ -407,6 +409,7 @@ export default class AgentGraph extends View {
       .when(this.drag?.node === n.id && this.drag.moved, (el) => el.cursor_grabbing().shadow_lg())
       .on_mouse_down("left", (e, cx) => {
         cx.stop_propagation();
+        this.h.focus(); // the press stops here, so the root's focus never runs
         this.drag = { node: n.id, x: e.position.x, y: e.position.y, o: this.offsets.get(n.id) ?? { x: 0, y: 0 }, moved: false, fitted: this.view == null };
       });
   }

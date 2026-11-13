@@ -172,3 +172,18 @@ export function splitTag(body) {
   const m = BADGE.exec(body ?? "");
   return m ? { tag: m[1], text: body.slice(m[0].length) } : { tag: null, text: body ?? "" };
 }
+
+// Side by side: each row's place as { l, r } (row indices, null for blank) or { hunk }. Context sits on both sides;
+// a run of deletions pairs line for line with the additions that follow it.
+export function pairRows(rows) {
+  const out = [];
+  let dels = [], adds = [];
+  const flush = () => { for (let i = 0; i < Math.max(dels.length, adds.length); i++) out.push({ l: dels[i] ?? null, r: adds[i] ?? null }); dels = []; adds = []; };
+  rows.forEach((r, i) => {
+    if (r.kind === "del") { if (adds.length) flush(); dels.push(i); }
+    else if (r.kind === "add") adds.push(i);
+    else { flush(); out.push(r.kind === "hunk" ? { hunk: i } : { l: i, r: i }); }
+  });
+  flush();
+  return out;
+}

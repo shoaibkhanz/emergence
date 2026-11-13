@@ -18,7 +18,7 @@ export async function repoInfo(id) {
   return { nwo: r.nameWithOwner, defaultBranch: r.defaultBranchRef?.name || null };
 }
 
-const PR_FIELDS = "number,title,state,isDraft,author,additions,deletions,updatedAt,headRefName";
+const PR_FIELDS = "number,title,state,isDraft,author,additions,deletions,updatedAt,headRefName,baseRefName";
 export function listPRs(id, state, search) {
   return json(id, ["pr", "list", "--state", state, "--limit", "100", ...(search ? ["--search", search] : []), "--json", PR_FIELDS]);
 }

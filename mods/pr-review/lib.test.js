@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, tagBody, splitTag, findAll, mentions, gapBefore, hiddenRows } from "./lib.js";
+import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, tagBody, splitTag, findAll, mentions, gapBefore, hiddenRows, pairRows } from "./lib.js";
 
 test("findAll: smart case, every match per line, tabs as shown, hunks skipped, given file order", () => {
   const files = parseDiff([
@@ -148,4 +148,10 @@ test("ago and firstVisible", () => {
   expect(firstVisible([0, 20, 40, 60], [20, 20, 20, 20], 25)).toBe(1);
   expect(firstVisible([0, 20, 40, 60], [20, 20, 20, 20], 0)).toBe(0);
   expect(firstVisible([0, 20], [20, 20], 100)).toBe(2);
+});
+
+test("pairRows: context on both sides, deletions pair with the additions after them, the rest blank", () => {
+  const k = (s) => [...s].map((c) => ({ kind: { h: "hunk", c: "context", d: "del", a: "add" }[c] }));
+  expect(pairRows(k("hcddac"))).toEqual([{ hunk: 0 }, { l: 1, r: 1 }, { l: 2, r: 4 }, { l: 3, r: null }, { l: 5, r: 5 }]);
+  expect(pairRows(k("aadda"))).toEqual([{ l: null, r: 0 }, { l: null, r: 1 }, { l: 2, r: 4 }, { l: 3, r: null }]);
 });

@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
-import { spaces, panes, machines, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, agents, focused, exec, appHome } from "herdr";
+import { spaces, panes, machines, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, agents, terminals, focused, exec, appHome } from "herdr";
 
 // Herdr's tab bar plus the Emergence panels beside Files and Changes.
 // [layout block id in panel-body, label, icon, default panel width px]
@@ -23,10 +23,13 @@ function find(node, id) {
   return null;
 }
 
-// ⌘⇧J: the next agent that needs you, blocked ones before done ones, after the one you're on.
+// ⌘⇧J: the next agent the inbox shows that needs you, blocked ones before done ones, after the one you're on
+// (as inbox/main.js: a done one only where its tab isn't settled and it isn't a sub-agent).
 // The tab bar always shows, so the key works with the sidebar collapsed.
 function nextAttention() {
-  const all = agents(), want = [...all.filter((a) => a.status === "blocked"), ...all.filter((a) => a.status === "done")];
+  const all = agents(), settled = new Set(spaces().flatMap((s) => s.tabs).filter((t) => t.settled).map((t) => t.id));
+  const sub = new Set(terminals().filter((x) => x.parent).map((x) => x.address));
+  const want = [...all.filter((a) => a.status === "blocked"), ...all.filter((a) => a.status === "done" && !settled.has(a.tab) && !sub.has(a.address))];
   const i = want.findIndex((a) => a.address === focused()?.terminal);
   if (want.length) run("agent.focus", { terminal: want[(i + 1) % want.length].address });
 }
@@ -75,7 +78,7 @@ export default class Tabs extends View {
     this.asked = {}; // autoName's renames sent, by tab id
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
     this.widths = JSON.parse(localStorage.getItem("widths") ?? "{}");
-    // keys.json: "cmd-shift-g": "tabs-plus.graph" toggles that panel; "tabs-plus.attention" jumps (⌘⇧J); "tabs-plus.rail" (⌘B);
+    // keys.json (layout:emergence): "cmd-shift-a": "tabs-plus.graph" toggles that panel; "tabs-plus.attention" jumps (⌘⇧J); "tabs-plus.rail" (⌘B);
     // "tabs-plus.worktrees" (⌘⇧O) lists every worktree of the repo you're in, in Herdr's own dialog (Enter opens one as a space);
     // "tabs-plus.update" applies a pending update (the chip's click).
     cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (c === "attention") nextAttention(); else if (c === "rail") rail(); else if (c === "update") this.applyUpdate(cx); else if (c === "worktrees") openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: focused()?.space, folder: focused()?.cwd, action: "open" } }); else if (PANELS.some(([id]) => id === c)) this.toggle(c); cx.notify(); } });
@@ -114,10 +117,11 @@ export default class Tabs extends View {
     });
   }
 
-  // Each panel keeps its own width: what the person last dragged it to, else its default.
+  // Each panel keeps its own width: what the person last dragged it to, else its default. Not PRs gone full size
+  // (pr-review's widen() sets shared "pr-review.wide"): that width is the window's, not a choice.
   remember(panel, body) {
     const px = panel?.size?.px;
-    if (panel && !panel.hidden && body?.active && px) {
+    if (panel && !panel.hidden && body?.active && px && !(body.active === "prs" && shared("pr-review.wide"))) {
       this.widths[body.active] = px;
       localStorage.setItem("widths", JSON.stringify(this.widths));
     }
@@ -134,7 +138,7 @@ export default class Tabs extends View {
     if (!panel || !body?.children?.some(c => c.id === id)) return;
     this.remember(panel, body);
     if (!panel.hidden && body.active === id) run("layout.hide", { id: "panel" });
-    else this.show(id);
+    else { this.show(id); setShared("emergence.opened", { id, at: Date.now() }); } // opened on purpose: the panel takes the keyboard
   }
 
   // The side panel is remembered per space: switching shows that space's choice

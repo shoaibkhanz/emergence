@@ -4,7 +4,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { exec, appHome, theme, settings, props, run, layout } from "herdr";
+import { exec, appHome, theme, settings, props, run, layout, shared } from "herdr";
 import { summarize, outputOf, heat, levels, startOfDay, addDays, DAY, KINDS, LENGTHS, span, keepOf } from "./lib.js";
 
 const MONO = "Geist Mono";
@@ -49,6 +49,7 @@ const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(
 export default class Usage extends View {
   init(_props, cx) {
     this.panel = props()?.panel === true;
+    this.handle = cx.focus_handle(); // a press anywhere takes the keyboard: ← / → walk the view tabs, as every panel's arrows do
     // Every minute while it shows: a rescan reads only the logs that changed (about 1.5 s); Output's git and gh every 15.
     cx.timer.every(60000, (cx) => { if (this.shown() && Date.now() - scanned > 50000) this.scan(cx, true); });
     const r = localStorage.getItem("range");
@@ -230,7 +231,7 @@ export default class Usage extends View {
       .border(1).border_color(t.border).text_color(t.muted).tooltip(tip).cursor_pointer()
       .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(onClick).child(glyph);
     const field = (state) => Input.new(state).w(104).h(24).px(8).items_center().rounded(6).border(1).border_color(t.input).bg(t.background)
-      .text_size(12).font_family(MONO).text_color(t.foreground);
+      .text_size(12).font_family(MONO).text_color(t.foreground).on_mouse_down("left", (_e, cx) => cx.stop_propagation()); // keeps its own focus
     return v_flex().flex_none().border_b(1).border_color(t.border)
       .child(h_flex().h(42).px(14).gap(8).items_center()
         .child(div().flex_none().text_size(13).font_semibold().child("Usage"))
@@ -593,14 +594,26 @@ export default class Usage extends View {
   }
 
   render(cx) {
-    const t = theme();
+    const t = theme(), vis = this.shown();
+    if (vis && !this.wasShown) this.scan(cx, true); // shown again: don't wait up to a minute for the timer (busy guards a running scan)
+    const opened = this.panel && vis && shared("emergence.opened"); // opened (⌘⇧U, the tab bar; tabs-plus says so): the keys are its own at once
+    if (opened?.id === "usage" && opened.at !== this.openedAt && Date.now() - opened.at < 3000) { this.openedAt = opened.at; cx.timer.after(50, () => this.handle.focus()); }
+    this.wasShown = vis;
     const root = (this.panel
       ? v_flex().size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
       : v_flex().w_full().h((window.viewport_size().height * 0.88) / settings().zoom).bg(t.background))
-      .id("usage-root").text_size(13).text_color(t.foreground)
+      .id("usage-root").text_size(13).text_color(t.foreground).track_focus(this.handle)
       .on_size_change((s, cx) => { const w = s.width / settings().zoom; if (Math.abs(w - this.width) > 1) { this.width = w; cx.notify(); } })
+      .on_key_down((e, cx) => {
+        if (e.keystroke !== "left" && e.keystroke !== "right") return;
+        const i = TABS.findIndex(([id]) => id === this.tab);
+        this.tab = TABS[(i + (e.keystroke === "right" ? 1 : TABS.length - 1)) % TABS.length][0];
+        localStorage.setItem("tab", this.tab);
+        cx.stop_propagation();
+        cx.notify();
+      })
       // A drag ends where the button comes up, or when the pointer leaves the panel.
-      .on_mouse_up("left", () => { this.drag = null; }).on_hover((on) => { if (!on) this.drag = null; });
+      .on_mouse_down("left", () => this.handle.focus()).on_mouse_up("left", () => { this.drag = null; }).on_hover((on) => { if (!on) this.drag = null; });
     const sessions = data?.sessions ?? [];
     const present = ORDER.filter((h) => sessions.some((s) => s.h === h));
     const now = Date.now(), p = this.period(now);
