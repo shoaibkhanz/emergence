@@ -73,7 +73,7 @@ function thinner() {
   size === "open" ? fold("rail") : size === "rail" ? fold("dots") : open();
 }
 
-// Updates. The curl install links every mod into a clone of this repo, so this mod can find it: every 6 h it
+// Updates. The curl install links every mod into a clone of this repo, so this mod can find it: every hour it
 // fetches main, and when main has moved an Update chip pulls it, reruns install.sh (new mods, keys, layouts) and,
 // if a mod or layout changed, reloads the layout: a pull into the clone isn't a save Herdr sees (the mods are links),
 // and switching to the shown layout is a no-op, so via main.
@@ -115,7 +115,7 @@ export default class Tabs extends View {
     cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (commands[c]) commands[c](); else if (c === "update") this.applyUpdate(cx); else if (c === "worktrees") openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: focused()?.space, folder: focused()?.cwd, action: "open" } }); else if (PANELS.some(([id]) => id === c)) this.toggle(c); cx.notify(); } });
     this.update = null; // { behind, busy?, error? } once main has commits this clone lacks
     cx.spawn(async (cx) => { await cx.sleep(16); this.checkUpdate(cx); }); // host calls before the first frame never resolve
-    cx.timer.every(6 * 3600000, (cx) => this.checkUpdate(cx));
+    cx.timer.every(3600000, (cx) => this.checkUpdate(cx));
   }
 
   checkUpdate(cx) {

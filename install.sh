@@ -3,7 +3,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/emergence/main/install.sh | bash
 # Clones (or pulls) the repo into ~/code/emergence (EMERGENCE_DIR moves it), links every mod and layout into the
 # Herdr app home, merges keys.json and programs.json (omp's icon), checks each mod and switches to the `emergence` layout.
-# Safe to rerun. Never replaces a file, folder or key it didn't create.
+# Safe to rerun. Never replaces a key you set. A mod folder or layout with one of its names that isn't its link (an
+# old copy, a link into another clone) is moved aside to <home>/replaced/, so no old copy keeps running.
 set -euo pipefail
 shopt -s nullglob
 
@@ -18,13 +19,13 @@ repo="$(cd "$(dirname "$src")" && pwd)"
 home="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
 
 link() { # link <repo path> <home path> <label>
-  if [ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]; then
-    echo "ok      $3"
-  elif [ -e "$2" ] || [ -L "$2" ]; then
-    echo "skip    $3 (exists and is not ours)" >&2
-  else
-    ln -s "$1" "$2" && echo "linked  $3"
+  if [ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]; then echo "ok      $3"; return; fi
+  if [ -e "$2" ] || [ -L "$2" ]; then
+    mkdir -p "$home/replaced"
+    mv "$2" "$home/replaced/$(basename "$2").$(date +%Y%m%d-%H%M%S)"
+    echo "moved   $3 aside (not this clone's link; kept in $home/replaced/)"
   fi
+  ln -s "$1" "$2" && echo "linked  $3"
 }
 for dir in "$repo"/mods/*/; do
   name="$(basename "$dir")"; link "${dir%/}" "$home/mods/$name" "mods/$name"

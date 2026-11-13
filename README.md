@@ -19,7 +19,8 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/emergence/main/install.
 ```
 
 It clones this repo to `~/code/emergence`, links every mod into Herdr, adds the [keys](#keys) and switches to the
-`emergence` layout (`⌘⇧L` cycles back to Herdr's own).
+`emergence` layout (`⌘⇧L` cycles back to Herdr's own). An old copy of one of its mods (copied by hand, or linked into
+another clone) is moved aside to `~/.config/herdr-app/replaced/`, so nothing stale keeps running.
 
 Needs Herdr 0.1.15 or newer, `git` and `python3`; `gh` signed in for pull requests, `glab` for GitLab merge requests.
 The fonts (Geist, Geist Mono) ship with Herdr.
@@ -169,7 +170,7 @@ either; the second fold size is ⌘⌥B (Option).
 - **Usage**: `python3 mods/usage/scan.py` reads the harnesses' session logs (omp, Claude Code, Codex, OpenCode, pi) and
   keeps a cache in Herdr's `data/usage/`; `python3 mods/usage/output.py` runs `git log`, `gh pr list` or `glab mr list`
   and `git worktree list` in the repos those sessions name. Only counts, models and timestamps are read, never prompts.
-- **Tab bar**: every 6 hours, `git fetch` of this repo's `main` (public HTTPS) into your clone; **Update** runs
+- **Tab bar**: every hour, `git fetch` of this repo's `main` (public HTTPS) into your clone; **Update** runs
   `git merge --ff-only` and `install.sh` there. Nothing for a copy that isn't a clone of this repo, or one on another
   branch or with your own commits.
 - **Spaces**: `git rev-parse`, `symbolic-ref` and `rev-list` in each space's folder (branch, ahead/behind), and per
