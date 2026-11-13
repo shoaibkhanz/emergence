@@ -3,7 +3,7 @@
 // then the one before it, picked, so ⌘E ↵ goes back and again comes forth; never-shown ones follow, then worktrees.
 // Each session shows what its agent is on (the terminal title it sets) and how long it has been in its state.
 // Type to filter: every word, anywhere in tab, space, branch, folder, agent or what it's on; a leading "/" is
-// ignored. A branch name nothing has offers a new worktree for it, in the repo you're in.
+// ignored. A space's name also finds its repo's other checkouts (sessions and worktrees), as the sidebar nests them. A branch name nothing has offers a new worktree for it, in the repo you're in.
 // ↑/↓ to pick, ↵ to go (a worktree opens as a space), Esc to leave.
 
 import { View, div, svg, image } from "gpui-kit";
@@ -19,7 +19,7 @@ const ago = (ms) => {
 const STATE = { working: "working", blocked: "needs you", done: "finished", idle: "idle" };
 
 // The checkouts of every repo a terminal is in, each repo once, newest commit first:
-// { path, branch, machine, repo, at (last commit, ms) }.
+// { path, branch, machine, repo, key (machine + git common dir: one per repo), at (last commit, ms) }.
 async function worktrees() {
   const seen = new Set(), out = [];
   const dirs = new Map(panes().filter((p) => p.terminal && p.cwd).map((p) => {
@@ -41,7 +41,7 @@ async function worktrees() {
       if (!path || lines.some((l) => l === "bare" || l.startsWith("prunable"))) continue;
       repo ??= path.split("/").pop();
       const branch = lines.find((l) => l.startsWith("branch "))?.slice(7).replace(/^refs\/heads\//, "") ?? null;
-      out.push({ path, machine, repo, branch, at: when.get(branch) ?? 0 });
+      out.push({ path, machine, repo, key, branch, at: when.get(branch) ?? 0 });
     }
   }
   return out.sort((a, b) => b.at - a.at);
@@ -73,11 +73,16 @@ export default class Jump extends View {
       return { kind: "tab", s, tb, cwd: p?.cwd, branch: p?.branch, program: (lead ?? p)?.program, on: lead?.title, here: tb.id === here,
         who: [...new Set(mine.map((a) => a.program?.name ?? "agent"))].join(" · ") };
     })).sort((a, b) => rank(a.tb.id) - rank(b.tb.id)); // stable: never-shown tabs keep space order
+    // The repo a session is in (its innermost checkout), and the names of the spaces with a session in each repo.
+    const repoOf = (r) => this.wts.filter((w) => w.machine === (r.s.machine ?? null) && inside(r.cwd, w.path)).sort((a, b) => b.path.length - a.path.length)[0]?.key;
+    const names = new Map();
+    for (const r of tabs) { const k = repoOf(r); if (k) names.set(k, [...(names.get(k) ?? []), r.s.name]); }
+    const kin = (k) => names.get(k) ?? [];
     // A checkout is open when a session's terminal is in it (and not in a checkout inside it).
     const open = (w) => tabs.some((r) => (r.s.machine ?? null) === w.machine && inside(r.cwd, w.path) && !this.wts.some((o) => o.path.length > w.path.length && inside(r.cwd, o.path)));
     const rows = [
-      ...tabs.filter((r) => fits(r.tb.name, r.s.name, r.branch, r.cwd, r.who, r.on)),
-      ...this.wts.filter((w) => !open(w) && fits(w.branch, w.path, w.repo, w.machine)).map((w) => ({ kind: "wt", ...w })),
+      ...tabs.filter((r) => fits(r.tb.name, r.s.name, r.branch, r.cwd, r.who, r.on, ...kin(repoOf(r)))),
+      ...this.wts.filter((w) => !open(w) && fits(w.branch, w.path, w.repo, w.machine, ...kin(w.key))).map((w) => ({ kind: "wt", ...w })),
     ];
     const at = tabs.find((r) => r.here), repo = at && this.wts.find((w) => (at.s.machine ?? null) === w.machine && inside(at.cwd, w.path))?.repo;
     if (/^[\w./-]+$/.test(q) && repo && !this.wts.some((w) => w.repo === repo && w.machine === (at.s.machine ?? null) && w.branch === q)) rows.push({ kind: "new", branch: q, space: at.s, cwd: at.cwd, repo });

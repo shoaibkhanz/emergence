@@ -88,8 +88,8 @@ Usage keeps every session it has read.</td>
 
 ### Jump (⌘E)
 
-Every tab and unopened worktree, most recent first; ⌘E ↵ flips between your last two. Type to filter, or a new branch
-name to make a worktree. Unnamed tabs follow their branch.
+Every tab and unopened worktree, most recent first; ⌘E ↵ flips between your last two. Type to filter (a space's name
+finds its worktrees too), or a new branch name to make a worktree. Unnamed tabs follow their branch.
 
 ## Keys
 
