@@ -1,6 +1,8 @@
 // GitLab REST (glab api) JSON → the shapes github.js returns, so the panel has one code path. Pure: no herdr import.
 
 export const forgeOf = (url) => (/github/i.test(url ?? "") ? "github" : "gitlab");
+// Which to try first, and the other as fallback: a GitHub Enterprise host or ssh alias needn't say "github".
+export const forgeOrder = (url) => (forgeOf(url) === "github" ? ["github", "gitlab"] : ["gitlab", "github"]);
 
 const STATE = { opened: "OPEN", merged: "MERGED", closed: "CLOSED", locked: "CLOSED" };
 // GitLab's list carries no line counts: null, and the panel shows none.
@@ -31,9 +33,12 @@ export function mapThreads(discussions, mr, me) {
     const notes = d.notes.filter((n) => !n.system);
     if (!notes.length) continue;
     const p = notes[0].type === "DiffNote" && notes[0].position;
+    // Outdated (written at an older head): no line, so the panel shows it apart, as GitHub does; GitLab keeps the old
+    // version's numbers, which would hang it on whatever code has them now.
+    const out = p && p.head_sha !== head;
     if (p) threads.push({
-      id: d.id, isResolved: Boolean(notes[0].resolved), isOutdated: p.head_sha !== head, path: p.new_path ?? p.old_path,
-      line: p.new_line ?? p.old_line, startLine: rangeStart(p.line_range),
+      id: d.id, isResolved: Boolean(notes[0].resolved), isOutdated: out, path: p.new_path ?? p.old_path,
+      line: out ? null : p.new_line ?? p.old_line, startLine: out ? null : rangeStart(p.line_range),
       diffSide: p.new_line != null ? "RIGHT" : "LEFT", comments: notes.map((n) => comment(n, me)),
     });
     else for (const n of notes) talk.push({ ...comment(n, me), kind: "comment", author: n.author?.username, at: n.created_at });

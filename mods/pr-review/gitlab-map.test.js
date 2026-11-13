@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { forgeOf, mapMR, glStates, mapThreads, commitDiffText, position, versionFor } from "./gitlab-map.js";
+import { forgeOf, forgeOrder, mapMR, glStates, mapThreads, commitDiffText, position, versionFor } from "./gitlab-map.js";
 import { parseDiff } from "./lib.js";
 
 test("forgeOf: github hosts vs everything else", () => {
@@ -37,7 +37,7 @@ test("mapThreads: diff notes become threads, other notes the talk, system notes 
   const r = mapThreads(discussions, MR, "sk");
   expect(r.headOid).toBe("H2");
   expect(r.threads).toHaveLength(1);
-  expect(r.threads[0]).toMatchObject({ id: "d1", isResolved: true, isOutdated: true, path: "src/a.py", line: 12, diffSide: "RIGHT", startLine: null });
+  expect(r.threads[0]).toMatchObject({ id: "d1", isResolved: true, isOutdated: true, path: "src/a.py", line: null, diffSide: "RIGHT", startLine: null }); // outdated: shown apart, as GitHub (line null)
   expect(r.threads[0].comments[0]).toEqual({ id: 1, databaseId: 1, body: "note 1", author: { login: "sk" }, createdAt: "2026-11-01T11:00:00Z", viewerCanUpdate: true, viewerCanDelete: true });
   expect(r.threads[0].comments[1]).toMatchObject({ author: { login: "bob" }, viewerCanUpdate: false, viewerCanDelete: false });
   expect(r.talk.map((t) => t.kind)).toEqual(["body", "comment"]);
@@ -93,4 +93,10 @@ test("mapThreads: a range stored as line codes only (as GitLab returns it) still
     line_range: { start: { line_code: "8ec9_7", type: "new" }, end: { line_code: "8ec9_8_8", type: "new" } } } })] };
   d.notes[0].position.line_range.start.line_code = "8ec9a00b__7";
   expect(mapThreads([d], MR, "sk").threads[0]).toMatchObject({ line: 8, startLine: 7, diffSide: "RIGHT" });
+});
+
+test("forgeOrder: the likely forge first, the other as fallback (GitHub Enterprise or an alias has no 'github' in it)", () => {
+  expect(forgeOrder("https://github.com/a/b.git")).toEqual(["github", "gitlab"]);
+  expect(forgeOrder("git@ghe-corp:team/app.git")).toEqual(["gitlab", "github"]);
+  expect(forgeOrder("")).toEqual(["gitlab", "github"]);
 });

@@ -9,7 +9,7 @@ import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, TextView, S
 import { exec, focused, panes, spaces, theme, settings, props, shared, setShared, openOverlay, closeOverlay, run, layout } from "herdr";
 import * as github from "./github.js";
 import * as gitlab from "./gitlab.js";
-import { forgeOf } from "./gitlab-map.js";
+import { forgeOrder } from "./gitlab-map.js";
 import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, TAGS, tagBody, splitTag, shown, findAll, findTalk, mentions, gapBefore, hiddenRows, pairRows } from "./lib.js";
 
 const MONO = "Geist Mono";
@@ -238,9 +238,12 @@ export default class PrReview extends View {
     cx.spawn(async (cx) => {
       s.branch = (await git(s.id, ["branch", "--show-current"]).catch(() => "")).trim() || "detached HEAD";
       try {
-        // The repo's forge, by its origin remote: GitHub (gh) or GitLab (glab); the rest of the panel calls s.api.
-        s.api = forgeOf((await git(s.id, ["remote", "get-url", "origin"]).catch(() => "")).trim()) === "github" ? github : gitlab;
-        s.info = await s.api.repoInfo(s.id);
+        // The repo's forge: GitHub (gh) or GitLab (glab), the likelier first by its origin remote, else the other;
+        // the rest of the panel calls s.api.
+        const order = forgeOrder((await git(s.id, ["remote", "get-url", "origin"]).catch(() => "")).trim()), apis = { github, gitlab };
+        for (const [i, name] of order.entries()) {
+          try { s.info = await apis[name].repoInfo(s.id); s.api = apis[name]; break; } catch (e) { if (i === order.length - 1) throw e; }
+        }
         s.info.defaultBranch ??= (await git(s.id, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).catch(() => "main")).trim().replace(/^origin\//, "");
       } catch (e) {
         s.error = /remote|not a github|no known/i.test(e.message) ? "No GitHub or GitLab remote for this repository." : e.message;
