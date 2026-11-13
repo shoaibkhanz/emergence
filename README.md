@@ -94,7 +94,8 @@ finds its worktrees too), or a new branch name to make a worktree. Unnamed tabs 
 ## Keys
 
 Added without replacing yours; all but ⌘E only in the `emergence` layout. ⌘⇧/ (or the tab bar's keyboard button)
-lists them all.
+lists them all. Closing a panel's window or popup (a skill, a PR, Agents or Usage large) gives the keyboard back to the
+panel.
 
 | Key | Where | What |
 |---|---|---|

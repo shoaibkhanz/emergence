@@ -270,6 +270,11 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - `usage`: runs `python3` on its own scripts, which read `~/.omp`, `~/.claude`, `~/.codex`, `~/.local/share/opencode`
     and `~/.pi` session logs and run `git`, `gh` and `glab`. Only counts, models and timestamps are read, never prompt
     text.
+- **Focus rule.** A panel's own window or popup (skill window, PR window, Agents or Usage opened large) sets shared
+  `emergence.back` (a timestamp) in its `close()` when it goes for good (not when replaced); the side panel showing
+  focuses its handle on seeing a new one. Each panel reads the current value in `init`, so only later closes count.
+  Spaces' dialogs use `confirm-safe`'s `after` (`spaces-plus.focus`) instead. Overlays started from the terminal
+  (⌘E Jump, tab-bar menus) don't take part.
 - **Gotchas that bit the first build.**
   - `on_size_change` reports zoomed px: divide by `settings().zoom`.
   - A collapsed column counts as not shown, so `<mod>.<command>` fails there. That's why `nav-keys` and every command

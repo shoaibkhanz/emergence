@@ -55,6 +55,7 @@ async function pulls(on, cwd) {
 export default class AgentGraph extends View {
   init(_props, cx) {
     this.panel = props()?.panel === true;
+    this.backAt = shared("emergence.back");
     this.git = new Map(); // machine|cwd -> { at, v: facts | null }
     this.prs = new Map(); // machine|common -> { at, v: Map | null }
     this.busy = false;
@@ -182,6 +183,9 @@ export default class AgentGraph extends View {
     this.view = { z, x: px - (px - v.x) * k, y: py - (py - v.y) * k };
   }
 
+  // The large popup (mod.open) closing gives the keyboard back to the side panel showing (emergence.back).
+  async close() { if (!this.panel && props()?.overlay) setShared("emergence.back", Date.now()); }
+
   render(cx) {
     const t = theme();
     this.Z = Number(settings()?.zoom) > 0 ? Number(settings().zoom) : 1;
@@ -193,6 +197,8 @@ export default class AgentGraph extends View {
     if (want && want.at !== this.wantAt) { this.wantAt = want.at; this.activeOnly = want.activeOnly; localStorage.setItem("activeOnly", want.activeOnly ? "1" : "0"); }
     const o = this.panel && shown && shared("emergence.opened"); // opened (⌘⇧A, the tab bar; tabs-plus says so): the keys are its own at once
     if (o?.id === "graph" && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.h.focus()); }
+    const back = this.panel && shown && shared("emergence.back"); // a panel's window or popup closed: the keyboard comes back
+    if (back && back !== this.backAt) { this.backAt = back; if (Date.now() - back < 3000) cx.timer.after(80, () => this.h.focus()); }
     this.wasShown = shown;
     const items = this.items();
     if (shown && !this.busy && items.some((i) => i.cwd && !this.git.has(key(i.machine, i.cwd)))) this.refresh(cx);

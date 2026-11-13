@@ -57,6 +57,7 @@ const TALK = { id: "talk", where: "issues" }; // the conversation, standing in f
 export default class PrReview extends View {
   init(_props, cx) {
     this.panel = props()?.panel === true;
+    this.backAt = shared("emergence.back");
     if (!this.panel && !props()?.placed) {
       this.handoff = true;
       return void cx.spawn(async () => { openWindow(); closeOverlay(props().overlay); });
@@ -104,7 +105,10 @@ export default class PrReview extends View {
   }
 
   // The window forgets its id when it goes, so a later open never closes some other overlay that reuses it.
-  async close() { if (!this.panel && props()?.overlay && shared("pr-review.window") === props().overlay) setShared("pr-review.window", null); }
+  // Closed for good (not replaced by another window): the keyboard goes back to the side panel showing (emergence.back).
+  async close() {
+    if (!this.panel && props()?.overlay && shared("pr-review.window") === props().overlay) { setShared("pr-review.window", null); setShared("emergence.back", Date.now()); }
+  }
 
   yields() { return this.panel && Boolean(shared("pr-review.window")); } // the window polls instead
 
@@ -718,6 +722,8 @@ export default class PrReview extends View {
       // Opened (⌘⇧R, the tab bar; tabs-plus says so): the keys are its own at once, after this frame puts it in the tree.
       const o = shared("emergence.opened");
       if (o?.id === BLOCK && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.handle.focus()); }
+      const back = this.panel && shared("emergence.back"); // a panel's window or popup closed: the keyboard comes back
+      if (back && back !== this.backAt) { this.backAt = back; if (Date.now() - back < 3000) cx.timer.after(80, () => this.handle.focus()); }
     } else this.stale = true;
     const t = theme();
     const s = this.cur;

@@ -113,7 +113,7 @@ export default class Skills extends View {
     if (props()?.role === "window") return this.initWindow(props(), cx);
     // Panel role (props.panel): a side panel in the layout's `panel` column; scans on show, follows the focused repo.
     this.panel = props()?.panel === true;
-    this.backAt = shared("skills.back"); // only a skill window closed from now on takes the keyboard back
+    this.backAt = shared("emergence.back"); // only an overlay closed from now on takes the keyboard back
     this.query = "";
     this.at = 0;
     this.tab = localStorage.getItem("tab") === "plugins" ? "plugins" : "skills";
@@ -192,7 +192,7 @@ export default class Skills extends View {
     if (panel && shown()) {
       const o = shared("emergence.opened"); // opened (⌘⇧K, the tab bar; tabs-plus says so): the keys are its own at once
       if (o?.id === "skills" && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.input.focus()); }
-      const back = shared("skills.back"); // a skill window it opened has closed: the keyboard comes back here
+      const back = shared("emergence.back"); // a panel's window or popup has closed: the keyboard comes back here
       if (back && back !== this.backAt) { this.backAt = back; if (Date.now() - back < 3000) cx.timer.after(80, () => this.input.focus()); }
     }
     if (panel && shown() && !this.loading) {
@@ -336,9 +336,9 @@ export default class Skills extends View {
   // ── Window role ────────────────────────────────────────────────────────────
 
   // Closing (by hand, ⌘W or a replacing open) frees the shared slot this window held; closed for good (not replaced),
-  // it gives the keyboard back to the Library panel ("skills.back"), not the terminal.
+  // the keyboard goes back to the side panel showing (emergence.back, as every panel's window or popup does).
   async close() {
-    if (this.dir && shared("skills.window") === this.overlay) { setShared("skills.window", null); setShared("skills.back", Date.now()); }
+    if (this.dir && shared("skills.window") === this.overlay) { setShared("skills.window", null); setShared("emergence.back", Date.now()); }
   }
 
   initWindow(p, cx) {
