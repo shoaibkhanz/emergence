@@ -217,6 +217,10 @@ for key, dir in pairs({ h = "left", j = "down", k = "up", l = "right" }) do
 end
 ```
 
+The same idea for the herdr terminal app (and tmux), with workspace walking on ctrl-j/k, is
+[herdr-nav-plus](https://github.com/shoaibkhanz/herdr-nav-plus); its `editor/nvim.lua` doesn't cover this desktop app
+yet, so here use the snippet above (or add its `HC_TERMINAL_ID` branch to that file).
+
 ## Develop
 
 | Path | What |
