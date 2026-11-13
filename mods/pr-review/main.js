@@ -210,17 +210,15 @@ export default class PrReview extends View {
       await cx.sleep(16); // host calls started before a copy's first frame never resolve
       const top = (await git({ repo: want.dir, machine: want.machine }, ["rev-parse", "--show-toplevel"]).catch(() => "")).trim();
       if (this.wantKey !== key) return;
-      if (!top) { if (this.cur?.id) this.dropWork(); this.cur = { none: "This folder isn't a git repository." }; cx.notify(); return; }
+      if (!top) { this.leave(); this.cur = { none: "This folder isn't a git repository." }; cx.notify(); return; }
       const rk = `${want.machine}|${top}`;
-      let s = this.repos.get(rk);
-      if (!s) {
-        s = { id: { repo: top, machine: want.machine }, name: top.split("/").pop(), state: "open", search: "", diffs: new Map(), scroll: {}, entry: null, cursor: 0 };
-        this.repos.set(rk, s);
-        this.loadRepo(s, cx, want.number);
-      } else if (want.number) this.open(s, want.number, cx);
+      let s = this.repos.get(rk), fresh = !s;
+      if (fresh) this.repos.set(rk, (s = { id: { repo: top, machine: want.machine }, name: top.split("/").pop(), state: "open", search: "", diffs: new Map(), scroll: {}, entry: null, cursor: 0 }));
+      // Before anything loads: a half-written comment stays with its repo's PR.
+      if (this.cur !== s) { this.leave(); this.enter(s); this.cur = s; }
+      if (fresh) this.loadRepo(s, cx, want.number);
+      else if (want.number) this.open(s, want.number, cx);
       if (want.number) s.level = "pr";
-      if (this.cur !== s && this.cur?.id) this.dropWork(); // a half-written comment stays with its repo's PR
-      this.cur = s;
       if (this.repoll) { this.repoll = false; this.poll(s, cx); }
       this.search.set_value(s.search);
       cx.notify();
@@ -423,7 +421,30 @@ export default class PrReview extends View {
 
   // ---- writes: never retried, errors stay inline ----
 
-  // Everything half-written or pending about the shown PR, dropped when another PR or repo shows.
+  // Another repo shows: what's half-written here (the comment and conversation boxes, tags, a reply or edit) waits
+  // on this repo, its line selection too (s.sel), and comes back with it. No handle.focus(): the keyboard went
+  // wherever you clicked.
+  leave() {
+    const s = this.cur;
+    if (!s?.id) return;
+    s.parked = { composer: this.composer.value(), talk: this.talkBox.value(), tag: this.tag, talkTag: this.talkTag, draft: this.draft };
+    this.draft = null;
+    this.typing = this.basePick = false;
+    this.tag = this.talkTag = this.talkError = this.composeError = this.confirm = null;
+    this.composer.set_value("");
+    this.talkBox.set_value("");
+  }
+
+  enter(s) {
+    const p = s.parked;
+    if (!p) return;
+    s.parked = null;
+    this.composer.set_value(p.composer);
+    this.talkBox.set_value(p.talk);
+    Object.assign(this, { tag: p.tag, talkTag: p.talkTag, draft: p.draft });
+  }
+
+  // Everything half-written or pending about the shown PR, dropped when another PR shows.
   dropWork(s = this.cur) {
     this.unfocus();
     if (s) s.sel = null;
@@ -516,7 +537,7 @@ export default class PrReview extends View {
     } else if (this.typing) return;
     // The PR list's search and ← / → over its Open / Closed / All (as every panel's arrows walk its tabs), only where the list shows.
     else if (k === "/" && !this.inSearch && s && this.listShows(s)) this.search.focus();
-    else if (s && (e.keystroke === "left" || e.keystroke === "right") && this.listShows(s)) {
+    else if (s && (e.keystroke === "left" || e.keystroke === "right") && !this.inSearch && this.listShows(s)) {
       const i = STATES.findIndex(([x]) => x === s.state);
       s.state = STATES[(i + (k === "right" ? 1 : STATES.length - 1)) % STATES.length][0];
       this.loadPRs(s, cx);

@@ -230,8 +230,11 @@ export default class Usage extends View {
     const button = (id, tip, glyph, onClick) => h_flex().id(id).size(24).flex_none().items_center().justify_center().rounded(6)
       .border(1).border_color(t.border).text_color(t.muted).tooltip(tip).cursor_pointer()
       .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(onClick).child(glyph);
-    const field = (state) => Input.new(state).w(104).h(24).px(8).items_center().rounded(6).border(1).border_color(t.input).bg(t.background)
-      .text_size(12).font_family(MONO).text_color(t.foreground).on_mouse_down("left", (_e, cx) => cx.stop_propagation()); // keeps its own focus
+    // Pointer handlers on Input are dropped (gpui-kit: only div/h_flex/...): the wrapper stops the press, so the
+    // panel's own press-to-focus doesn't take the box's focus.
+    const field = (state) => h_flex().on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .child(Input.new(state).w(104).h(24).px(8).items_center().rounded(6).border(1).border_color(t.input).bg(t.background)
+        .text_size(12).font_family(MONO).text_color(t.foreground));
     return v_flex().flex_none().border_b(1).border_color(t.border)
       .child(h_flex().h(42).px(14).gap(8).items_center()
         .child(div().flex_none().text_size(13).font_semibold().child("Usage"))
