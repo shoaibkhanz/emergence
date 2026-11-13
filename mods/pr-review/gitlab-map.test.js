@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { forgeOf, mapMR, glStates, mapThreads, commitDiffText, positionFields, versionFor } from "./gitlab-map.js";
+import { forgeOf, mapMR, glStates, mapThreads, commitDiffText, position, versionFor } from "./gitlab-map.js";
 import { parseDiff } from "./lib.js";
 
 test("forgeOf: github hosts vs everything else", () => {
@@ -69,26 +69,28 @@ test("commitDiffText: modified, new, deleted and renamed files parse back", () =
 const V = { base_commit_sha: "B", start_commit_sha: "S", head_commit_sha: "H" };
 const at = (old, nu, extra = {}) => ({ path: "src/a.py", old_path: "src/a.py", side: nu == null ? "LEFT" : "RIGHT", line: nu ?? old, anchor: { start: { old, new: nu }, end: { old, new: nu } }, ...extra });
 
-test("positionFields: added, removed and unchanged lines; SHAs from the version", () => {
-  expect(positionFields(at(null, 8), V, null)).toMatchObject({ "position[base_sha]": "B", "position[start_sha]": "S", "position[head_sha]": "H", "position[position_type]": "text", "position[new_path]": "src/a.py", "position[old_path]": "src/a.py", "position[new_line]": 8 });
-  expect(positionFields(at(5, null), V, null)).toMatchObject({ "position[old_line]": 5 });
-  expect("position[new_line]" in positionFields(at(5, null), V, null)).toBe(false);
-  expect("position[old_line]" in positionFields(at(null, 8), V, null)).toBe(false);
-  expect(positionFields(at(4, 6), V, null)).toMatchObject({ "position[old_line]": 4, "position[new_line]": 6 });
+test("position: added, removed and unchanged lines; SHAs from the version", () => {
+  expect(position(at(null, 8), V, null)).toEqual({ base_sha: "B", start_sha: "S", head_sha: "H", position_type: "text", new_path: "src/a.py", old_path: "src/a.py", new_line: 8 });
+  expect(position(at(5, null), V, null)).toEqual({ base_sha: "B", start_sha: "S", head_sha: "H", position_type: "text", new_path: "src/a.py", old_path: "src/a.py", old_line: 5 });
+  expect(position(at(4, 6), V, null)).toMatchObject({ old_line: 4, new_line: 6 });
 });
 
-test("positionFields: a range adds line_range with line codes", () => {
+test("position: a range adds line_range with line codes", () => {
   const p = { ...at(null, 12), start_line: 10, anchor: { start: { old: null, new: 10 }, end: { old: null, new: 12 } } };
-  const f = positionFields(p, V, (o, n) => `P_${o ?? ""}_${n ?? ""}`);
-  expect(f["position[line_range][start][line_code]"]).toBe("P__10");
-  expect(f["position[line_range][start][type]"]).toBe("new");
-  expect(f["position[line_range][end][line_code]"]).toBe("P__12");
-  expect(f["position[line_range][end][type]"]).toBe("new");
-  expect(f["position[new_line]"]).toBe(12);
+  const pos = position(p, V, (o, n) => `P_${o ?? ""}_${n ?? ""}`);
+  expect(pos.line_range).toEqual({ start: { line_code: "P__10", type: "new" }, end: { line_code: "P__12", type: "new" } });
+  expect(pos.new_line).toBe(12);
 });
 
 test("versionFor: the matching version, else the newest", () => {
   const vs = [{ head_commit_sha: "H2" }, { head_commit_sha: "H1" }];
   expect(versionFor(vs, "H1")).toBe(vs[1]);
   expect(versionFor(vs, "nope")).toBe(vs[0]);
+});
+
+test("mapThreads: a range stored as line codes only (as GitLab returns it) still gives its start line", () => {
+  const d = { id: "r", individual_note: false, notes: [note(1, { type: "DiffNote", resolvable: true, resolved: false, position: { head_sha: "H2", new_path: "a.py", old_path: "a.py", old_line: 8, new_line: 8,
+    line_range: { start: { line_code: "8ec9_7", type: "new" }, end: { line_code: "8ec9_8_8", type: "new" } } } })] };
+  d.notes[0].position.line_range.start.line_code = "8ec9a00b__7";
+  expect(mapThreads([d], MR, "sk").threads[0]).toMatchObject({ line: 8, startLine: 7, diffSide: "RIGHT" });
 });

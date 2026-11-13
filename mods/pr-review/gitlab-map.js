@@ -12,6 +12,15 @@ export const mapMR = (mr) => ({
 // The panel's states are gh's; gh's "closed" includes merged, GitLab's doesn't.
 export const glStates = (state) => ({ open: ["opened"], closed: ["closed", "merged"], merged: ["merged"] })[state] ?? ["all"];
 
+// A range's first line: its numbers, else from its line code "<sha>_<old>_<new>" (all GitLab sends back).
+function rangeStart(range) {
+  const st = range?.start;
+  if (!st) return null;
+  if (st.new_line != null || st.old_line != null) return st.new_line ?? st.old_line;
+  const [, old, nu] = (st.line_code ?? "").split("_");
+  return Number(nu || old) || null;
+}
+
 const comment = (n, me) => ({ id: n.id, databaseId: n.id, body: n.body, author: { login: n.author?.username }, createdAt: n.created_at,
   viewerCanUpdate: n.author?.username === me, viewerCanDelete: n.author?.username === me });
 
@@ -24,7 +33,7 @@ export function mapThreads(discussions, mr, me) {
     const p = notes[0].type === "DiffNote" && notes[0].position;
     if (p) threads.push({
       id: d.id, isResolved: Boolean(notes[0].resolved), isOutdated: p.head_sha !== head, path: p.new_path ?? p.old_path,
-      line: p.new_line ?? p.old_line, startLine: p.line_range?.start ? p.line_range.start.new_line ?? p.line_range.start.old_line : null,
+      line: p.new_line ?? p.old_line, startLine: rangeStart(p.line_range),
       diffSide: p.new_line != null ? "RIGHT" : "LEFT", comments: notes.map((n) => comment(n, me)),
     });
     else for (const n of notes) talk.push({ ...comment(n, me), kind: "comment", author: n.author?.username, at: n.created_at });
@@ -41,19 +50,17 @@ export const commitDiffText = (diffs) => diffs.map((d) => [
   d.diff.replace(/\n$/, ""),
 ].join("\n")).join("\n") + "\n";
 
-// The panel's comment payload → POST discussions' flat position fields. An unchanged line needs both numbers.
-// lineCode(old, new) names a line for line_range (null: no range).
-export function positionFields(p, v, lineCode) {
-  const f = { "position[base_sha]": v.base_commit_sha, "position[start_sha]": v.start_commit_sha, "position[head_sha]": v.head_commit_sha,
-    "position[position_type]": "text", "position[new_path]": p.path, "position[old_path]": p.old_path ?? p.path };
+// The panel's comment payload → POST discussions' `position` (sent as one JSON value). An unchanged line needs both
+// numbers. lineCode(old, new) names a line for line_range (null: no range).
+export function position(p, v, lineCode) {
+  const pos = { base_sha: v.base_commit_sha, start_sha: v.start_commit_sha, head_sha: v.head_commit_sha, position_type: "text",
+    new_path: p.path, old_path: p.old_path ?? p.path };
   const { start, end } = p.anchor;
-  if (end.old != null) f["position[old_line]"] = end.old;
-  if (end.new != null) f["position[new_line]"] = end.new;
-  if (p.start_line != null && lineCode) for (const [k, r] of [["start", start], ["end", end]]) {
-    f[`position[line_range][${k}][line_code]`] = lineCode(r.old, r.new);
-    f[`position[line_range][${k}][type]`] = r.new != null ? "new" : "old";
-  }
-  return f;
+  if (end.old != null) pos.old_line = end.old;
+  if (end.new != null) pos.new_line = end.new;
+  const at = (r) => ({ line_code: lineCode(r.old, r.new), type: r.new != null ? "new" : "old" });
+  if (p.start_line != null && lineCode) pos.line_range = { start: at(start), end: at(end) };
+  return pos;
 }
 
 // The MR version a comment's head belongs to (its own base/start SHAs), else the newest.
