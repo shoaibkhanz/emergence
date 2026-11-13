@@ -92,17 +92,18 @@ instead of under them).
   - `init`: `this.fh = cx.focus_handle()`; a `nextCommand()` loop: `"focus"` → `this.fh.focus()`.
   - Root: `.track_focus(this.fh).on_key_down(...)` for the keys in section 2; ctrl-h/j/k/l and Esc call
     `run("pane.go", {direction})` here, so they work without any keys.json entry.
-  - Worktree rows, folding (`localStorage` `folded`: space ids), cursor, rail and dots renders.
-  - Publishes `setShared("spaces.focused", bool)` when its focus changes; tabs-plus reads it for ⌘B.
+  - Worktree rows, folding (`localStorage` `spaces.folded`: space ids), cursor, rail and dots renders.
+  - Command `toggle` (⌘B while open): folds (`tabs-plus.fold`) if this list holds the keyboard
+    (`this.fh.is_focused()`, read at that moment; Herdr has no blur event to publish from), else passes to `inbox.toggle`.
   - New `lib.js` (pure): parse `git worktree list --porcelain`; parse branch tracking counts; build the tree
     (spaces + worktrees → ordered rows with depth, open / greyed, which space shows which worktree); move the cursor.
     `lib.test.js` beside it, as in pr-review and usage.
 - **inbox** (`mods/inbox`)
   - `mod.json`: `"focusable": true`; focus handle, `nextCommand()` loop and keys as spaces-plus (↑ ↓ ↵, ctrl-h/j/k/l,
-    Esc); publishes `inbox.focused` the same way (⌘B counts the sidebar as focused when either is true).
+    Esc); command `toggle`: folds if it holds the keyboard, else `spaces-plus.focus`.
   - Two-line rows; count badge in rail and dots sizes.
 - **tabs-plus** (`mods/tabs-plus`)
-  - `rail()` (⌘B) gains the new behaviour and `thinner()` (⌘⌥B) is added, over `shared("sidebar.size")` = `"open" | "rail" | "dots"`
+  - `rail()` (⌘B) gains the new behaviour and `thinner()` (⌘⌥B) is added; sizes are read from the sidebar's width
     and `shared("sidebar.folded")` = last folded size. Folding hides brand and footer and resizes the sidebar to 48
     or 20; opening restores `shared("sidebar.width")` (default 268), shows them, and runs `spaces-plus.focus`.
   - The brand's own collapse button (workspace-chrome, 76px) is left as Herdr ships it.
