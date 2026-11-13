@@ -5,7 +5,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings } from "herdr";
+import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -47,12 +47,12 @@ export default class Inbox extends View {
     cx.timer.every(30000, (cx) => cx.notify()); // the ages
   }
 
-  // Spaces gets the height its rows ask for (header and padding 45, a row 30, 26 on the rail, a header per
-  // machine once there are several) while this inbox's own content still fits below; past that, at least half.
+  // Spaces gets the height its rows ask for (spaces.want: its rows, worktrees and machine headers, as Spaces drew
+  // them) while this inbox's own content still fits below; past that, at least half.
   fitSpaces(collapsed, need) {
     const ms = machines().length, H = this.H ?? 0, sp = find(layout(), "spaces");
     if (!sp || sp.hidden) return;
-    const want = 45 + (Math.max(spaces().length, 1) + (ms > 1 ? ms : 0)) * (collapsed ? 26 : 30);
+    const want = shared("spaces.want") ?? 45 + (Math.max(spaces().length, 1) + (ms > 1 ? ms : 0)) * (collapsed ? 26 : 30);
     const px = Math.round(H ? Math.max(60, Math.min(want, H - 90, Math.max(H - need, H / 2))) : Math.min(want, 285));
     if (px === this.spacesPx) return;
     this.spacesPx = px;
