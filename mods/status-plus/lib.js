@@ -87,3 +87,83 @@ export function cpuSample(prev, next, cores) {
   }
   return { total: Math.min(100, total), byPid };
 }
+
+// ---- Who uses it ----
+
+const MAX_HOPS = 64;
+const GB = 1024 * MB;
+const VISIBLE = { cpu: 1, rssKB: 100 * 1024 }; // a By-agent row: at least 1% CPU or 100 MB
+
+// Shell and foreground pids of this computer's live terminals -> the top-level agent's address (a sub-agent counts for
+// the agent that started it). Remote terminals carry a machine and a "<machine>/" address; their pids are another
+// machine's.
+export function localTerminals(terminals) {
+  const local = (terminals ?? []).filter((t) => t.state === "live" && t.machine == null && !String(t.address ?? "").includes("/"));
+  const out = new Map();
+  for (const t of local) {
+    const top = t.parent ?? t.address;
+    if (t.pid) out.set(t.pid, top);
+    if (t.foreground?.pid) out.set(t.foreground.pid, top);
+  }
+  return out;
+}
+
+// The first terminal on a process's parent chain, or null.
+export function chainOwner(pid, procs, byPid) {
+  const seen = new Set();
+  for (let p = pid, hops = 0; p > 1 && hops < MAX_HOPS && !seen.has(p); hops++) {
+    if (byPid.has(p)) return byPid.get(p);
+    seen.add(p);
+    p = procs.get(p)?.ppid;
+  }
+  return null;
+}
+
+// Every process's CPU (cpu: Map pid -> %) and memory (rss KB) summed into its owning agent; the rest apart.
+export function byAgent(procs, cpu, byPid) {
+  const sums = new Map(), rest = { cpu: 0, rss: 0 };
+  for (const [pid, p] of procs) {
+    const address = chainOwner(pid, procs, byPid), c = cpu?.get(pid) ?? 0;
+    if (!address) { rest.cpu += c; rest.rss += p.rss; continue; }
+    const s = sums.get(address) ?? { address, cpu: 0, rss: 0 };
+    sums.set(address, { ...s, cpu: s.cpu + c, rss: s.rss + p.rss });
+  }
+  return { rows: [...sums.values()], rest };
+}
+
+// The rows worth showing, largest first by the tab's measure ("cpu" or "rss").
+export const visibleAgents = (rows, key) =>
+  rows.filter((r) => r.cpu >= VISIBLE.cpu || r.rss >= VISIBLE.rssKB).sort((a, b) => b[key] - a[key]);
+
+// The n processes using the most CPU (cpu: Map pid -> %) or memory.
+export function topProcs(procs, cpu, key, n = 8) {
+  const value = (p) => (key === "cpu" ? cpu?.get(p.pid) ?? 0 : p.rss);
+  return [...procs.values()].sort((a, b) => value(b) - value(a)).slice(0, n);
+}
+
+// ---- The bar ----
+
+const LEVELS = {
+  cpu: (v) => (v >= 80 ? "warn" : "ok"),
+  mem: (v) => ({ warn: "warn", critical: "crit" })[v] ?? "ok", // memory pressure, never "used"
+  disk: (v) => (v < 0.05 ? "crit" : v < 0.1 ? "warn" : "ok"), // fraction free
+  battery: (v) => (v < 10 ? "crit" : v < 20 ? "warn" : "ok"),
+};
+export const level = (kind, value) => LEVELS[kind](value);
+
+export const fmtBytes = (b) => (b >= GB ? `${(b / GB).toFixed(1)} GB` : `${Math.round(b / MB)} MB`);
+const wholeGB = (b) => Math.round(b / GB);
+
+// The status bar's widths (px) below which battery, then disk, then the memory total drop out.
+export const WIDE = 1100, MEDIUM = 900, NARROW = 760;
+
+// What the bar shows: cpu ("–" until two samples), memory used/total, disk free, battery (only on battery). A part
+// whose command failed (null) isn't shown.
+export function segments({ cpu, mem, disk, battery }, width) {
+  const out = [{ id: "cpu", text: cpu == null ? "–" : `${Math.round(cpu)}%`, level: cpu == null ? "ok" : level("cpu", cpu) }];
+  if (mem) out.push({ id: "mem", text: width >= NARROW ? `${wholeGB(mem.used)}/${wholeGB(mem.total)} GB` : `${wholeGB(mem.used)} GB`,
+    level: level("mem", mem.pressure) });
+  if (disk && width >= MEDIUM) out.push({ id: "disk", text: `${wholeGB(disk.free * 1024)} GB free`, level: level("disk", disk.free / disk.size) });
+  if (battery?.onBattery && width >= WIDE) out.push({ id: "battery", text: `${battery.percent}%`, level: level("battery", battery.percent) });
+  return out;
+}

@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
-import { parseVmStat, memUsed, parseSysctl, parseSwap, parseDf, parseBattery, parseProcs, cpuSample } from "./lib.js";
+import { parseVmStat, memUsed, parseSysctl, parseSwap, parseDf, parseBattery, parseProcs, cpuSample,
+  localTerminals, chainOwner, byAgent, visibleAgents, topProcs, level, segments, fmtBytes } from "./lib.js";
 import { VM_STAT, SYSCTL, SWAP, DF, BATT_ON, BATT_AC, PS } from "./fixtures.js";
 
 test("parseVmStat + memUsed: (active + wired + compressor) pages at the stated page size", () => {
@@ -58,4 +59,69 @@ test("cpuSample: a process new since the last poll, or whose time went down (pid
   expect(s.total).toBe(0);
   expect(s.byPid.get(2) ?? 0).toBe(0);
   expect(s.byPid.get(3) ?? 0).toBe(0);
+});
+
+// ---- Sums, levels, segments ----
+
+const P = (pid, ppid, rss = 1000, comm = "x") => [pid, { pid, ppid, rss, cpu: 0, comm }];
+const term = (address, pid, fgPid, extra = {}) => ({ address, state: "live", machine: null, pid, foreground: { pid: fgPid }, parent: null, ...extra });
+
+test("localTerminals: shell and agent pids of this computer's live terminals; sub-agents roll up to their parent", () => {
+  const m = localTerminals([term("t1", 200, 300), term("t2", 210, 310, { parent: "t1" }), term("box/t9", 220, 320), term("t8", 230, 330, { machine: "box" }),
+    term("t7", 240, 340, { state: "finished" })]);
+  expect([...m.entries()].sort()).toEqual([[200, "t1"], [210, "t1"], [300, "t1"], [310, "t1"]].sort());
+});
+
+test("chainOwner: through a grandchild; a remote terminal's equal pid claims nothing (Review Focus 5); cycles end", () => {
+  const procs = new Map([P(500, 400), P(400, 300), P(300, 200), P(200, 1), P(7, 8), P(8, 7)]);
+  expect(chainOwner(500, procs, localTerminals([term("t1", 200, 300)]))).toBe("t1");
+  expect(chainOwner(500, procs, localTerminals([term("box/t9", 200, 300)]))).toBe(null);
+  expect(chainOwner(7, procs, new Map())).toBe(null);
+});
+
+test("byAgent: every process summed into its owner; the rest kept apart", () => {
+  const procs = new Map([P(300, 200, 100000), P(400, 300, 50000), P(900, 1, 7000)]);
+  const cpu = new Map([[300, 2], [400, 3], [900, 1]]);
+  const { rows, rest } = byAgent(procs, cpu, localTerminals([term("t1", 200, 300)]));
+  expect(rows).toEqual([{ address: "t1", cpu: 5, rss: 150000 }]);
+  expect(rest).toEqual({ cpu: 1, rss: 7000 });
+});
+
+test("visibleAgents: only ≥ 1% CPU or ≥ 100 MB, largest first by the tab's measure (Review Focus 3)", () => {
+  const rows = [{ address: "a", cpu: 0.2, rss: 40 * 1024 }, { address: "b", cpu: 3, rss: 10 }, { address: "c", cpu: 0, rss: 200 * 1024 }];
+  expect(visibleAgents(rows, "cpu").map((r) => r.address)).toEqual(["b", "c"]);
+  expect(visibleAgents(rows, "rss").map((r) => r.address)).toEqual(["c", "b"]);
+});
+
+test("topProcs: the n largest by CPU or memory", () => {
+  const procs = new Map([P(1, 0, 10), P(2, 0, 30), P(3, 0, 20)]);
+  expect(topProcs(procs, new Map([[1, 5], [3, 1]]), "cpu", 2).map((p) => p.pid)).toEqual([1, 3]);
+  expect(topProcs(procs, new Map(), "rss", 2).map((p) => p.pid)).toEqual([2, 3]);
+});
+
+test("level: each threshold edge", () => {
+  expect([level("cpu", 79), level("cpu", 80)]).toEqual(["ok", "warn"]);
+  expect([level("mem", "normal"), level("mem", "warn"), level("mem", "critical")]).toEqual(["ok", "warn", "crit"]);
+  expect([level("disk", 0.10), level("disk", 0.099), level("disk", 0.049)]).toEqual(["ok", "warn", "crit"]);
+  expect([level("battery", 20), level("battery", 19), level("battery", 9)]).toEqual(["ok", "warn", "crit"]);
+});
+
+test("fmtBytes: MB below a GB, one decimal of GB above", () => {
+  expect(fmtBytes(312 * 1024 * 1024)).toBe("312 MB");
+  expect(fmtBytes(21.44 * 1024 ** 3)).toBe("21.4 GB");
+});
+
+test("segments: cpu, memory, disk, battery; dropped battery → disk → memory total as the bar narrows; '–' before two samples", () => {
+  const state = { cpu: 34.4, mem: { used: 21 * 1024 ** 3, total: 36 * 1024 ** 3, pressure: "normal" }, disk: { size: 482797652, free: 14447236 },
+    battery: { onBattery: true, percent: 64 } };
+  const ids = (w) => segments(state, w).map((s) => s.id);
+  expect(segments(state, 1200)).toEqual([
+    { id: "cpu", text: "34%", level: "ok" }, { id: "mem", text: "21/36 GB", level: "ok" },
+    { id: "disk", text: "14 GB free", level: "crit" }, { id: "battery", text: "64%", level: "ok" }]);
+  expect(ids(1000)).toEqual(["cpu", "mem", "disk"]);
+  expect(ids(800)).toEqual(["cpu", "mem"]);
+  expect(segments(state, 700).find((s) => s.id === "mem").text).toBe("21 GB");
+  expect(segments({ ...state, cpu: null }, 1200)[0].text).toBe("–");
+  expect(segments({ ...state, battery: { onBattery: false, percent: 100 } }, 1200).map((s) => s.id)).toEqual(["cpu", "mem", "disk"]);
+  expect(segments({ cpu: null, mem: null, disk: null, battery: null }, 1200)).toEqual([{ id: "cpu", text: "–", level: "ok" }]);
 });
