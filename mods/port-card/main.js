@@ -7,7 +7,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, run, props, closeOverlay, theme, home, setShared, notify } from "herdr";
-import { parseStat, cpuPercent, formatMem, parseLsof, holds, shortArgs } from "./lib.js";
+import { cpuPercent, formatMem, shortArgs, canStop, statOutcome, heldOutcome } from "./lib.js";
 
 const REFRESH_MS = 5000;
 const STOP_CHECK_MS = 1000, STOP_WAIT_MS = 10000; // after SIGTERM: check each second, give up after ten
@@ -34,7 +34,7 @@ export default class PortCard extends View {
     this.handle = cx.focus_handle();
     this.handle.focus();
     const s = props()?.server;
-    this.asking = !!props()?.ask;
+    this.asking = !!props()?.ask && canStop(props()?.who);
     this.sel = null; // the selected button's id; null: the default
     this.stat = null; // { cpu, age, rss } from the last ps
     this.cpu = null; // % since the sample before
@@ -48,9 +48,9 @@ export default class PortCard extends View {
   async refresh(cx) {
     if (this.state !== "live") return;
     const s = props().server;
-    const r = await exec("ps", ["-p", String(s.pid), "-o", "time=,etime=,rss="], EXEC).catch(() => null);
-    const stat = parseStat(r?.stdout);
-    if (!stat) { this.state = "stopped"; cx.notify(); return; }
+    const stat = statOutcome(await exec("ps", ["-p", String(s.pid), "-o", "time=,etime=,rss="], EXEC).catch(() => null));
+    if (stat === "error") return; // a timeout or failed exec: keep what's shown, try again next time
+    if (stat === "gone") { this.state = "stopped"; cx.notify(); return; }
     const sample = { at: Date.now(), cpu: stat.cpu };
     this.cpu = cpuPercent(this.sample, sample) ?? this.cpu;
     this.sample = sample;
@@ -79,17 +79,25 @@ export default class PortCard extends View {
     this.dismiss(true);
   }
 
-  // Only if this pid still holds this port: it may have exited, and its pid gone to something else.
+  // Whether this pid still holds this port (it may have exited, and its pid gone to something else): true, false, or
+  // null when lsof itself failed.
   async held() {
     const { pid, port } = props().server;
     const r = await exec("lsof", ["-nP", "-a", "-p", String(pid), `-iTCP:${port}`, "-sTCP:LISTEN", "-Fpcn"], EXEC).catch(() => null);
-    return holds(parseLsof(r?.stdout), pid, port);
+    return heldOutcome(r, pid, port);
   }
 
   async stop(cx) {
     const { pid, port } = props().server;
     this.asking = false;
-    if (!(await this.held())) {
+    if (!canStop(props().who)) return; // never Docker, however Stop was reached
+    const held = await this.held();
+    if (held === null) {
+      notify({ title: `Couldn't check :${port}`, body: "Nothing was stopped. Try again.", level: "warning" });
+      cx.notify();
+      return;
+    }
+    if (!held) {
       notify({ title: `:${port} already stopped`, level: "info" });
       this.state = "stopped";
       cx.notify();
@@ -105,7 +113,7 @@ export default class PortCard extends View {
     cx.notify();
     for (let waited = 0; waited < STOP_WAIT_MS; waited += STOP_CHECK_MS) {
       await new Promise((ok) => cx.timer.after(STOP_CHECK_MS, ok));
-      if (!(await this.held())) {
+      if ((await this.held()) === false) { // null (lsof failed) keeps waiting
         this.state = "stopped";
         cx.notify();
         cx.timer.after(CLOSE_AFTER_STOP_MS, () => { if (this.state === "stopped") this.dismiss(); });
@@ -120,13 +128,13 @@ export default class PortCard extends View {
   // The buttons for the moment: the question while asking, else Go to · Stop · Open (each where it applies).
   buttons() {
     const s = props().server, w = props().who, t = theme(), live = this.state === "live";
-    if (this.asking) return [
+    if (this.asking && canStop(w)) return [
       { id: "cancel", label: "Cancel", act: (cx) => { this.asking = false; this.sel = null; cx.notify(); } },
       { id: "stop", label: "Stop", ink: t.blocked, act: (cx) => this.stop(cx) },
     ];
     const go = w.kind === "sure" || w.kind === "probable"
       ? [{ id: "go", label: w.agent ? (w.probable ? "Go to agent?" : "Go to agent") : "Go to terminal", act: () => this.goTo() }] : [];
-    const stop = w.kind !== "docker" && live ? [{ id: "ask", label: "Stop", ink: t.blocked, act: (cx) => { this.asking = true; this.sel = null; cx.notify(); } }] : [];
+    const stop = canStop(w) && live ? [{ id: "ask", label: "Stop", ink: t.blocked, act: (cx) => { this.asking = true; this.sel = null; cx.notify(); } }] : [];
     const open = s.web && live ? [{ id: "open", label: "Open", hint: "↵", ink: t.accent, act: (cx) => this.open(cx) }] : [];
     return [...go, ...stop, ...open];
   }

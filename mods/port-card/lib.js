@@ -65,3 +65,24 @@ export function shortArgs(args, command) {
   const m = new RegExp(`/${command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=\\s|$)`).exec(a);
   return m ? `${command}${a.slice(m.index + m[0].length)}` : a;
 }
+
+// ---- Stop's decisions ----
+
+// Never Docker: its pid is Docker itself, and stopping it stops every container. Checked on every path to Stop.
+export const canStop = (who) => !!who && who.kind !== "docker";
+
+// `ps -p <pid> -o time=,etime=,rss=`: { cpu, age, rss } while it runs; "gone" on ps's no-such-process exit (1, nothing
+// printed); "error" for anything else (a timeout, a failed exec), which the card retries instead of calling it stopped.
+export function statOutcome(r) {
+  if (!r) return "error";
+  if (r.code === 0) return parseStat(r.stdout) ?? "error";
+  return r.code === 1 && !(r.stdout ?? "").trim() ? "gone" : "error";
+}
+
+// `lsof -nP -a -p <pid> -iTCP:<port> -sTCP:LISTEN -Fpcn`: true / false, or null when lsof itself failed (unknown).
+// lsof exits 1 when nothing matches.
+export function heldOutcome(r, pid, port) {
+  if (!r) return null;
+  if (r.code === 0) return holds(parseLsof(r.stdout), pid, port);
+  return r.code === 1 ? false : null;
+}

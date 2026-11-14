@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { parseLsof, parseCwds, parsePs, parseEtime, slug, scratchSlug, ownerContext, owner,
-  urlFor, isWeb, servers, sortServers, holds, ago, blockHeight, subAgents, cardHeight } from "./lib.js";
+  urlFor, isWeb, servers, sortServers, holds, ago, blockHeight, subAgents, cardHeight, isLocal, rootOf } from "./lib.js";
 import { LSOF, CWDS, PS, SCRATCH } from "./fixtures.js";
 
 test("parseLsof: one entry per pid+host+port; IPv4/IPv6 sockets of one pid kept apart by host", () => {
@@ -223,4 +223,21 @@ test("cardHeight: the centred card fits its lines; optional lines add height", (
   expect(cardHeight({ ...server, cwd: "/tmp/x" }, who)).toBeGreaterThan(base);                 // Folder
   expect(cardHeight(server, { ...who, branch: null })).toBeLessThan(base);                    // no Branch
   expect(cardHeight({ cwd: null, ports: [1] }, { kind: "orphan", task: "", branch: null, folder: null })).toBeGreaterThan(200);
+});
+
+test("isLocal: remote terminals are told by their machine/ address prefix as well as machine (review: Important 2)", () => {
+  expect(isLocal({ address: "t1", state: "live", machine: null })).toBe(true);
+  expect(isLocal({ address: "box/t9", state: "live" })).toBe(false); // no machine key, remote by address
+  expect(isLocal({ address: "t9", state: "live", machine: "box" })).toBe(false);
+  expect(isLocal({ address: "t1", state: "finished", machine: null })).toBe(false);
+  const ctx = ownerContext({ terminals: [{ address: "box/t9", state: "live", pid: 200, foreground: { pid: 300, cwd: "/w/a" }, cwd: "/w/a", program: { agent: true } }],
+    roots: new Map([["/w/a", "/w/a"]]), home: HOME });
+  expect(owner(400, procs([400, 300], [300, 200], [200, 1]), "/w/a", ctx)).toEqual({ kind: "orphan", address: null });
+});
+
+test("rootOf: only a clean answer is kept; a timeout or failure isn't remembered as 'not a repo' (review: Important 4)", () => {
+  expect(rootOf({ code: 0, stdout: "/w/a\n" })).toBe("/w/a");
+  expect(rootOf({ code: 128, stdout: "", stderr: "fatal: not a git repository (or any of the parent directories): .git" })).toBe(null);
+  expect(rootOf({ code: -1, stdout: "", stderr: "timed out" })).toBe(undefined);
+  expect(rootOf(null)).toBe(undefined);
 });

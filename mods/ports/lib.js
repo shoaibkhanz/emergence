@@ -78,8 +78,19 @@ export function scratchSlug(cwd) {
 // another machine's). roots: Map folder -> its git top-level, or null when it isn't in a repo.
 //   byPid: shell pid and foreground pid -> address; fg: agents' foreground pids (their own ports are hidden);
 //   areas: the folder each terminal claims for a server with no terminal above it.
+// A live terminal on this computer. Remote ones carry a machine and a "<machine>/" address (AGENTS.md); either marks
+// one, since a remote pid can equal a local one.
+export const isLocal = (t) => t.state === "live" && t.machine == null && !String(t.address ?? "").includes("/");
+
+// `git -C <dir> rev-parse --show-toplevel`: the top-level, null for a folder that isn't in a repo (exit 128 saying so),
+// undefined for anything else (a timeout, a failed exec): not remembered, so the next poll asks again.
+export function rootOf(r) {
+  if (r?.code === 0) return r.stdout.trim() || undefined;
+  return r?.code === 128 && /not a git repository/i.test(r.stderr ?? "") ? null : undefined;
+}
+
 export function ownerContext({ terminals, roots, home }) {
-  const local = (terminals ?? []).filter((t) => t.state === "live" && t.machine == null);
+  const local = (terminals ?? []).filter(isLocal);
   const byPid = new Map(), fg = new Set(), areas = [];
   const strip = (p) => (p.length > 1 ? p.replace(/\/+$/, "") : p);
   for (const t of local) {

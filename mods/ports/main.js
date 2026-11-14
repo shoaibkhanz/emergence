@@ -7,7 +7,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { exec, home, agents, terminals, panes, spaces, layout, run, theme, shared, setShared, nextCommand, focused, openOverlay } from "herdr";
-import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago, basename, blockHeight, subAgents, cardHeight, CARD, ROW_H, HEADER_H, EMPTY_H, FOOT_H } from "./lib.js";
+import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago, basename, blockHeight, subAgents, cardHeight, isLocal, rootOf, CARD, ROW_H, HEADER_H, EMPTY_H, FOOT_H } from "./lib.js";
 
 const POLL_MS = 5000;
 const FOCUS_CHECK_MS = 250;
@@ -100,11 +100,11 @@ export default class Ports extends View {
 
   // Each local terminal's folder -> its git top-level, once per folder (worktree matching for servers with no parent).
   async resolveRoots(terms) {
-    const dirs = [...new Set(terms.filter((t) => t.state === "live" && t.machine == null)
+    const dirs = [...new Set(terms.filter(isLocal)
       .map((t) => t.foreground?.cwd ?? t.cwd).filter((d) => d && !this.roots.has(d)))];
     await Promise.all(dirs.map(async (d) => {
-      const r = await exec("git", ["-C", d, "rev-parse", "--show-toplevel"], EXEC).catch(() => null);
-      this.roots.set(d, r?.code === 0 ? r.stdout.trim() : null);
+      const root = rootOf(await exec("git", ["-C", d, "rev-parse", "--show-toplevel"], EXEC).catch(() => null));
+      if (root !== undefined) this.roots.set(d, root); // a failure isn't "not a repo": asked again next poll
     }));
   }
 
@@ -156,7 +156,7 @@ export default class Ports extends View {
       this.cur = rows[j]?.key ?? null;
       if (this.cur) this.list.scroll_to_item(j);
     } else if ((k === "enter" || k === "left") && i >= 0) {
-      this.card(rows[i], this.who(rows[i], this.model()), k === "left");
+      this.card(rows[i], this.who(rows[i], this.model()), k === "left" && rows[i].owner.kind !== "docker"); // never Stop Docker
     }
     cx.notify();
   }
