@@ -43,6 +43,28 @@ const hh = (h) => `${String(h % 24).padStart(2, "0")}:00`;
 let data = null; // shared by every copy, so reopening is instant (↻ rescans)
 let output = null; // git and gh facts for the Output tab, read after the sessions (they name the repos)
 let scanned = 0, outputAt = 0; // when the last scan (started or) finished, and the last Output read: copies share them
+let inflight = null; // the scan running now, shared: a copy opened meanwhile waits for it rather than starting its own
+const SLOW_MS = 5000; // a scan running past this says why (a first scan reads every session on the machine)
+
+// One scan for every copy: the sessions (scan.py), then git and gh for Output (output.py, at most every 15 min on the
+// minute timer since gh shares your GitHub budget with your agents). `sessions` resolves as soon as they're read, so
+// the panel draws them while Output is still reading.
+function startScan(quick) {
+  scanned = Date.now();
+  const sessions = (async () => {
+    const r = await exec("python3", [`${appHome()}/mods/usage/scan.py`], { timeout: 600000 });
+    if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || `scan.py exited ${r.code}`);
+    data = JSON.parse(r.stdout);
+  })();
+  const done = sessions.then(async () => {
+    if (quick && Date.now() - outputAt <= 15 * 60000) return;
+    // Your commits, PRs and worktrees in the repos the sessions name, for the last year.
+    const repos = [...new Set(data.sessions.map((s) => s.repo).filter(Boolean))];
+    const o = await exec("python3", [`${appHome()}/mods/usage/output.py`, String(addDays(Date.now(), -365)), ...repos], { timeout: 180000 });
+    if (o.code === 0) { output = JSON.parse(o.stdout); outputAt = Date.now(); }
+  }).finally(() => { scanned = Date.now(); inflight = null; });
+  return { sessions, done };
+}
 const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(c, id)).find(Boolean));
 
 export default class Usage extends View {
@@ -53,6 +75,7 @@ export default class Usage extends View {
     if (this.panel) cx.timer.every(250, (cx) => { if (this.handle.is_focused() !== this.held) cx.notify(); }); // no blur event (comeBack)
     // Every minute while it shows: a rescan reads only the logs that changed (about 1.5 s); Output's git and gh every 15.
     cx.timer.every(60000, (cx) => { if (this.shown() && Date.now() - scanned > 50000) this.scan(cx, true); });
+    cx.timer.every(1000, (cx) => { if (!data && this.busy) cx.notify(); }); // the first read's elapsed seconds
     const r = localStorage.getItem("range");
     this.range = r === "custom" ? "custom" : Number(r ?? 30);
     this.tab = localStorage.getItem("tab") ?? "overview";
@@ -139,21 +162,15 @@ export default class Usage extends View {
     if (this.busy) return;
     this.busy = true;
     this.error = null;
-    scanned = Date.now(); // a second copy's timer won't start another meanwhile
+    this.scanFrom = Date.now();
+    const job = inflight ?? (inflight = startScan(quick)); // another copy's scan running: wait for that one
     cx.spawn(async (cx) => {
       try {
-        const r = await exec("python3", [`${appHome()}/mods/usage/scan.py`], { timeout: 600000 });
-        if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || `scan.py exited ${r.code}`);
-        data = JSON.parse(r.stdout);
-        if (!quick || Date.now() - outputAt > 15 * 60000) {
-          // Then your commits, PRs and worktrees in the repos the sessions name, for the last year.
-          const repos = [...new Set(data.sessions.map((s) => s.repo).filter(Boolean))];
-          const o = await exec("python3", [`${appHome()}/mods/usage/output.py`, String(addDays(Date.now(), -365)), ...repos], { timeout: 180000 });
-          if (o.code === 0) { output = JSON.parse(o.stdout); outputAt = Date.now(); }
-        }
+        await job.sessions;
+        cx.notify(); // the sessions show now; Output fills in when git and gh are done
+        await job.done;
       } catch (e) { this.error = String(e?.message ?? e); }
       this.busy = false;
-      scanned = Date.now();
       cx.notify();
     });
   }
@@ -657,9 +674,13 @@ export default class Usage extends View {
     for (const s of sessions) if (!s.sub && s.start >= win.from && s.start < win.to && keep(s.start)) counts[s.h] = (counts[s.h] ?? 0) + 1;
     root.child(this.header(t, present, counts, p));
     if (!data) {
+      // How long it's been, and, once it runs long, why: a first scan reads every session on the machine.
+      const ms = Date.now() - (this.scanFrom ?? Date.now());
       return root.child(v_flex().flex_1().items_center().justify_center().gap(8).p(24).text_center()
-        .child(div().text_size(13).text_color(t.muted).child(this.busy ? "Reading your harnesses' session logs…" : "Couldn't read the session logs."))
-        .child(div().max_w(420).text_size(12).text_color(t.dim).child(this.busy ? "omp, Claude Code, Codex, OpenCode and pi, on this machine. The first scan takes a while; later ones only read what changed." : this.error ?? "")));
+        .child(div().text_size(13).text_color(t.muted).child(this.busy ? `Reading your harnesses' session logs… ${Math.floor(ms / 1000)}s` : "Couldn't read the session logs."))
+        .child(div().max_w(460).text_size(12).text_color(t.dim).child(!this.busy ? (this.error ?? "Rescan (↻) to try again.")
+          : ms < SLOW_MS ? "omp, Claude Code, Codex, OpenCode and pi, on this machine."
+          : "The first scan reads every session these harnesses have kept, so a long history can take a minute. After that, only what changed is read.")));
     }
     const on = new Set(present.filter((h) => !this.off.has(h)));
     // Weekday labels 31 + 14 per week must fit inside the body and card padding.
