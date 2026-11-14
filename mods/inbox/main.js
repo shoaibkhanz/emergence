@@ -5,6 +5,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
+import { subAgents } from "./lib.js";
 import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared, setShared, nextCommand, focused } from "herdr";
 
 function find(node, id) {
@@ -75,8 +76,14 @@ export default class Inbox extends View {
       const j = Math.max(0, Math.min(this.cards.length - 1, i + (k === "up" ? -1 : 1)));
       this.cur = this.cards[j]?.address ?? null;
       if (this.cur) this.list.scroll_to_item(j);
-    } else if (k === "enter" && i >= 0) { run("agent.focus", { terminal: this.cur }); run("pane.focus", { terminal: this.cur }); } // pane.focus releases our keyboard
+    } else if (k === "enter" && i >= 0) this.go(this.cards[i]);
     cx.notify();
+  }
+
+  // To an agent: its tab (pane.focus releases our keyboard), or a sub-agent's terminal peeked over the tab (it has none).
+  go(a) {
+    if (a.sub) run("terminal.peek", { terminal: a.address });
+    else { run("agent.focus", { terminal: a.address }); run("pane.focus", { terminal: a.address }); }
   }
 
   // Spaces gets the height its rows ask for (spaces.want: its rows, worktrees and machine headers, as Spaces drew
@@ -123,7 +130,7 @@ export default class Inbox extends View {
       .hover((s) => s.bg(t.hover))
       .when(this.ringed && this.cur === a.address, (el) => el.border_1().border_color(t.accent))
       .on_hover((on, cx) => { if (on) this.hovered = a.address; else if (this.hovered === a.address) this.hovered = null; cx.notify(); })
-      .on_click(() => run("agent.focus", { terminal: a.address }))
+      .on_click(() => this.go(a))
       .child(h_flex().h(18).gap(6).items_center()
         .child(this.mark(t, a.program, 14))
         .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.foreground).child(pane?.branch || pane?.cwd?.split("/").filter(Boolean).pop() || a.space_name))
@@ -148,7 +155,7 @@ export default class Inbox extends View {
     const tabs = new Map(spaces().flatMap((s) => s.tabs).map((tab) => [tab.id, tab]));
     const parent = new Map(terminals().map((x) => [x.address, x.parent]));
     const pane = new Map(panes().map((p) => [p.pane, p]));
-    const all = agents();
+    const tabbed = agents(), all = [...tabbed, ...subAgents(terminals(), new Set(tabbed.map((a) => a.address)))]; // + sub-agents (no tab)
     // Waiting on you: blocked anywhere, else finished or idle where the tab isn't settled. A sub-agent's
     // finish is its parent's news. Blocked first, then done, then idle; the newest first in each.
     const cards = all.filter((a) => a.status === "blocked" || (RANK[a.status] !== undefined && !tabs.get(a.tab)?.settled && !parent.get(a.address)))

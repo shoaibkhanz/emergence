@@ -82,7 +82,8 @@ Usage keeps every session it has read.</td>
   On a worktree, ← deletes it (`git worktree remove`; refused with uncommitted changes, branch kept) and → archives it
   (hidden, still on disk; reopen from ⌘E). Right-click for the same. Both ask first (Cancel selected), then leave
   the keyboard in Spaces.
-- **Inbox**: every agent waiting on you, newest first; Settle puts one away. **Working N** opens the graph on what's
+- **Inbox**: every agent waiting on you, newest first, including a blocked sub-agent another agent started (click to
+  peek at it); Settle puts one away. **Working N** opens the graph on what's
   working (everything at 0).
 - **Sizes**: open, rail, dots (⌘B, ⌘⌥B).
 

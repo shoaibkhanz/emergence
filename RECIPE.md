@@ -66,6 +66,9 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - Clicking a card focuses its agent (`agent.focus`).
   - Hovering swaps the age for **Settle** (`tab.settle`). Settled tabs go to the shelf; Herdr brings one back when its
     agent needs you. Clicking a shelf row shows the tab.
+  - Sub-agents (started with `hc run --bg`) have no tab, so `agents()` misses them: the inbox adds them from
+    `terminals()` (`lib.js` `subAgents`: live, with a parent, an agent program or a status report). A blocked one gets a
+    "Needs you" card that peeks at it (`terminal.peek`); working ones count in "Working N".
   - "Working N" is always there (N may be 0) and opens the Agents panel: on what's working (active only, shared
     `graph.want`) while N > 0, else on everything. The graph draws working agents in `t.working` (border and tint)
     as it draws blocked ones in `t.blocked`.
