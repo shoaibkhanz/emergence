@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { parseLsof, parseCwds, parsePs, parseEtime, slug, scratchSlug, ownerContext, owner,
-  urlFor, isWeb, servers, sortServers, holds, ago } from "./lib.js";
+  urlFor, isWeb, servers, sortServers, holds, ago, blockHeight } from "./lib.js";
 import { LSOF, CWDS, PS, SCRATCH } from "./fixtures.js";
 
 test("parseLsof: one entry per pid+host+port; IPv4/IPv6 sockets of one pid kept apart by host", () => {
@@ -194,4 +194,12 @@ test("holds: true only while that pid holds that port (Review Focus 3)", () => {
 
 test("ago: now, minutes, hours, days", () => {
   expect([ago(30), ago(12 * 60), ago(3 * 3600 + 5), ago(2 * 86400)]).toEqual(["now", "12m", "3h", "2d"]);
+});
+
+test("blockHeight: from the row count alone (no measured size to chase); 0 folded; capped rows", () => {
+  expect(blockHeight(0, true)).toBe(0);
+  expect(blockHeight(3, true)).toBe(0);
+  expect(blockHeight(0, false)).toBe(32);
+  expect(blockHeight(2, false)).toBe(41 + 2 * 30);
+  expect(blockHeight(9, false)).toBe(41 + 5 * 30);
 });

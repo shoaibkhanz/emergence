@@ -194,3 +194,10 @@ export function sortServers(list) {
   const orphan = (s) => s.owner.kind === "orphan";
   return [...list].sort((a, b) => orphan(a) - orphan(b) || (orphan(a) ? b.age - a.age : a.port - b.port));
 }
+
+// ---- The block ----
+
+export const ROW_H = 30, HEADER_H = 41, EMPTY_H = 32, MAX_ROWS = 5;
+
+// The Ports block's height: a function of the row count only, so it can't chase Inbox's fitSpaces in a resize loop.
+export const blockHeight = (rows, folded) => (folded ? 0 : rows ? HEADER_H + Math.min(rows, MAX_ROWS) * ROW_H : EMPTY_H);
