@@ -55,3 +55,72 @@ export function parsePs(text) {
   }
   return out;
 }
+
+// ---- Ownership ----
+
+const DOCKER = /^(com\.docker\.|vpnkit|OrbStack)/; // Docker Desktop / OrbStack: they publish containers' ports
+const TEMP_ROOTS = ["/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/"];
+const MAX_HOPS = 64;
+
+export const basename = (path) => (path ?? "").split("/").filter(Boolean).pop() ?? "";
+const inside = (path, root) => path === root || path.startsWith(root.endsWith("/") ? root : `${root}/`);
+
+// Claude Code names a project's folders by its path with every non-alphanumeric character as "-".
+export const slug = (path) => (path ?? "").replace(/[^A-Za-z0-9]/g, "-");
+
+// A Claude Code scratchpad, <temp>/claude-<uid>/<slug>/…: the slug of the project it belongs to.
+export function scratchSlug(cwd) {
+  if (!cwd || !TEMP_ROOTS.some((r) => cwd.startsWith(r))) return null;
+  return /\/claude-\d+\/([^/]+)/.exec(cwd)?.[1] ?? null;
+}
+
+// What owner() needs from Herdr's terminals(), for this computer's live terminals only (a remote terminal's pid is
+// another machine's). roots: Map folder -> its git top-level, or null when it isn't in a repo.
+//   byPid: shell pid and foreground pid -> address; fg: agents' foreground pids (their own ports are hidden);
+//   areas: the folder each terminal claims for a server with no terminal above it.
+export function ownerContext({ terminals, roots, home }) {
+  const local = (terminals ?? []).filter((t) => t.state === "live" && t.machine == null);
+  const byPid = new Map(), fg = new Set(), areas = [];
+  const strip = (p) => (p.length > 1 ? p.replace(/\/+$/, "") : p);
+  for (const t of local) {
+    if (t.pid) byPid.set(t.pid, t.address);
+    if (t.foreground?.pid) {
+      byPid.set(t.foreground.pid, t.address);
+      if (t.program?.agent || t.report) fg.add(t.foreground.pid);
+    }
+    const folder = t.foreground?.cwd ?? t.cwd;
+    if (!folder) continue;
+    const top = roots?.get(folder) ?? null;
+    const root = strip(top ?? folder);
+    if (root === strip(home ?? "") || root === "/") continue; // ~ or / would claim every orphan on the machine
+    areas.push({ root, exact: !top, slug: slug(folder), address: t.address, seq: t.status_ms ?? 0 });
+  }
+  return { byPid, fg, areas };
+}
+
+const latest = (list) => list.reduce((a, b) => (b.seq > a.seq ? b : a));
+
+// Who owns a process: "sure" (a terminal is on its parent chain), "docker", "probable" (its folder is inside a
+// terminal's worktree, or it's that agent's Claude scratchpad), else "orphan".
+export function owner(pid, procs, cwd, ctx) {
+  const seen = new Set();
+  for (let p = pid, hops = 0; p > 1 && hops < MAX_HOPS && !seen.has(p); hops++) {
+    if (ctx.byPid.has(p)) return { kind: "sure", address: ctx.byPid.get(p) };
+    seen.add(p);
+    const proc = procs.get(p);
+    if (!proc) break;
+    p = proc.ppid;
+  }
+  if (DOCKER.test(basename(procs.get(pid)?.comm))) return { kind: "docker", address: null };
+  if (cwd) {
+    const hits = ctx.areas.filter((a) => (a.exact ? cwd === a.root : inside(cwd, a.root)));
+    if (hits.length) {
+      const deepest = Math.max(...hits.map((a) => a.root.length));
+      return { kind: "probable", address: latest(hits.filter((a) => a.root.length === deepest)).address };
+    }
+    const s = scratchSlug(cwd);
+    const mine = s ? ctx.areas.filter((a) => a.slug === s) : [];
+    if (mine.length) return { kind: "probable", address: latest(mine).address };
+  }
+  return { kind: "orphan", address: null };
+}
