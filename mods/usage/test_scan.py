@@ -219,6 +219,17 @@ class ScanTest(unittest.TestCase):
         self.assertIn("omp-new", r)
         self.assertNotIn("omp-main", r)
 
+    def test_parallel_parse_matches_sequential(self):
+        cache = os.path.join(os.environ["HERDR_APP_HOME"], "data", "usage", "cache.json")
+        runs = []
+        for floor in (10**9, 0):  # never parallel, then always (a first scan of a long history)
+            if os.path.exists(cache):
+                os.remove(cache)
+            with mock.patch.object(scan, "PARALLEL_MIN", floor):
+                runs.append(sorted(scan.scan(self.home)["sessions"], key=lambda r: (r["h"], r["id"])))
+        self.assertEqual(runs[0], runs[1])
+        self.assertGreater(len(runs[0]), 3)
+
     def test_codex_compressed_rollout_replaces_entry(self):
         self.by_id()
         os.remove(self.rollout)
@@ -250,6 +261,33 @@ class ScanTest(unittest.TestCase):
         self.assertEqual([s["id"] for s in out].count("agent-a1"), 1)
         r = {s["id"]: s for s in out}["uuid-2"]
         self.assertEqual((r["tok"], r["req"], r["start"]), (5, 1, T * 1000))
+
+
+import output  # noqa: E402
+
+
+class OutputTest(unittest.TestCase):
+    """Commit line counts: listed cheaply, diffed once per commit (a commit's diff never changes), lockfiles skipped."""
+
+    def setUp(self):
+        self.repo = tempfile.mkdtemp()
+        g = lambda *a: subprocess.run(["git", *a], cwd=self.repo, check=True, capture_output=True)
+        g("init", "-q"); g("config", "user.email", "me@example.com"); g("config", "user.name", "me")
+        with open(os.path.join(self.repo, "a.txt"), "w") as f: f.write("1\n2\n3\n")
+        g("add", "."); g("commit", "-qm", "one")
+        with open(os.path.join(self.repo, "b.txt"), "w") as f: f.write("x\ny\n")
+        with open(os.path.join(self.repo, "package-lock.json"), "w") as f: f.write("{}\n" * 50)
+        g("add", "."); g("commit", "-qm", "two")
+
+    def test_counts_commits_once_and_skips_lockfiles(self):
+        commits, kept = output.commit_counts(self.repo, "me@example.com", 0, {"stale": [9, 9]})
+        self.assertEqual(sorted((c["add"], c["del"]) for c in commits), [(2, 0), (3, 0)])  # the lockfile's 50 lines don't count
+        self.assertEqual(sorted(kept.values()), [[2, 0], [3, 0]])  # only the commits listed: "stale" is dropped
+        with mock.patch.object(output, "run", wraps=output.run) as run:
+            again, kept2 = output.commit_counts(self.repo, "me@example.com", 0, kept)
+        self.assertEqual(sorted((c["add"], c["del"]) for c in again), [(2, 0), (3, 0)])
+        self.assertEqual(kept2, kept)
+        self.assertFalse(any("show" in call.args[0] for call in run.call_args_list))  # nothing diffed the second time
 
 
 if __name__ == "__main__":
