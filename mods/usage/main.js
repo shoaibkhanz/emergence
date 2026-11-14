@@ -154,7 +154,7 @@ export default class Usage extends View {
       const lo = Math.min(this.custom.from, this.custom.to), hi = Math.max(this.custom.from, this.custom.to);
       return { from: lo, to: addDays(hi, 1), label: `${date(lo)} – ${date(hi)}`, days: Math.round((hi - lo) / DAY) + 1 };
     }
-    return { from: addDays(now, 1 - this.range), to: now, label: `the last ${RANGES.find(([d]) => d === this.range)[1]}`, days: this.range };
+    return { from: addDays(now, 1 - this.range), to: now, label: this.range === 365 ? "the last year" : `the last ${this.range} days`, days: this.range };
   }
 
   // ↻ reads everything; the minute timer (quick) reruns git and gh for Output only every 15 min, since gh's calls
@@ -309,7 +309,8 @@ export default class Usage extends View {
     ]);
   }
 
-  heatmap(t, cells, weeks) {
+  // The calendar always shows the last weeks for context; days outside the period are dimmed and can't be picked.
+  heatmap(t, cells, weeks, p) {
     const cols = [];
     for (let i = 0; i < cells.length; i += 7) cols.push(cells.slice(i, i + 7));
     const ink = t.done;
@@ -320,13 +321,15 @@ export default class Usage extends View {
         return v_flex().w(11).flex_none().gap(3)
           .child(div().w(11).h(14).text_size(9).text_color(t.dim).whitespace_nowrap().child(prev && prev.getMonth() !== first.getMonth() ? MONTH[first.getMonth()] : ""))
           .children(col.map((d) => {
-            const inside = this.range === "custom" && d.t >= Math.min(this.custom.from, this.custom.to) && d.t <= Math.max(this.custom.from, this.custom.to);
-            const cell = div().id(`heat-${d.t}`).size(11).rounded(3).cursor_pointer().bg(d.level ? alpha(ink, LEVEL[d.level]) : t.raised)
-              .when(inside, (el) => el.border(1).border_color(alpha(t.accent, 0.8)))
-              .when(!this.lit([d.t, d.t]), (el) => el.opacity(0.3))
+            const inPeriod = d.t >= p.from && d.t < p.to, custom = this.range === "custom";
+            const cell = div().id(`heat-${d.t}`).size(11).rounded(3).bg(d.level ? alpha(ink, LEVEL[d.level]) : t.raised)
+              .when(custom || inPeriod, (el) => el.cursor_pointer())
+              .when(custom && inPeriod, (el) => el.border(1).border_color(alpha(t.accent, 0.8)))
+              .when(!inPeriod || !this.lit([d.t, d.t]), (el) => el.opacity(0.3))
               .on_hover((on, cx) => { if (on) { this.hoverDay = d.t; this.dragTo("days", [d.t, d.t]); } else if (this.hoverDay === d.t) this.hoverDay = null; cx.notify(); });
             // Custom period: the first click starts it, the second ends it (either order). Otherwise days are picked.
-            return this.range !== "custom" ? cell.on_mouse_down("left", (e, cx) => { this.press("days", [d.t, d.t], e, cx); cx.notify(); })
+            if (!custom && !inPeriod) return cell;
+            return !custom ? cell.on_mouse_down("left", (e, cx) => { this.press("days", [d.t, d.t], e, cx); cx.notify(); })
               : cell.on_click((_e, cx) => {
                 this.setCustom(this.picking ? { from: this.custom.from, to: d.t } : { from: d.t, to: d.t });
                 this.picking = !this.picking;
@@ -350,7 +353,8 @@ export default class Usage extends View {
       .child(h_flex().gap(3).items_center().text_size(11).text_color(t.dim).child(div().mr(4).child("Less"))
         .children(LEVEL.map((a, i) => div().size(11).rounded(3).bg(i ? alpha(ink, a) : t.raised))).child(div().ml(4).child("More")));
     const metrics = [["sessions", "Sessions"], ["tokens", "Tokens"], ...(cells.some((d) => d.cost) ? [["cost", "Cost"]] : [])];
-    return this.card(t, `Activity, last ${weeks} weeks`, this.segmented(t, "metric", metrics, this.metric, (v) => { this.metric = v; }),
+    const all = cells[0].t >= p.from;
+    return this.card(t, `Activity, last ${weeks} weeks${all ? "" : ` · ${p.label} highlighted`}`, this.segmented(t, "metric", metrics, this.metric, (v) => { this.metric = v; }),
       v_flex().gap(10).child(grid).child(readout));
   }
 
@@ -793,7 +797,7 @@ export default class Usage extends View {
             .child(v_flex().flex_1().min_w(0).gap(12).child(this.parallel(t, r0, r)).child(lengths).child(days))
           : v_flex().gap(12).child(this.punch(t, r0, r)).child(this.parallel(t, r0, r)).child(lengths).child(days)];
       })() : [empty])
-      : [this.tiles(t, r), this.heatmap(t, cells, weeks), ...(r.tiles.sessions ? [this.pair(this.tokensCard(t, r), this.workCard(t, r))]
+      : [this.tiles(t, r), this.heatmap(t, cells, weeks, p), ...(r.tiles.sessions ? [this.pair(this.tokensCard(t, r), this.workCard(t, r))]
         : this.sel ? [div().p(12).text_center().text_size(13).text_color(t.muted).child(`No sessions in ${this.selLabel()}. Clear it (✕, top right) to see ${p.label}.`)] : [])];
     return root.child(v_flex().id("usage-body").flex_1().min_h(0).p(16).gap(12).overflow_y_scrollbar().children(view));
   }
