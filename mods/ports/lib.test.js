@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { parseLsof, parseCwds, parsePs, parseEtime, slug, scratchSlug, ownerContext, owner,
-  urlFor, isWeb, servers, sortServers, holds, ago, blockHeight, subAgents, cardHeight, isLocal, rootOf } from "./lib.js";
+  urlFor, isWeb, servers, sortServers, holds, ago, blockHeight, subAgents, cardHeight, isLocal, rootOf, kindOf } from "./lib.js";
 import { LSOF, CWDS, PS, SCRATCH } from "./fixtures.js";
 
 test("parseLsof: one entry per pid+host+port; IPv4/IPv6 sockets of one pid kept apart by host", () => {
@@ -240,4 +240,17 @@ test("rootOf: only a clean answer is kept; a timeout or failure isn't remembered
   expect(rootOf({ code: 128, stdout: "", stderr: "fatal: not a git repository (or any of the parent directories): .git" })).toBe(null);
   expect(rootOf({ code: -1, stdout: "", stderr: "timed out" })).toBe(undefined);
   expect(rootOf(null)).toBe(undefined);
+});
+
+test("kindOf: what a server is, for its icon: web, a database, a debugger, Docker, or other", () => {
+  expect(kindOf({ port: 5173, command: "node", owner: { kind: "sure" } })).toBe("web");
+  expect(kindOf({ port: 5432, command: "postgres", owner: { kind: "orphan" } })).toBe("db");
+  expect(kindOf({ port: 6380, command: "redis-server", owner: { kind: "sure" } })).toBe("db");
+  expect(kindOf({ port: 9229, command: "node", owner: { kind: "sure" } })).toBe("debug");
+  expect(kindOf({ port: 5432, command: "com.docker.backend", owner: { kind: "docker" } })).toBe("docker");
+  expect(kindOf({ port: 5672, command: "beam.smp", owner: { kind: "sure" } })).toBe("other");
+});
+
+test("isWeb follows kindOf: only web servers offer Open", () => {
+  expect([isWeb(5173, "node"), isWeb(5432, "x"), isWeb(9229, "node"), isWeb(5672, "beam.smp")]).toEqual([true, false, false, false]);
 });

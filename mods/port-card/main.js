@@ -21,6 +21,7 @@ const M = { pad: 24, gap: 16, header: 22, url: 34, line: 20, task: 20, fieldGap:
 const EXEC = { timeout: 4000 };
 const MONO = "Geist Mono";
 const ICON = (name) => `mods/port-card/${name}.svg`;
+const KIND = { web: "app-window", db: "database", debug: "bug", docker: "container", other: "plug" }; // as the Ports row
 const STATUS = { working: "working", blocked: "needs you", done: "finished", idle: "idle" };
 
 const alpha = (c, a) => c.slice(0, 7) + Math.round(a * 255).toString(16).padStart(2, "0");
@@ -211,6 +212,7 @@ export default class PortCard extends View {
     return v_flex().id("port-card").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .size_full().min_h(0).p(M.pad).gap(M.gap).rounded(10).bg(t.popover).text_size(13)
       .child(h_flex().h(M.header).flex_none().items_center().gap(10)
+        .child(svg(ICON(KIND[s.kind] ?? "plug")).size(16).flex_none().text_color(t.muted))
         .child(div().flex_none().font_family(MONO).text_size(15).font_semibold().text_color(t.foreground).child(`:${s.port}`))
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(s.command))
         .child(div().id("pc-esc").flex_none().px(6).py(2).rounded(5).text_size(11).text_color(t.dim).cursor_pointer()

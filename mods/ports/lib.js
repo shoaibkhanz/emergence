@@ -141,8 +141,10 @@ export function owner(pid, procs, cwd, ctx) {
 const AGENT_BINS = ["claude", "codex", "omp", "pi", "opencode"];
 // ponytail: a table of well-known non-web ports and programs, never a request to the port (a one-shot login
 // callback would take a probe as its answer). Upgrade: probe on the person's own click.
-const NOT_WEB_PORTS = [5432, 3306, 6379, 27017, 9229, 9230, 11211, 5672, 1883, 2181, 9092];
-const NOT_WEB_NAMES = ["postgres", "mysqld", "redis-server", "mongod", "memcached"];
+const DB_PORTS = [5432, 3306, 6379, 27017, 11211];
+const DB_NAMES = ["postgres", "mysqld", "redis-server", "mongod", "memcached"];
+const DEBUG_PORTS = [9229, 9230]; // node --inspect
+const OTHER_PORTS = [5672, 1883, 2181, 9092]; // AMQP, MQTT, ZooKeeper, Kafka: not web, not a database
 const ANY = ["*", "0.0.0.0", "[::]"];
 const LOOPBACK = (h) => h === "[::1]" || h === "localhost" || h.startsWith("127.");
 
@@ -153,7 +155,15 @@ export function urlFor(hosts, port) {
   return `http://${host}:${port}`;
 }
 
-export const isWeb = (port, comm) => !NOT_WEB_PORTS.includes(port) && !NOT_WEB_NAMES.includes(basename(comm));
+// What a server is, for its icon: "docker", "db", "debug", "other" (not web), else "web".
+export function kindOf({ port, command, owner }) {
+  if (owner?.kind === "docker") return "docker";
+  if (DB_PORTS.includes(port) || DB_NAMES.includes(basename(command))) return "db";
+  if (DEBUG_PORTS.includes(port)) return "debug";
+  return OTHER_PORTS.includes(port) ? "other" : "web";
+}
+
+export const isWeb = (port, comm) => kindOf({ port, command: comm }) === "web";
 
 export const holds = (listeners, pid, port) => listeners.some((l) => l.pid === pid && l.port === port);
 
@@ -195,7 +205,7 @@ export function servers({ listeners, procs, cwds, ctx, home }) {
     const o = owner(g.pid, procs, cwd ?? undefined, ctx);
     if (!worthShowing(o, cwd, comm, home)) continue;
     out.push({ key, pid: g.pid, port: g.port, ports: portsOf(g.pid), command: basename(comm) || g.command, hosts: g.hosts,
-      url: urlFor(g.hosts, g.port), web: isWeb(g.port, comm),
+      url: urlFor(g.hosts, g.port), web: isWeb(g.port, comm), kind: kindOf({ port: g.port, command: comm, owner: o }),
       network: g.hosts.some((h) => ANY.includes(h) || !LOOPBACK(h)), age: procs.get(g.pid)?.age ?? 0, cwd, owner: o });
   }
   return out;

@@ -18,6 +18,9 @@ const RAIL_W = 160; // the sidebar folds to a rail below this width (as Inbox re
 const EXEC = { timeout: 4000 };
 const MONO = "Geist Mono";
 const ICON = (name) => `mods/ports/${name}.svg`;
+// A row leads with what the server is (lib's kindOf); who started it sits on the right, by its branch.
+const KIND = { web: ["app-window", "Web server"], db: ["database", "Database"], debug: ["bug", "Debugger"],
+  docker: ["container", "Docker"], other: ["plug", "Server"] };
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -205,17 +208,21 @@ export default class Ports extends View {
       .border(1).border_color(t.border).text_size(11).text_color(t.muted).hover((st) => st.bg(t.hover).text_color(t.foreground))
       .tooltip(s.url).on_click((_e, cx) => { cx.stop_propagation(); cx.open_url(s.url); })
       .child(svg(ICON("external-link")).size(11)).child("Open");
+    const owned = s.owner.kind === "sure" || s.owner.kind === "probable";
     const owner = h_flex().flex_1().min_w(0).gap(6).justify_end().items_center().font_family(MONO).text_size(11.5).text_color(t.dim)
-      .when(s.network, (el) => el.child(svg(ICON("globe")).size(12).flex_none().text_color(t.dim)))
+      .when(s.network, (el) => el.child(div().id(`port-net-${s.key}`).flex_none().tooltip("Your network can reach it")
+        .child(svg(ICON("globe")).size(12).text_color(t.dim))))
+      .when(owned, (el) => el.child(this.mark(t, w, 12)))
       .child(orphan
         ? h_flex().flex_none().gap(4).child("no agent ·").child(div().when(s.age > FORGOTTEN_S, (el) => el.text_color(t.working)).child(ago(s.age)))
         : div().min_w(0).truncate().child(w.label));
+    const [icon, what] = KIND[s.kind] ?? KIND.other;
     return h_flex().id(`port-${s.key}`).h(ROW_H).px(10).gap(8).flex_none().items_center().rounded(8).cursor_pointer()
       .hover((st) => st.bg(t.hover))
       .when(this.ringed && this.cur === s.key, (el) => el.border_1().border_color(t.accent))
       .on_hover((on, cx) => { if (on) this.hovered = s.key; else if (this.hovered === s.key) this.hovered = null; cx.notify(); })
       .on_click(() => { this.cur = s.key; this.card(s, w); })
-      .child(this.mark(t, w, 14))
+      .child(div().id(`port-kind-${s.key}`).flex_none().tooltip(what).child(svg(ICON(icon)).size(14).text_color(t.muted)))
       .child(div().flex_none().font_family(MONO).text_size(12.5).text_color(t.foreground).child(`:${s.port}`))
       .child(div().flex_none().text_size(12).text_color(t.muted).child(s.command))
       .child(over && s.web ? h_flex().flex_1().justify_end().child(open) : owner);

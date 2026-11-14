@@ -41,10 +41,11 @@ Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` div
     or one 32px "Ports none" row; the slack below; then "Working N ›" (32px, spinner glyph, still), the sidebar's last
     row. The inbox sizes the block (`splitColumn`, with Spaces): what Ports publishes in `shared("ports.want")` (header,
     up to 5 rows, Working; from its row count alone) plus the room under the inbox's cards. Folded: 0px, no polling.
-    - A row: the owner's program mark (14px; half strength when the owner is only probable; a hollow ring for no
-      agent or Docker), `:port` in Geist Mono 12.5px, the process name (12px `muted`), and on the right a `dim` globe
-      when it listens on every interface, then the owner's branch (else folder) in Geist Mono 11.5px `dim`, or "no
-      agent · age" with the age in `working` past an hour. Hover swaps the owner for an Open chip (web servers only).
+    - A row: what it is (a 14px `muted` Lucide icon from `kindOf`: app-window web, database, bug debugger, container
+      Docker, plug other), `:port` in Geist Mono 12.5px, the process name (12px `muted`), and on the right a `dim`
+      globe when your network can reach it, then who: the owner's program mark (12px; half strength when only
+      probable) and its branch (else folder) in Geist Mono 11.5px `dim`, or "no agent · age" with the age in
+      `working` past an hour. Hover swaps the owner for an Open chip (web servers only).
     - The card (`port-card`, a 340px popup): `:port` and process, the address in a mono box with copy, then Agent
       (mark, program · status or "probably", task), Branch, Command (one line, the full one in a tooltip), Folder (only
       when it isn't the agent's folder), Running (uptime · CPU · memory, every 5 s), Reach, Also (its other ports).
