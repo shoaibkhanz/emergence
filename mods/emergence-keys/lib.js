@@ -16,8 +16,11 @@ export const GROUPS = [
     [{ keys: "← →" }, "On a repo: fold or unfold it"],
     [{ keys: "←" }, "On a worktree: delete it (asks first; also on right-click)"],
     [{ keys: "→" }, "On a worktree: archive it (asks first; also on right-click)"],
-    [{ action: "inbox.focus" }, "Spaces → Inbox"],
+    [{ action: "inbox.focus", section: "mod:spaces-plus" }, "Spaces → Inbox"],
+    [{ action: "ports.focus" }, "Inbox → Ports"],
     [{ action: "spaces-plus.focus" }, "Inbox → Spaces"],
+    [{ action: "inbox.focus", section: "mod:ports" }, "Ports → Inbox"],
+    [{ keys: "↵ · ←" }, "On a port: its card · stop it (asks first)"],
     [{ action: "spaces-plus.back", keys: "Esc" }, "Back to the terminal you came from"],
   ]],
   ["PRs", [
@@ -41,10 +44,11 @@ export const glyphs = (k) => k.split("-").map((p) => GLYPH[p] ?? (p.length === 1
 
 // [group, [[keys text, what], ...]] for the bindings (keys()); an unbound action shows "—"; filtered by text.
 export function rows(bindings, filter = "") {
-  const keyOf = (a) => bindings.find((b) => b.action === a)?.keys;
+  // A row may name the section its binding lives in: inbox.focus is ctrl-j in Spaces and ctrl-k in Ports.
+  const keyOf = (a, section) => bindings.find((b) => b.action === a && (!section || b.section === section))?.keys;
   const f = filter.trim().toLowerCase();
   return GROUPS.map(([name, list]) => [name, list.map(([k, what]) => {
-    const actions = [k.action ?? []].flat(), bound = actions.map(keyOf).filter(Boolean);
+    const actions = [k.action ?? []].flat(), bound = actions.map((a) => keyOf(a, k.section)).filter(Boolean);
     const text = [bound.length ? bound.map(glyphs).join(" ") : actions.length && !k.keys ? "—" : "", k.keys ?? ""].filter(Boolean).join(" · ");
     return [text, what];
   }).filter(([text, what]) => !f || `${text} ${what}`.toLowerCase().includes(f))]).filter(([, list]) => list.length);

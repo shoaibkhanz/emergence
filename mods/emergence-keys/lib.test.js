@@ -18,3 +18,10 @@ test("rows: bound keys from keys.json, unbound shows —, in-mod keys as written
   expect(all["Move between panes and (n)vim splits (nav-keys, optional)"]).toBe("—");
   expect(rows(b, "archive")).toEqual([["Sidebar", [["→", "On a worktree: archive it (asks first; also on right-click)"]]]]);
 });
+
+test("rows: an action bound in several sections shows the binding from the section the row names", () => {
+  const b = [{ section: "mod:ports", action: "inbox.focus", keys: "ctrl-k" }, { section: "mod:spaces-plus", action: "inbox.focus", keys: "ctrl-j" }];
+  const all = Object.fromEntries(rows(b).flatMap(([, list]) => list).map(([k, w]) => [w, k]));
+  expect(all["Spaces → Inbox"]).toBe("⌃J");
+  expect(all["Ports → Inbox"]).toBe("⌃K");
+});

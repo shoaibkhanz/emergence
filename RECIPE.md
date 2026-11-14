@@ -34,9 +34,20 @@ Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` div
     showing the binding of `tabs-plus.attention` (⌘⇧I).
     - Each row is 2 lines on an 8px-radius row: the program mark (14px), the branch (else the folder) in 12.5px
       `foreground`, and the age or "Needs you" (`blocked`); under it the task (12px `muted`), indented to the text.
-    - At the foot: "Working N ›" (spinner glyph, still) and, once anything is settled, a "Settled N" shelf.
+    - At the foot, once anything is settled, a "Settled N" shelf.
     - With nothing waiting: a circle-check and "All caught up".
     - Folded: only the count of rows, at the foot: a 22px round `blocked` badge on the rail, the number on dots.
+  - **Ports** (`ports`), below the inbox, sized by itself (`layout.resize`) from its row count alone: "Ports N"
+    header (41px, as the inbox's) and up to 5 rows of 30px (then it scrolls), or one 32px "Ports none" row; then
+    "Working N ›" (32px, spinner glyph, still), the sidebar's last row. Folded: 0px, and no polling.
+    - A row: the owner's program mark (14px; half strength when the owner is only probable; a hollow ring for no
+      agent or Docker), `:port` in Geist Mono 12.5px, the process name (12px `muted`), and on the right a `dim` globe
+      when it listens on every interface, then the owner's branch (else folder) in Geist Mono 11.5px `dim`, or "no
+      agent · age" with the age in `working` past an hour. Hover swaps the owner for an Open chip (web servers only).
+    - The card (`port-card`, a 340px popup): `:port` and process, the address in a mono box with copy, then Agent
+      (mark, program · status or "probably", task), Branch, Command (one line, the full one in a tooltip), Folder (only
+      when it isn't the agent's folder), Running (uptime · CPU · memory, every 5 s), Reach, Also (its other ports).
+      Buttons as confirm-safe's: Go to agent (or "Go to agent?", "Go to terminal"), Stop (`blocked`), Open ↵ (`accent`).
   - The footer (69px, `workspace-chrome {footer: true}`), hidden while folded.
 - **Tab bar** (42px, `tabs-plus`, Herdr's tab bar): the space's tabs (settled ones hidden unless shown), `+`, then
   buttons for Files, Changes, Agents, PRs, Library and Usage. When the Emergence clone is behind GitHub's `main`, an
@@ -69,15 +80,34 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - Sub-agents (started with `hc run --bg`) have no tab, so `agents()` misses them: the inbox adds them from
     `terminals()` (`lib.js` `subAgents`: live, with a parent, an agent program or a status report). A blocked one gets a
     "Needs you" card that peeks at it (`terminal.peek`); working ones count in "Working N".
-  - "Working N" is always there (N may be 0) and opens the Agents panel: on what's working (active only, shared
+  - "Working N" (drawn by `ports`, so it stays the last row) is always there (N may be 0) and opens the Agents panel: on what's working (active only, shared
     `graph.want`) while N > 0, else on everything. The graph draws working agents in `t.working` (border and tint)
     as it draws blocked ones in `t.blocked`.
   - The inbox order drives ⌘] / ⌘[ (`setAgentOrder`).
+- **Ports.**
+  - Every 5 s: `lsof -nP -iTCP -sTCP:LISTEN -Fpcn`, `ps -axo pid=,ppid=,etime=,comm=`, the listeners' folders
+    (`lsof -a -d cwd`), and once per agent folder its git top-level. `lib.js` decides the rest, tested in `lib.test.js`.
+  - Owner: the first of this computer's terminals on the process's parent chain (shell or agent pid from
+    `terminals()`); else, for a process whose parent is gone, the agent whose worktree holds its folder (deepest
+    root, then the most recent) or whose Claude Code scratchpad it runs in: "probable". A root of `~` or `/` claims
+    nothing. Docker Desktop and OrbStack listeners are "docker" (no Stop: that would stop Docker).
+  - Hidden: an agent's own port (the agent process itself listening), and a parentless process outside home and the
+    temp folders, or an agent binary. One row per server: IPv4 and IPv6 sockets merge, a worker sharing its
+    supervisor's port folds into the supervisor (`uvicorn --reload`).
+  - The address is where it listens (`localhost` for every interface or both loopbacks, else `127.0.0.1`, `[::1]` or
+    the IP). Ports never sends a request to a port (a login callback could take it as its answer): a table of
+    database and debugger ports and names decides there's no Open.
+  - Stop lives in the card (a mod command carries no arguments): Cancel selected, then `lsof -a -p <pid> -iTCP:<port>`
+    must still show the port (else "already stopped", nothing killed), then `kill`, then a check each second for 10 s:
+    "Stopped" (it closes), or "Still running" and a notice.
+  - Keyboard: ctrl-j from the inbox (`ports.focus`; nothing when there are no ports), ↑ ↓, ↵ the card, ← the card
+    asking Stop, ctrl-k to the inbox, ctrl-l / Esc back. The card returns the keyboard here on Esc (`emergence.over`).
 - **Sidebar sizes (`tabs-plus`, in this layout only).**
   - ⌘B (`tabs-plus.rail`): folded or hidden → open at the last open width with the keyboard in Spaces. Open → fold to
     the last folded size (`shared("sidebar.folded")`, default rail) when the sidebar holds the keyboard, else only
     give Spaces the keyboard. There's no blur event, so it asks: `spaces-plus.toggle` folds (`tabs-plus.fold`) if
-    Spaces' focus handle is focused, else `inbox.toggle` folds if the inbox's is, else `spaces-plus.focus`.
+    Spaces' focus handle is focused, else `inbox.toggle` folds if the inbox's is, else `ports.toggle` if Ports' is,
+    else `spaces-plus.focus`.
   - ⌘⌥B (`tabs-plus.thinner`): open → rail → dots → open; the folded size it lands on is remembered.
   - Folding hands the keyboard back to the pane `focused()` reports (it keeps reporting the terminal while a mod
     holds the keyboard). A saved 14px fold from before opens like any folded size.
@@ -255,8 +285,16 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
     detour when emergence already shows, and prints how to reload by hand if a switch fails.
 - **`mods/inbox`**: `agents()`, `terminals()` (parent), `panes()` (cwd, branch), `spaces()` (tabs, settled,
   changed_at), `keys()`, `focused()`, `shared("spaces.want")`, `setAgentOrder`, `run("agent.focus" | "tab.settle" |
-  "tab.select" | "tabs-plus.rail" | "tabs-plus.fold" | "tabs-plus.graph" | "spaces-plus.focus" | "pane.focus")`, and
+  "tab.select" | "tabs-plus.rail" | "tabs-plus.fold" | "spaces-plus.focus" | "ports.toggle" | "pane.focus")`, and
   `layout.resize` for the Spaces block. Commands `focus`, `toggle`.
+- **`mods/ports`**: `exec` (`lsof`, `ps`, `git`), `terminals()` (pid, foreground, machine, parent), `agents()`,
+  `panes()`, `spaces()`, `layout.resize` for its own block, `openOverlay` (`port-card`), `setShared("graph.want")`,
+  `run("tabs-plus.graph" | "tabs-plus.fold" | "inbox.focus" | "spaces-plus.focus" | "pane.focus")`. Commands
+  `focus`, `back`, `toggle`. `lib.js` (`parseLsof`, `parsePs`, `ownerContext`, `owner`, `servers`, `urlFor`, `isWeb`,
+  `blockHeight`, `subAgents`, …) is pure and tested.
+- **`mods/port-card`**: props `{ server, who, ask }` from ports; `exec` (`ps`, `lsof`, `kill`), `open_url`,
+  `write_to_clipboard`, `run("agent.focus" | "pane.focus" | "tab.select" | "terminal.peek")`, `notify`,
+  `setShared("emergence.over")`. `lib.js` copies ports' `parseLsof` / `holds`.
 - **`mods/spaces-plus`**: a clone of `spaces` with soft avatars, worktree rows (`lib.js`: `parseWorktrees`,
   `parseTrack`, `addWorktrees`, `nearest`, tested in `lib.test.js`), folding, the keyboard and the rail and dots
   sizes. Per main checkout it runs `git worktree list --porcelain` and

@@ -83,8 +83,13 @@ Usage keeps every session it has read.</td>
   (hidden, still on disk; reopen from ⌘E). Right-click for the same. Both ask first (Cancel selected), then leave
   the keyboard in Spaces.
 - **Inbox**: every agent waiting on you, newest first, including a blocked sub-agent another agent started (click to
-  peek at it); Settle puts one away. **Working N** opens the graph on what's
-  working (everything at 0).
+  peek at it); Settle puts one away.
+- **Ports**: every server listening on this Mac and the agent that started it, its branch on the right. A server
+  whose agent is gone says "no agent" and its age (amber past an hour); one started in the background (`&`, `nohup`)
+  shows its agent's icon at half strength (matched by folder). A globe means your network can reach it. Hover for
+  Open; click (or ↵) for its card: address, agent and task, command, uptime, CPU and memory, Open, Go to agent, and
+  Stop, which asks first and checks the process still holds the port before stopping it (← asks straight away).
+- **Working N**, the last row: opens the graph on what's working (everything at 0).
 - **Sizes**: open, rail, dots (⌘B, ⌘⌥B).
 
 ### Jump (⌘E)
@@ -108,7 +113,8 @@ or menu to Spaces, the Inbox or the panel you opened it from; a panel's window o
 | ⌘B · ⌘⌥B | layout | sidebar open/fold · one size thinner |
 | ↑ ↓ · ↵ | sidebar | move · open |
 | ← → | Spaces | repo: fold · worktree: delete / archive |
-| ctrl-j · ctrl-k · ctrl-l | sidebar | to Inbox · to Spaces · back to the terminal (also Esc) |
+| ctrl-j · ctrl-k · ctrl-l | sidebar | down (Spaces → Inbox → Ports) · up · back to the terminal (also Esc) |
+| ↵ · ← | Ports | the port's card · stop it (asks first) |
 | ↑ ↓ · ← → · ↵ · Esc | panels | list · tabs · open · step back, then back to the terminal |
 | ⌘F · [ ] | PRs | find · previous / next commit |
 | ctrl-h/j/k/l | terminals | between panes ([optional](#optional-ctrlhjkl-between-panes)) |
@@ -125,6 +131,8 @@ Not ⌘⇧J (Homerow's scroll mode); not ⌘⇧B (Blueprint).
 - **Spaces**: `git rev-parse`, `rev-list`, `worktree list`, `for-each-ref`; delete runs `git worktree remove`.
 - **Tab bar**: hourly `git fetch` of `main` into your clone. Only for a clone on `main` with no commits of its own.
 - **Inbox**: nothing outside Herdr.
+- **Ports**: `lsof` and `ps` every 5 s while the sidebar is open, `git rev-parse --show-toplevel` once per agent
+  folder; the card runs `ps` on its one process, and Stop runs `lsof` on it, then `kill` (SIGTERM).
 
 ## Update or remove
 
@@ -132,7 +140,7 @@ Not ⌘⇧J (Homerow's scroll mode); not ⌘⇧B (Blueprint).
 
 **Remove**: `herdr-app do layout.switch --name main`, delete the links
 (`find ~/.config/herdr-app/mods ~/.config/herdr-app/layouts -maxdepth 1 -lname "$HOME/code/emergence/*" -delete`),
-then remove the `tabs-plus.*`, `mod.open:jump`, `mod.open:emergence-keys`, `mod:spaces-plus` and `mod:inbox` entries
+then remove the `tabs-plus.*`, `mod.open:jump`, `mod.open:emergence-keys`, `mod:spaces-plus`, `mod:inbox` and `mod:ports` entries
 from `~/.config/herdr-app/keys.json` and `omp` from `programs.json`, and delete `~/code/emergence`.
 
 ## Optional: ctrl-h/j/k/l between panes
@@ -158,7 +166,8 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/edi
 | Path | What |
 |---|---|
 | `mods/agent-graph`, `pr-review`, `skills`, `usage` | the four panels |
-| `mods/inbox`, `spaces-plus` | the sidebar |
+| `mods/inbox`, `spaces-plus`, `ports` | the sidebar |
+| `mods/port-card` | a port's card |
 | `mods/tabs-plus` | tab bar, panel buttons, tab names, updates |
 | `mods/jump` | ⌘E |
 | `mods/emergence-keys` | ⌘⇧/ |
