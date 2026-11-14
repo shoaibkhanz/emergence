@@ -224,3 +224,58 @@ export function tabAfter(tabs, cur, key, typing) {
   const i = tabs.findIndex(([id]) => id === cur);
   return tabs[(i + (key === "right" ? 1 : tabs.length - 1)) % tabs.length][0];
 }
+
+// ---- Skills: which do well ----
+
+// A skill's category, from how a word of its name starts (words split at - _ :; the first category that matches), so
+// "writing-plans" is planning but "clear-explanations" isn't. The person may regroup later.
+export const SKILL_CATEGORIES = [
+  ["Code review", /(^|[-_:])(review|audit)/],
+  ["Planning and design", /(^|[-_:])(plan|brainstorm|design|architect|spec|grill)/],
+  ["Testing and debugging", /(^|[-_:])(test|tdd|debug|verif)/],
+  ["Writing and explaining", /(^|[-_:])(expla|writ|doc|readme)/],
+  ["Browsing", /(^|[-_:])(browser|chrome)/],
+];
+export const categoryOf = (name) => (SKILL_CATEGORIES.find(([, re]) => re.test(name)) ?? ["Other"])[0];
+export const FEW = 5; // fewer sessions than this: shown, but "too few to tell"
+
+// How a group of sessions did: the share that led to a commit (where the repo is known: a share, not a count, since a
+// session is credited with every commit in its repo within 8 h, parallel agents' too), the median cost per session (one
+// runaway session can't swing it), and the clean-run rate. Shares carry their Wilson interval.
+function skillStats(g) {
+  const known = g.filter((s) => s.commits != null), costed = g.filter((s) => s.cost != null);
+  return {
+    n: g.length,
+    commit: wilson(known.filter((s) => s.commits > 0).length, known.length),
+    costMed: median(costed.map((s) => s.cost)),
+    clean: wilson(g.filter(clean).length, g.length),
+  };
+}
+
+// Per skill (or per category), the sessions that used it against the same harnesses' sessions that didn't, with its
+// breakdown by harness and by model. Top-level sessions in [from, to), of `harnesses` when given. Correlation, not
+// cause; a session using several skills counts for each.
+export function skillsOf(sessions, { from, to, harnesses = null, by = "skill" }) {
+  const pool = sessions.filter((s) => !s.sub && s.start >= from && s.start < to && (!harnesses || harnesses.has(s.h)));
+  const keysOf = (s) => [...new Set(Object.keys(s.skills ?? {}).map(by === "category" ? categoryOf : (k) => k))];
+  const groups = new Map();
+  for (const s of pool) for (const k of keysOf(s)) (groups.get(k) ?? groups.set(k, []).get(k)).push(s);
+  const split = (g, f) => {
+    const m = new Map();
+    for (const s of g) (m.get(f(s)) ?? m.set(f(s), []).get(f(s))).push(s);
+    return [...m].map(([key, x]) => ({ key, ...skillStats(x) })).sort((a, b) => b.n - a.n || a.key.localeCompare(b.key));
+  };
+  const rows = [...groups].map(([key, g]) => {
+    const hs = new Set(g.map((s) => s.h));
+    const base = pool.filter((s) => hs.has(s.h) && !keysOf(s).includes(key));
+    return { key, category: by === "skill" ? categoryOf(key) : key, ...skillStats(g), base: skillStats(base), few: g.length < FEW,
+      harnesses: split(g, (s) => s.h), models: split(g, topModel) };
+  }).sort((a, b) => b.n - a.n || a.key.localeCompare(b.key));
+  const skilled = pool.filter((s) => Object.keys(s.skills ?? {}).length), plain = pool.filter((s) => !Object.keys(s.skills ?? {}).length);
+  const distinct = new Set(pool.flatMap((s) => Object.keys(s.skills ?? {})));
+  return {
+    rows,
+    tiles: { sessions: pool.length, skilled: skilled.length, distinct: distinct.size, top: rows[0]?.key ?? null,
+      costSkilled: skillStats(skilled).costMed, costUnskilled: skillStats(plain).costMed },
+  };
+}
