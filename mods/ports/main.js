@@ -1,0 +1,239 @@
+// The sidebar's Ports: every listening TCP server and the agent that owns it, below the inbox. A row opens the port
+// card (mods/port-card): details, Open, Go to agent, Stop. lib.js decides everything; this file polls and draws.
+// Polls every 5 s (lsof, ps, and git rev-parse once per agent folder) while the sidebar is open; nothing animates,
+// and it re-renders only when the rows change.
+
+import { View, div, image, svg } from "gpui-kit";
+import { v_flex, h_flex, ScrollHandle } from "gpui-base";
+import { exec, home, agents, terminals, panes, spaces, layout, settings, run, theme, shared, nextCommand, focused, openOverlay } from "herdr";
+import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago, basename, blockHeight, ROW_H, HEADER_H, EMPTY_H } from "./lib.js";
+
+const POLL_MS = 5000;
+const FOCUS_CHECK_MS = 250;
+const FORGOTTEN_S = 3600; // an orphan older than this reads as forgotten (amber age)
+const RAIL_W = 160; // the sidebar folds to a rail below this width (as Inbox reads it)
+const FOOTER_H = 69; // sidebar-footer, right below this block
+const CARD = { width: 340, height: 440 };
+const EXEC = { timeout: 4000 };
+const MONO = "Geist Mono";
+const ICON = (name) => `mods/ports/${name}.svg`;
+
+function find(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) {
+    const found = find(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+const width = () => find(layout(), "sidebar")?.size?.px ?? Infinity;
+const folded = () => width() < RAIL_W || !!find(layout(), "sidebar")?.hidden;
+
+// Back to the pane the keyboard came from (as inbox's back).
+function back() {
+  const f = focused();
+  if (f) run("pane.focus", f.pane ? { pane: f.pane } : { terminal: f.terminal });
+}
+
+// Harness marks off a title; the same as inbox's clean (from agent-graph/lib.js cleanTitle).
+const clean = (s) =>
+  (s ?? "").replace(/^(?:[^\p{L}\p{N}\p{Ps}~/]+|\p{L}{1,2}\s*>\s*|\p{L}{1,2}\s+(?=[\p{S}\p{Co}⁂]))+/u, "")
+    .replace(/[\u{E000}-\u{F8FF}\u{F0000}-\u{10FFFF}]/gu, "").replace(/\s+/g, " ").trim();
+
+// What the agent is on: a tab someone named, else its own title (as inbox's task).
+function task(a, tab) {
+  const p = a?.program;
+  if (tab?.named && tab.name !== p?.name) return tab.name;
+  const t = clean(a?.title);
+  return t && t !== p?.name && t.toLowerCase() !== p?.key && !/^[~/]/.test(t) && !t.includes("@") ? t : p?.name ?? tab?.name ?? "";
+}
+
+const NOBODY = { program: null, task: "", status: null, address: null, sub: false, probable: false };
+
+export default class Ports extends View {
+  init(_props, cx) {
+    this.rows = [];
+    this.roots = new Map(); // agent folder -> git top-level (null: not a repo), asked once per folder
+    this.fh = cx.focus_handle();
+    this.list = ScrollHandle.new();
+    this.cur = null; // the cursor's row key
+    cx.timer.every(POLL_MS, (cx) => this.poll(cx));
+    cx.timer.after(0, (cx) => this.poll(cx));
+    cx.timer.every(FOCUS_CHECK_MS, (cx) => { if (this.fh.is_focused() !== this.ringed) cx.notify(); }); // no blur event
+    cx.spawn(async (cx) => {
+      for (;;) {
+        const c = await nextCommand();
+        if (c === "focus" && this.rows.length) { this.cur ??= this.rows[0].key; this.fh.focus(); }
+        else if (c === "back") back();
+        cx.notify();
+      }
+    });
+  }
+
+  async poll(cx) {
+    if (this.busy || folded()) return;
+    this.busy = true;
+    try {
+      const [ls, ps] = await Promise.all([
+        exec("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"], EXEC),
+        exec("ps", ["-axo", "pid=,ppid=,etime=,comm="], EXEC),
+      ]);
+      if (ls.code === 127) throw new Error("lsof not found"); // lsof exits 1 when nothing listens: that's no rows
+      const listeners = parseLsof(ls.stdout);
+      const pids = [...new Set(listeners.map((l) => l.pid))];
+      const cw = pids.length ? await exec("lsof", ["-a", "-p", pids.join(","), "-d", "cwd", "-Fpn"], EXEC) : { stdout: "" };
+      const terms = terminals();
+      await this.resolveRoots(terms);
+      const ctx = ownerContext({ terminals: terms, roots: this.roots, home: home() });
+      const rows = sortServers(servers({ listeners, procs: parsePs(ps.stdout), cwds: parseCwds(cw.stdout), ctx, home: home() }));
+      const sig = JSON.stringify([rows.map((r) => [r.key, r.owner, r.web, r.network, r.ports, r.owner.kind === "orphan" && ago(r.age)])]);
+      this.rows = rows;
+      if (sig !== this.sig || this.error) { this.sig = sig; this.error = null; cx.notify(); }
+    } catch (e) {
+      const error = String(e?.message ?? e).includes("not found") ? "lsof not found" : "Couldn't read ports";
+      if (error !== this.error) { this.error = error; cx.notify(); }
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  // Each local terminal's folder -> its git top-level, once per folder (worktree matching for servers with no parent).
+  async resolveRoots(terms) {
+    const dirs = [...new Set(terms.filter((t) => t.state === "live" && t.machine == null)
+      .map((t) => t.foreground?.cwd ?? t.cwd).filter((d) => d && !this.roots.has(d)))];
+    await Promise.all(dirs.map(async (d) => {
+      const r = await exec("git", ["-C", d, "rev-parse", "--show-toplevel"], EXEC).catch(() => null);
+      this.roots.set(d, r?.code === 0 ? r.stdout.trim() : null);
+    }));
+  }
+
+  // The block's height follows the row count (lib's blockHeight), sent only when it changes.
+  size(px) {
+    if (px === this.px) return;
+    this.px = px;
+    run("layout.resize", { id: "ports", px });
+  }
+
+  // How a row names its owner, from Herdr's live model (re-read every render: branches and states move).
+  who(s, model) {
+    const o = s.owner;
+    if (o.kind === "docker") return { ...NOBODY, label: "docker", kind: o.kind };
+    if (o.kind === "orphan") return { ...NOBODY, label: "no agent", kind: o.kind };
+    const term = model.terms.get(o.address), pane = model.panes.get(o.address), agent = model.agents.get(o.address);
+    const folder = pane?.cwd ?? term?.foreground?.cwd ?? term?.cwd;
+    return {
+      label: pane?.branch || basename(folder) || o.address,
+      program: agent?.program ?? term?.program ?? null,
+      task: agent ? task(agent, model.tabs.get(agent.tab)) : clean(term?.title),
+      status: agent?.status ?? term?.status ?? null,
+      address: o.address, sub: !!term?.parent, probable: o.kind === "probable", kind: o.kind,
+    };
+  }
+
+  model() {
+    return {
+      terms: new Map(terminals().map((t) => [t.address, t])),
+      panes: new Map(panes().filter((p) => p.terminal).map((p) => [p.terminal, p])),
+      agents: new Map(agents().map((a) => [a.address, a])),
+      tabs: new Map(spaces().flatMap((sp) => sp.tabs).map((tb) => [tb.id, tb])),
+    };
+  }
+
+  // The port card beside the row from the keyboard, at the pointer from a click.
+  card(s, who, at, ask = false) {
+    openOverlay({ mod: "port-card", kind: "popup", ...CARD, at, props: { server: s, who, ask } });
+  }
+
+  keyAt(i) {
+    const z = settings().zoom ?? 1, h = window.viewport_size().height / z;
+    return { x: width() + 8, y: Math.max(8, Math.round(h - FOOTER_H - (this.px ?? 0) + HEADER_H + i * ROW_H)) };
+  }
+
+  key(k, cx) {
+    if (k === "ctrl-k") return run("inbox.focus");
+    if (k === "ctrl-l" || k === "escape") return back();
+    const rows = this.rows, i = rows.findIndex((r) => r.key === this.cur);
+    if (k === "up" || k === "down") {
+      const j = Math.max(0, Math.min(rows.length - 1, i + (k === "up" ? -1 : 1)));
+      this.cur = rows[j]?.key ?? null;
+      if (this.cur) this.list.scroll_to_item(j);
+    } else if ((k === "enter" || k === "left") && i >= 0) {
+      this.card(rows[i], this.who(rows[i], this.model()), this.keyAt(i), k === "left");
+    }
+    cx.notify();
+  }
+
+  // A dialog of ours took the keyboard from here: it comes back when that closes (as inbox's comeBack).
+  comeBack(cx, held, focus) {
+    const ov = shared("emergence.over");
+    if (!ov || ov.at === this.ovAt) return;
+    this.ovAt = ov.at;
+    if (ov.open) this.resume ||= held;
+    else if (this.resume) cx.timer.after(80, (cx) => {
+      if (shared("emergence.over")?.open) return;
+      this.resume = false;
+      if (!ov.went) { focus(); cx.notify(); }
+    });
+  }
+
+  // The owner's program mark (programs.json), at half strength when the owner is only probable; a hollow ring when
+  // there's no agent (orphan, docker).
+  mark(t, w, size) {
+    const p = w.program;
+    if (!p?.icon) return div().size(size).flex_none().rounded(size / 2).border(1).border_color(t.dim);
+    const m = p.tint && p.tile
+      ? h_flex().size(size).rounded(5).bg(p.tile).items_center().justify_center().child(svg(p.icon).size(Math.round(size * 0.66)).text_color(p.color ?? t.foreground))
+      : p.tint ? svg(p.icon).size(size).text_color(t.foreground) : image(p.icon).w(size).h(size).rounded(5);
+    return div().size(size).flex_none().when(w.probable, (el) => el.opacity(0.5)).child(m);
+  }
+
+  row(t, s, i, model) {
+    const w = this.who(s, model), over = this.hovered === s.key, orphan = s.owner.kind === "orphan";
+    const open = h_flex().id(`port-open-${s.key}`).h(18).px(6).gap(4).flex_none().items_center().rounded(5)
+      .border(1).border_color(t.border).text_size(11).text_color(t.muted).hover((st) => st.bg(t.hover).text_color(t.foreground))
+      .tooltip(s.url).on_click((_e, cx) => { cx.stop_propagation(); cx.open_url(s.url); })
+      .child(svg(ICON("external-link")).size(11)).child("Open");
+    const owner = h_flex().flex_1().min_w(0).gap(6).justify_end().items_center().font_family(MONO).text_size(11.5).text_color(t.dim)
+      .when(s.network, (el) => el.child(svg(ICON("globe")).size(12).flex_none().text_color(t.dim)))
+      .child(orphan
+        ? h_flex().flex_none().gap(4).child("no agent ·").child(div().when(s.age > FORGOTTEN_S, (el) => el.text_color(t.working)).child(ago(s.age)))
+        : div().min_w(0).truncate().child(w.label));
+    return h_flex().id(`port-${s.key}`).h(ROW_H).px(10).gap(8).flex_none().items_center().rounded(8).cursor_pointer()
+      .hover((st) => st.bg(t.hover))
+      .when(this.ringed && this.cur === s.key, (el) => el.border_1().border_color(t.accent))
+      .on_hover((on, cx) => { if (on) this.hovered = s.key; else if (this.hovered === s.key) this.hovered = null; cx.notify(); })
+      .on_click(() => { this.cur = s.key; this.card(s, w, "pointer"); })
+      .child(this.mark(t, w, 14))
+      .child(div().flex_none().font_family(MONO).text_size(12.5).text_color(t.foreground).child(`:${s.port}`))
+      .child(div().flex_none().text_size(12).text_color(t.muted).child(s.command))
+      .child(over && s.web ? h_flex().flex_1().justify_end().child(open) : owner);
+  }
+
+  render(cx) {
+    const t = theme(), collapsed = folded(), rows = this.rows;
+    this.size(blockHeight(rows.length, collapsed));
+    // The cursor stays on its row; when that row goes, it takes the row now in its place.
+    let i = rows.findIndex((r) => r.key === this.cur);
+    if (i < 0) i = Math.min(this.curI ?? 0, rows.length - 1);
+    this.cur = rows[i]?.key ?? null;
+    this.curI = Math.max(i, 0);
+    if (!rows.some((r) => r.key === this.hovered)) this.hovered = null;
+    this.comeBack(cx, this.ringed, () => this.fh.focus());
+    this.ringed = this.fh.is_focused();
+    const root = v_flex().id("ports").size_full().min_h(0).bg(t.chrome).text_size(13)
+      .track_focus(this.fh).on_key_down((e, cx) => this.key(e.keystroke, cx));
+    if (collapsed) return root;
+    const label = (extra) => h_flex().gap(6).items_center().text_size(11.5).text_color(t.dim)
+      .child(div().font_medium().child("Ports")).child(extra);
+    if (this.error || !rows.length) {
+      return root.border_t(1).border_color(t.border)
+        .child(h_flex().h(EMPTY_H).pl(16).pr(12).items_center().child(label(this.error ?? "none")));
+    }
+    const model = this.model();
+    return root.border_t(1).border_color(t.border)
+      .child(h_flex().h(HEADER_H).pt(10).pl(16).pr(12).flex_none().items_center().child(label(String(rows.length))))
+      .child(v_flex().id("ports-list").flex_1().min_h(0).px(6).overflow_y_scrollbar().track_scroll(this.list)
+        .children(rows.map((s, n) => this.row(t, s, n, model))));
+  }
+}

@@ -19,6 +19,11 @@
   },
   "mod:inbox": {
     "ctrl-k": "spaces-plus.focus",
-    "ctrl-l": "inbox.back"
+    "ctrl-l": "inbox.back",
+    "ctrl-j": "ports.focus"
+  },
+  "mod:ports": {
+    "ctrl-k": "inbox.focus",
+    "ctrl-l": "ports.back"
   }
 }

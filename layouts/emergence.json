@@ -63,6 +63,17 @@
               "content": {
                 "mod": "inbox"
               }
+            },
+            {
+              "id": "ports",
+              "type": "block",
+              "size": {
+                "px": 32
+              },
+              "min": 0,
+              "content": {
+                "mod": "ports"
+              }
             }
           ]
         },
