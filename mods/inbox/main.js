@@ -1,12 +1,12 @@
 // The sidebar's inbox, after T3 Code: a card for every agent waiting on you (blocked, finished, or idle
-// for its next prompt); working ones are one "Working N" row that opens the agent graph. Settle (Herdr's
+// for its next prompt); working ones are "Working N", the sidebar's last row (drawn by mods/ports). Settle (Herdr's
 // tab.settle) puts a card on the shelf below; Herdr brings it back when its agent needs you again.
 // Also sizes Spaces above to its rows. Marks stay still: an endless spin redraws the window every frame.
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { subAgents } from "./lib.js";
-import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared, setShared, nextCommand, focused } from "herdr";
+import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared, nextCommand, focused } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -60,7 +60,7 @@ export default class Inbox extends View {
       for (;;) {
         const c = await nextCommand();
         if (c === "focus") this.fh.focus();
-        else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "spaces-plus.focus");
+        else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "ports.toggle"); // then Ports asks the same
         else if (c === "back") back(); // ctrl-l (keys.json mod:inbox: a binding beats on_key_down)
         cx.notify();
       }
@@ -153,7 +153,7 @@ export default class Inbox extends View {
       .child(div().pl(20).truncate().text_size(12).text_color(t.muted).child(task(a, tab)));
   }
 
-  // A quiet row at the foot: Working (opens the graph) and the Settled shelf's header.
+  // A quiet row at the foot: the Settled shelf's header.
   foot(t, id, icon, label, n, onClick, open) {
     return h_flex().id(id).h(32).px(16).gap(8).flex_none().items_center().text_size(12).text_color(t.muted).cursor_pointer()
       .hover((s) => s.text_color(t.foreground)).on_click(onClick)
@@ -183,7 +183,6 @@ export default class Inbox extends View {
     this.ringed = this.fh.is_focused();
     if (!cards.some((a) => a.address === this.hovered)) this.hovered = null; // gone without a hover-out
     setAgentOrder([...cards, ...all.filter((a) => !cards.includes(a))].map((a) => a.address)); // ⌘] / ⌘[ walk the inbox first
-    const working = all.filter((a) => a.status === "working").length;
     const settled = [...tabs.values()].filter((tab) => tab.settled).sort((x, y) => (y.settled_at ?? 0) - (x.settled_at ?? 0));
     const lead = (tab) => all.find((a) => a.tab === tab.id && !parent.get(a.address));
     const root = v_flex().size_full().min_h(0).bg(t.chrome).text_size(13)
@@ -202,7 +201,7 @@ export default class Inbox extends View {
     }
     // Header, the list's content (cards are alike: one is measured), the feet and the open shelf.
     const listH = cards.length ? cards.length * ((this.cardH ?? 50) + 2) - 2 : 32;
-    this.fitSpaces(collapsed, 41 + listH + 32 + (settled.length ? 32 + (this.shelf ? Math.min(160, settled.length * 30) + 6 : 0) : 0));
+    this.fitSpaces(collapsed, 41 + listH + (settled.length ? 32 + (this.shelf ? Math.min(160, settled.length * 30) + 6 : 0) : 0));
     const bound = keys().find((k) => k.action === "tabs-plus.attention")?.keys;
     // Header and inset line up with Herdr's Spaces list above (16px, 11.5px label).
     return this.measured(root.border_t(1).border_color(t.border))
@@ -218,10 +217,6 @@ export default class Inbox extends View {
           .child(svg("mods/workspace-chrome/circle-check.svg").size(14).flex_none()).child("All caught up")))
         .children(cards.map((a, n) => this.card(t, a, tabs.get(a.tab), pane.get(a.pane), now)
           .when(n === 0, (el) => el.on_size_change((size, cx) => { const h = Math.round(size.height / (settings().zoom ?? 1)); if (h !== this.cardH) { this.cardH = h; cx.notify(); } })))))
-      // Always there: opens the graph on what's working, or (Working 0) on everything.
-      .child(this.foot(t, "inbox-working", svg("mods/workspace-chrome/spinner.svg").size(12).text_color(working ? t.working : t.dim), "Working", working,
-        () => { setShared("graph.want", { activeOnly: working > 0, at: Date.now() }); if (find(layout(), "panel")?.hidden || find(layout(), "panel-body")?.active !== "graph") run("tabs-plus.graph"); }, false)
-        .tooltip(working ? "Open the agent graph on what's working" : "Open the agent graph"))
       .when(settled.length > 0, (el) => el
         .child(this.foot(t, "inbox-settled", svg("mods/workspace-chrome/archive.svg").size(12), "Settled", settled.length,
           (_e, cx) => { this.shelf = !this.shelf; cx.notify(); }, this.shelf))

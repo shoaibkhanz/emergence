@@ -1,12 +1,13 @@
 // The sidebar's Ports: every listening TCP server and the agent that owns it, below the inbox. A row opens the port
 // card (mods/port-card): details, Open, Go to agent, Stop. lib.js decides everything; this file polls and draws.
+// Its foot is the sidebar's last row, "Working N" (moved here from the inbox so it stays last), opening the graph.
 // Polls every 5 s (lsof, ps, and git rev-parse once per agent folder) while the sidebar is open; nothing animates,
 // and it re-renders only when the rows change.
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { exec, home, agents, terminals, panes, spaces, layout, settings, run, theme, shared, nextCommand, focused, openOverlay } from "herdr";
-import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago, basename, blockHeight, ROW_H, HEADER_H, EMPTY_H } from "./lib.js";
+import { exec, home, agents, terminals, panes, spaces, layout, settings, run, theme, shared, setShared, nextCommand, focused, openOverlay } from "herdr";
+import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago, basename, blockHeight, subAgents, ROW_H, HEADER_H, EMPTY_H, FOOT_H } from "./lib.js";
 
 const POLL_MS = 5000;
 const FOCUS_CHECK_MS = 250;
@@ -66,6 +67,7 @@ export default class Ports extends View {
         const c = await nextCommand();
         if (c === "focus" && this.rows.length) { this.cur ??= this.rows[0].key; this.fh.focus(); }
         else if (c === "back") back();
+        else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "spaces-plus.focus"); // ⌘B: the last in Spaces → Inbox → Ports
         cx.notify();
       }
     });
@@ -212,6 +214,23 @@ export default class Ports extends View {
       .child(over && s.web ? h_flex().flex_1().justify_end().child(open) : owner);
   }
 
+  // "Working N", always there (N may be 0): opens the Agents panel on what's working, else on everything (as the
+  // inbox's row did). Sub-agents count: agents() misses them.
+  working(t) {
+    const tabbed = agents(), all = [...tabbed, ...subAgents(terminals(), new Set(tabbed.map((a) => a.address)))];
+    const n = all.filter((a) => a.status === "working").length;
+    const open = () => {
+      setShared("graph.want", { activeOnly: n > 0, at: Date.now() });
+      if (find(layout(), "panel")?.hidden || find(layout(), "panel-body")?.active !== "graph") run("tabs-plus.graph");
+    };
+    return h_flex().id("ports-working").h(FOOT_H).px(16).gap(8).flex_none().items_center().text_size(12).text_color(t.muted)
+      .border_t(1).border_color(t.border).cursor_pointer().hover((s) => s.text_color(t.foreground)).on_click(open)
+      .tooltip(n ? "Open the agent graph on what's working" : "Open the agent graph")
+      .child(svg("mods/workspace-chrome/spinner.svg").size(12).text_color(n ? t.working : t.dim))
+      .child("Working").child(div().text_size(11).text_color(t.dim).child(String(n))).child(div().flex_1())
+      .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).text_color(t.dim));
+  }
+
   render(cx) {
     const t = theme(), collapsed = folded(), rows = this.rows;
     this.size(blockHeight(rows.length, collapsed));
@@ -230,12 +249,14 @@ export default class Ports extends View {
       .child(div().font_medium().child("Ports")).child(extra);
     if (this.error || !rows.length) {
       return root.border_t(1).border_color(t.border)
-        .child(h_flex().h(EMPTY_H).pl(16).pr(12).items_center().child(label(this.error ?? "none")));
+        .child(h_flex().h(EMPTY_H).flex_none().pl(16).pr(12).items_center().child(label(this.error ?? "none")))
+        .child(div().flex_1()).child(this.working(t));
     }
     const model = this.model();
     return root.border_t(1).border_color(t.border)
       .child(h_flex().h(HEADER_H).pt(10).pl(16).pr(12).flex_none().items_center().child(label(String(rows.length))))
       .child(v_flex().id("ports-list").flex_1().min_h(0).px(6).overflow_y_scrollbar().track_scroll(this.list)
-        .children(rows.map((s, n) => this.row(t, s, n, model))));
+        .children(rows.map((s, n) => this.row(t, s, n, model))))
+      .child(this.working(t));
   }
 }

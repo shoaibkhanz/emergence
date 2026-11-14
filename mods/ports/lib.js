@@ -197,7 +197,16 @@ export function sortServers(list) {
 
 // ---- The block ----
 
-export const ROW_H = 30, HEADER_H = 41, EMPTY_H = 32, MAX_ROWS = 5;
+export const ROW_H = 30, HEADER_H = 41, EMPTY_H = 32, MAX_ROWS = 5, FOOT_H = 32;
 
-// The Ports block's height: a function of the row count only, so it can't chase Inbox's fitSpaces in a resize loop.
-export const blockHeight = (rows, folded) => (folded ? 0 : rows ? HEADER_H + Math.min(rows, MAX_ROWS) * ROW_H : EMPTY_H);
+// The block's height: Ports' rows, then the sidebar's last row, "Working N" (FOOT_H). A function of the row count
+// only, so it can't chase Inbox's fitSpaces in a resize loop.
+export const blockHeight = (rows, folded) =>
+  folded ? 0 : (rows ? HEADER_H + Math.min(rows, MAX_ROWS) * ROW_H : EMPTY_H) + FOOT_H;
+
+// Sub-agents an agent started itself (`hc run --bg`): no tab, so agents() misses them, but a working one still counts
+// in "Working N". A copy of mods/inbox/lib.js subAgents (mods don't import across folders), kept identical.
+export const subAgents = (terminals, known) => terminals
+  .filter((x) => x.state === "live" && x.parent && (x.program?.agent || x.report) && !known.has(x.address))
+  .map((x) => ({ address: x.address, status: x.status === "error" ? "blocked" : x.status, program: x.program, title: x.title || x.name,
+    space_name: (x.foreground?.cwd ?? x.cwd ?? "").split("/").filter(Boolean).pop(), sub: true }));
