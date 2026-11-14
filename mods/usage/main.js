@@ -452,7 +452,8 @@ export default class Usage extends View {
       .child(this.stack(t, m, this.innerW(), 16))
       .children(MIX.map(([k, label, ink]) => h_flex().h(20).gap(8).items_center().text_size(12)
         .child(div().size(10).rounded(2).bg(ink)).child(div().flex_1().child(label))
-        .child(div().text_color(t.muted).child(short(m[k]))).child(div().w(40).text_size(11).text_color(t.dim).child(tot ? pct(m[k] / tot) : "–"))))
+        .child(div().w(56).flex_none().text_right().text_color(t.muted).child(short(m[k])))
+        .child(div().w(40).flex_none().text_right().text_size(11).text_color(t.dim).child(tot ? pct(m[k] / tot) : "–"))))
       .child(div().text_size(12).text_color(t.muted).child(m.tout ? `For every token written, agents read ${Math.round(read / m.tout)} of context; ${pct(r.tiles.cacheHit)} of it came from cache.` : "No token split recorded.")));
   }
 
@@ -463,12 +464,13 @@ export default class Usage extends View {
       .children(KINDS.filter(([k]) => r.kinds[k]).map(([k, label]) => h_flex().h(20).gap(8).items_center().text_size(12)
         .child(div().w(84).flex_none().child(label))
         .child(div().w(Math.max(40, w - 84 - 40 - 16)).h(8).rounded(3).bg(t.raised).child(div().h(8).rounded(3).w(Math.max(2, (r.kinds[k] / maxK) * Math.max(40, w - 140))).bg(t.accent)))
-        .child(div().w(40).text_size(11).text_color(t.dim).child(String(r.kinds[k])))))
+        .child(div().w(40).flex_none().text_right().text_size(11).text_color(t.dim).child(String(r.kinds[k])))))
       .child(div().h(1).my(4).bg(t.border))
       .children(hs.map((h) => h_flex().h(22).gap(8).items_center().text_size(12)
         .child(div().size(8).rounded(4).bg(HARNESS[h].color)).child(this.icon(t, h, 14)).child(div().flex_1().truncate().child(HARNESS[h].name))
-        .child(div().text_color(t.muted).child(`${r.split[h].runs} runs`)).child(div().w(44).text_size(11).text_color(t.dim).child(pct(r.split[h].tok / totTok)))
-        .child(div().w(64).text_size(11).text_color(t.dim).child(r.split[h].cost ? `$${Math.round(r.split[h].cost)}` : "no cost")))));
+        .child(div().w(72).flex_none().text_right().text_color(t.muted).child(`${r.split[h].runs} runs`))
+        .child(div().w(44).flex_none().text_right().text_size(11).text_color(t.dim).child(pct(r.split[h].tok / totTok)))
+        .child(div().w(64).flex_none().text_right().text_size(11).text_color(t.dim).child(r.split[h].cost ? `$${Math.round(r.split[h].cost)}` : "no cost")))));
   }
 
   rhythmTiles(t, r) {
@@ -487,7 +489,7 @@ export default class Usage extends View {
     return this.card(t, title, div().text_size(11).text_color(t.dim).child(sub), v_flex().gap(4).children(items.map(([label, n]) => h_flex().h(20).gap(8).items_center()
       .child(div().w(56).flex_none().text_size(11).text_color(t.muted).child(label))
       .child(div().w(track).h(10).rounded(3).bg(t.raised).child(div().h(10).rounded(3).w(Math.max(2, (n / max) * track)).bg(alpha(t.done, 0.85))))
-      .child(div().w(32).text_size(11).text_color(t.dim).child(String(n))))));
+      .child(div().w(32).flex_none().text_right().text_size(11).text_color(t.dim).child(String(n))))));
   }
 
   // What the spend is made of, per harness x main model: the token mix and what a token, an output token and a
