@@ -80,6 +80,13 @@ Colours are theme tokens throughout. The data colours are fixed:
 
 Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
 
+Dialogs (Emergence's own: confirm-safe, the port card, System, the keys list; Jump is a palette with its search field
+as the header) share one frame: `popover`, radius 10, 24px padding, 16px gaps, a 22px title row (15px semibold title,
+a clickable "Esc" chip: 11px `dim`, `hover` background), 34px buttons (confirm-safe's), sections headed 11.5px `dim`
+with their columns named at the same widths as the rows'. Widths: 440 (a question), 560 (a card), 680 (a list or
+palette). Centred (`kind: "dialog"`), as tall as their content where it's known up front, else a fixed height whose
+lists scroll inside.
+
 ## How it behaves
 
 - **Agent states.**

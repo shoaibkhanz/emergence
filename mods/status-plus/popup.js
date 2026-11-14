@@ -15,8 +15,11 @@ const FAST_MS = 5000;
 const DU_KEEP_MS = 5 * 60 * 1000;
 const DU_TIMEOUT_MS = 30000;
 const TOP_N = 8;
-const ROW_H = 30;
-const DU_MAX_H = 8 * ROW_H; // the worktree list scrolls past eight rows (a popup sizes to its content: no flex height)
+const ROW_H = 32;
+const COL = { owner: 150, value: 84, size: 120 }; // fixed columns, so names, owners and values line up down the list
+// Emergence's dialog standard (RECIPE "Dialogs"): 24px padding, 16px gaps, a 15px title row with a clickable Esc chip,
+// 34px buttons; widths 440 / 560 / 680.
+const PAD = 24, GAP = 16;
 const EXEC = { timeout: 4000 };
 const MONO = "Geist Mono";
 const TABS = [["cpu", "CPU"], ["mem", "Memory"], ["disk", "Disk"]];
@@ -155,80 +158,82 @@ export class Popup {
         .when(tab !== k, (el) => el.text_color(t.muted).hover((x) => x.text_color(t.foreground)))
         .on_click((_e, cx) => this.switchTab(k, cx)).child(label)));
 
-    const headline = (big, caption, fill, lvl) => v_flex().gap(8).flex_none()
+    const headline = (big, caption, fill, lvl) => v_flex().gap(10).flex_none()
       .child(h_flex().items_baseline().gap(8)
-        .child(div().text_size(15).font_semibold().text_color(t.foreground).child(big))
-        .child(div().flex_1()).child(div().text_size(11.5).text_color(t.dim).child(caption)))
+        .child(div().text_size(18).font_semibold().text_color(t.foreground).child(big))
+        .child(div().flex_1()).child(div().text_size(12).text_color(t.muted).child(caption)))
       .child(div().h(6).w_full().rounded(3).bg(t.raised)
         .child(div().h_full().rounded(3).bg(ink[lvl] ?? t.accent).w(`${Math.max(0, Math.min(100, (fill ?? 0) * 100))}%`)));
 
-    const section = (label) => div().pt(6).pb(2).text_size(11.5).text_color(t.dim).flex_none().child(label);
-    const row = (id, i, children, onClick) => h_flex().id(id).h(ROW_H).px(8).gap(8).flex_none().items_center().rounded(7).text_size(12.5)
+    // A section's header names its columns, at the same widths as its rows'.
+    const section = (label, cols = []) => h_flex().flex_none().pt(10).pb(4).px(10).gap(10).items_center().text_size(11.5).text_color(t.dim)
+      .child(div().flex_1().child(label))
+      .children(cols.map(([text, w]) => div().w(w).flex_none().text_right().child(text)));
+    const row = (id, i, children, onClick) => h_flex().id(id).h(ROW_H).px(10).gap(10).flex_none().items_center().rounded(8).text_size(12.5)
       .when(!!onClick, (el) => el.cursor_pointer().hover((x) => x.bg(t.hover)).on_click(() => onClick()))
       .when(i != null && ringed(i), (el) => el.bg(t.selected))
       .children(children);
-    const value = (text) => div().flex_none().font_family(MONO).text_size(12).text_color(t.foreground).child(text);
+    const cell = (text, w, color = t.foreground) => div().w(w).flex_none().text_right().truncate().font_family(MONO).text_size(12).text_color(color).child(text);
+    const quiet = (text) => div().px(10).h(ROW_H).flex().flex_none().items_center().text_size(12).text_color(t.dim).child(text);
 
-    let body;
+    let head, list;
     if (tab === "disk") {
       const d = this.disk, sizes = this.sizes ?? {};
-      const list = (this.paths ?? Object.keys(sizes)).map((p) => [p, sizes[p]]).sort((a, b) => (typeof b[1] === "number" ? b[1] : -1) - (typeof a[1] === "number" ? a[1] : -1));
-      body = v_flex().gap(4).min_h(0)
-        .child(d ? headline(`${fmtBytes(d.free * 1024)} free`, `of ${fmtBytes(d.size * 1024)}`, 1 - d.free / d.size, level("disk", d.free / d.size)) : div().text_color(t.dim).child("…"))
-        .child(section("Worktrees by size"))
-        .child(v_flex().id("sys-du").flex_none().max_h(DU_MAX_H).overflow_y_scrollbar()
-          .when(list.length === 0, (el) => el.child(div().px(8).h(ROW_H).flex().items_center().text_size(12).text_color(t.dim)
-            .child(this.measuring ? "Finding worktrees…" : "No worktrees in your open terminals")))
-          .children(list.map(([p, kb]) => row(`du-${p}`, null, [
-            div().flex_1().min_w(0).whitespace_nowrap().overflow_hidden().text_ellipsis_middle().font_family(MONO).text_size(12).text_color(t.foreground).child(tilde(p)),
-            div().flex_none().font_family(MONO).text_size(12).text_color(kb == null ? t.dim : t.foreground)
-              .child(kb == null ? "…" : kb === "big" ? "too big to measure" : fmtBytes(kb * 1024)),
-          ]))));
+      const items = (this.paths ?? Object.keys(sizes)).map((p) => [p, sizes[p]]).sort((a, b) => (typeof b[1] === "number" ? b[1] : -1) - (typeof a[1] === "number" ? a[1] : -1));
+      head = d ? headline(`${fmtBytes(d.free * 1024)} free`, `of ${fmtBytes(d.size * 1024)}`, 1 - d.free / d.size, level("disk", d.free / d.size)) : headline("…", "", 0, "ok");
+      list = [section("Worktrees", [["Size", COL.size]]),
+        ...(items.length ? items.map(([p, kb]) => row(`du-${p}`, null, [
+          div().flex_1().min_w(0).whitespace_nowrap().overflow_hidden().text_ellipsis_middle().font_family(MONO).text_size(12).text_color(t.foreground).child(tilde(p)),
+          cell(kb == null ? "…" : kb === "big" ? "too big" : fmtBytes(kb * 1024), COL.size, kb == null || kb === "big" ? t.dim : t.foreground),
+        ])) : [quiet(this.measuring ? "Finding worktrees…" : "No worktrees in your open terminals")])];
     } else {
-      const key = tab === "cpu" ? "cpu" : "rss";
+      const key = tab === "cpu" ? "cpu" : "rss", measure = tab === "cpu" ? "CPU" : "Memory";
       const { rows, rest } = byAgent(procs, cpuBy, byPid);
-      const shown = visibleAgents(rows, key);
-      const fmt = (r) => (key === "cpu" ? pct(r.cpu) : fmtBytes(r.rss * 1024));
-      const head = tab === "cpu"
+      const fmt = (v) => (key === "cpu" ? pct(v) : fmtBytes(v * 1024));
+      head = tab === "cpu"
         ? (this.cpu ? headline(pct(this.cpu.total), `of ${this.sys?.cores ?? "?"} cores`, this.cpu.total / 100, level("cpu", this.cpu.total)) : headline("…", "measuring", 0, "ok"))
         : (this.mem ? headline(`${fmtBytes(this.mem.used)} of ${fmtBytes(this.mem.total)}`,
           `pressure ${this.mem.pressure}${this.mem.swap != null ? ` · swap ${fmtBytes(this.mem.swap)}` : ""}`, this.mem.used / this.mem.total, level("mem", this.mem.pressure))
           : headline("…", "", 0, "ok"));
-      const agentRows = shown.map((r) => {
+      const agentRows = visibleAgents(rows, key).map((r) => {
         const i = act(() => this.goTo(r.address));
         return row(`ag-${r.address}`, i, [
           this.mark(t, agentOf.get(r.address)?.program ?? terms.get(r.address)?.program),
           div().flex_1().min_w(0).truncate().text_color(t.foreground).child(where(r.address)),
-          value(fmt(r)),
+          cell(fmt(r[key]), COL.value),
         ], () => this.goTo(r.address));
       });
       const procRows = topProcs(procs, cpuBy, key, TOP_N).map((p) => {
         const owner = chainOwner(p.pid, procs, byPid), port = agentFg.has(p.pid) || AGENT_BINS.includes(basename(p.comm)) ? undefined : this.ports.get(p.pid)?.[0];
         const i = port ? act(() => this.openPort(p.pid, port)) : null;
         return row(`pr-${p.pid}`, i, [
-          div().flex_none().max_w(140).truncate().text_color(t.foreground).child(basename(p.comm)),
-          port ? h_flex().id(`pr-port-${p.pid}`).flex_none().h(18).px(5).items_center().rounded(4).border(1).border_color(t.border)
-            .font_family(MONO).text_size(11).text_color(t.muted).cursor_pointer().hover((x) => x.text_color(t.foreground))
-            .tooltip("Open its port card").on_click((_e, cx) => { cx.stop_propagation(); this.openPort(p.pid, port); }).child(`:${port}`) : div(),
-          div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(t.dim).child(owner ? where(owner) : "—"),
-          value(key === "cpu" ? pct(cpuBy.get(p.pid) ?? 0) : fmtBytes(p.rss * 1024)),
+          h_flex().flex_1().min_w(0).gap(8).items_center()
+            .child(div().min_w(0).truncate().text_color(t.foreground).child(basename(p.comm)))
+            .when(!!port, (el) => el.child(h_flex().id(`pr-port-${p.pid}`).flex_none().h(18).px(5).items_center().rounded(4).border(1).border_color(t.border)
+              .font_family(MONO).text_size(11).text_color(t.muted).cursor_pointer().hover((x) => x.text_color(t.foreground))
+              .tooltip("Open its port card").on_click((_e, cx) => { cx.stop_propagation(); this.openPort(p.pid, port); }).child(`:${port}`))),
+          div().w(COL.owner).flex_none().truncate().font_family(MONO).text_size(11.5).text_color(t.dim).child(owner ? where(owner) : "—"),
+          cell(key === "cpu" ? pct(cpuBy.get(p.pid) ?? 0) : fmtBytes(p.rss * 1024), COL.value),
         ], port ? () => this.openPort(p.pid, port) : null);
       });
-      body = v_flex().gap(4).min_h(0)
-        .child(head)
-        .child(section("By agent"))
-        .children(agentRows.length ? agentRows : [div().px(8).h(ROW_H).flex().items_center().text_size(12).text_color(t.dim).child("No agent is using much")])
-        .child(row("ag-rest", null, [div().size(14).flex_none(), div().flex_1().text_color(t.dim).child("Everything else"),
-          div().flex_none().font_family(MONO).text_size(12).text_color(t.dim).child(key === "cpu" ? pct(rest.cpu) : fmtBytes(rest.rss * 1024))]))
-        .child(section("Top processes"))
-        .children(procRows);
+      list = [
+        section("By agent", [[measure, COL.value]]),
+        ...(agentRows.length ? agentRows : [quiet("No agent is using much")]),
+        row("ag-rest", null, [div().size(14).flex_none(), div().flex_1().text_color(t.dim).child("Everything else"), cell(fmt(rest[key]), COL.value, t.dim)]),
+        section("Top processes", [["Started by", COL.owner], [measure, COL.value]]),
+        ...procRows,
+      ];
     }
     this.acts = acts;
     this.cur = Math.min(this.cur, Math.max(0, acts.length - 1));
 
+    // A centred dialog of fixed size (as the port card): header, headline, then the lists scroll inside.
     return v_flex().id("system-card").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
-      .w_full().min_h(0).p(16).gap(12).rounded(10).bg(t.popover).text_size(13)
-      .child(h_flex().gap(10).items_center().child(div().flex_1().child(tabs)).child(div().flex_none().text_size(11).text_color(t.dim).child("Esc")))
-      .child(body);
+      .size_full().min_h(0).p(PAD).gap(GAP).rounded(10).bg(t.popover).text_size(13)
+      .child(h_flex().flex_none().gap(12).items_center().child(div().flex_1().child(tabs))
+        .child(div().id("sys-esc").flex_none().px(6).py(2).rounded(5).text_size(11).text_color(t.dim).cursor_pointer()
+          .hover((x) => x.bg(t.hover).text_color(t.foreground)).on_click(() => this.dismiss()).child("Esc")))
+      .child(head)
+      .child(v_flex().id(`sys-list-${tab}`).flex_1().min_h(0).mx(-10).overflow_y_scrollbar().children(list));
   }
 }

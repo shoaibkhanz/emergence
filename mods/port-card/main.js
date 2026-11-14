@@ -13,6 +13,8 @@ const REFRESH_MS = 5000;
 const STOP_CHECK_MS = 1000, STOP_WAIT_MS = 10000; // after SIGTERM: check each second, give up after ten
 const CLOSE_AFTER_STOP_MS = 1200;
 const COPIED_MS = 1500;
+// Emergence's dialog standard (RECIPE "Dialogs"): 24px padding, 16px gaps, a 15px title row with a clickable Esc chip,
+// 34px buttons; widths 440 / 560 / 680.
 const LABEL_W = 72;
 // The same measures as mods/ports/lib.js CARD, which sizes this dialog from them (keep the two in step).
 const M = { pad: 24, gap: 16, header: 22, url: 34, line: 20, task: 20, fieldGap: 10, buttons: 34 };
@@ -211,7 +213,8 @@ export default class PortCard extends View {
       .child(h_flex().h(M.header).flex_none().items_center().gap(10)
         .child(div().flex_none().font_family(MONO).text_size(15).font_semibold().text_color(t.foreground).child(`:${s.port}`))
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(s.command))
-        .child(div().flex_none().text_size(11).text_color(t.dim).child("Esc")))
+        .child(div().id("pc-esc").flex_none().px(6).py(2).rounded(5).text_size(11).text_color(t.dim).cursor_pointer()
+          .hover((x) => x.bg(t.hover).text_color(t.foreground)).on_click(() => this.dismiss()).child("Esc")))
       .child(h_flex().id("pc-url").flex_none().px(12).h(M.url).gap(8).items_center().rounded(6).bg(t.surface).border_1().border_color(t.border)
         .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(t.foreground).child(address))
         .child(h_flex().id("pc-copy").flex_none().gap(4).items_center().cursor_pointer().text_size(11).text_color(t.muted)

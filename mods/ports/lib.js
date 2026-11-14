@@ -226,7 +226,7 @@ export const subAgents = (terminals, known) => terminals
 
 // The port card's measures (mods/port-card draws with the same numbers): it opens as a centred dialog, which needs
 // its height up front, so the height follows the lines the card will show.
-export const CARD = { width: 520, pad: 24, gap: 16, header: 22, url: 34, line: 20, task: 20, fieldGap: 10, buttons: 34 };
+export const CARD = { width: 560, pad: 24, gap: 16, header: 22, url: 34, line: 20, task: 20, fieldGap: 10, buttons: 34 };
 
 export function cardHeight(server, who) {
   const owned = who.kind === "sure" || who.kind === "probable";

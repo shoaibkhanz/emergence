@@ -21,7 +21,7 @@ export default class EmergenceKeys extends View {
   render() {
     const t = theme(), close = () => closeOverlay(props().overlay);
     return v_flex().id("emergence-keys").on_key_down((e) => { if (e.key === "escape") close(); })
-      .size_full().min_h(0).p(18).gap(14).bg(t.popover).text_size(12)
+      .size_full().min_h(0).p(24).gap(16).bg(t.popover).text_size(12)
       .child(h_flex().h(22).items_center().justify_between()
         .child(div().text_size(15).font_semibold().text_color(t.foreground).child("Emergence keys"))
         .child(div().id("ek-esc").px(6).py(2).rounded(5).text_size(11).text_color(t.dim).cursor_pointer()

@@ -15,7 +15,7 @@ const MONO = "Geist Mono";
 const ICON = { cpu: "cpu", mem: "memory-stick", disk: "hard-drive", battery: "battery-medium" };
 const TIP = { cpu: "CPU, last 10 s. Click for who's using it", mem: "Memory used of total; its colour follows memory pressure",
   disk: "Free space on your home volume", battery: "Battery" };
-const POPUP = { width: 380, height: 0.6 };
+const POPUP = { width: 560, height: 640, share: 0.8 }; // a centred dialog, as the port card; at most 80% of the window high
 
 // A command's stdout, or null when it's missing, failed or timed out (that number then isn't shown).
 async function run_(cmd, args) {
@@ -86,8 +86,8 @@ export class Bar {
   }
 
   open(tab) {
-    const h = Math.round(window.viewport_size().height / (settings().zoom ?? 1) * POPUP.height);
-    openOverlay({ mod: "status-plus", kind: "popup", width: POPUP.width, height: h, props: { popup: true, tab } });
+    const h = Math.min(POPUP.height, Math.round(window.viewport_size().height / (settings().zoom ?? 1) * POPUP.share));
+    openOverlay({ mod: "status-plus", kind: "dialog", width: POPUP.width, height: h, props: { popup: true, tab } });
   }
 
   render() {

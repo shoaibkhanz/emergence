@@ -307,7 +307,7 @@ export default class Spaces extends View {
     this.asked = { kind, target, keys: this.resume || this.ringed }; // asked from the keyboard (or its menu), not a click from the terminal
     const del = kind === "delete";
     // Every close (Confirm, Cancel, Esc) gives the keyboard back to Spaces if it was here (comeBack).
-    openOverlay({ mod: "confirm-safe", kind: "dialog", width: 440, height: space ? 256 : 228, props: {
+    openOverlay({ mod: "confirm-safe", kind: "dialog", width: 440, height: space ? 270 : 242, props: {
       title: `${del ? "Delete" : "Archive"} worktree?`, name: label,
       detail: del ? "Removes this folder from disk. Its branch stays." : "Hides it from the sidebar; the folder stays. Reopen it from ⌘E Jump.",
       path, warn: space ? "Its open space and terminals close." : null, action: del ? "Delete" : "Archive", danger: del,
