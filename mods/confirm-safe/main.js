@@ -4,7 +4,7 @@
 //   name, path: what it acts on (a branch) and where, in a mono box (the path with home as ~, shortened in the middle);
 //   action: the button's verb ("Delete"); danger: draw it in the blocked colour;
 //   warn (optional): a second consequence, on its own line with an amber dot;
-//   after (optional): a command run on every close, Confirm or Cancel (the opener taking the keyboard back).
+//   after (optional): a command run on every close, Confirm, Cancel or Esc (the opener taking the keyboard back).
 
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
@@ -24,10 +24,14 @@ export default class ConfirmSafe extends View {
 
   done(yes) {
     const p = props();
+    this.finished = true;
     closeOverlay(p.overlay);
     if (yes) run(p.command.name, p.command.args ?? {});
     if (p.after) run(p.after.name);
   }
+
+  // Herdr closes a dialog on Esc itself (and on a click outside), past key(): `after` still runs.
+  async close() { if (!this.finished && props()?.after) run(props().after.name); }
 
   key(e, cx) {
     if (e.key === "escape") this.done(false);
