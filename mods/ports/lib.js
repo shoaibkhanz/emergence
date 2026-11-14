@@ -124,3 +124,73 @@ export function owner(pid, procs, cwd, ctx) {
   }
   return { kind: "orphan", address: null };
 }
+
+// ---- Servers (the rows) ----
+
+const AGENT_BINS = ["claude", "codex", "omp", "pi", "opencode"];
+// ponytail: a table of well-known non-web ports and programs, never a request to the port (a one-shot login
+// callback would take a probe as its answer). Upgrade: probe on the person's own click.
+const NOT_WEB_PORTS = [5432, 3306, 6379, 27017, 9229, 9230, 11211, 5672, 1883, 2181, 9092];
+const NOT_WEB_NAMES = ["postgres", "mysqld", "redis-server", "mongod", "memcached"];
+const ANY = ["*", "0.0.0.0", "[::]"];
+const LOOPBACK = (h) => h === "[::1]" || h === "localhost" || h.startsWith("127.");
+
+export function urlFor(hosts, port) {
+  const has = (h) => hosts.includes(h);
+  const host = hosts.some((h) => ANY.includes(h)) || (has("127.0.0.1") && has("[::1]")) ? "localhost"
+    : has("127.0.0.1") ? "127.0.0.1" : has("[::1]") ? "[::1]" : hosts[0];
+  return `http://${host}:${port}`;
+}
+
+export const isWeb = (port, comm) => !NOT_WEB_PORTS.includes(port) && !NOT_WEB_NAMES.includes(basename(comm));
+
+export const holds = (listeners, pid, port) => listeners.some((l) => l.pid === pid && l.port === port);
+
+export function ago(seconds) {
+  const m = Math.floor(seconds / 60);
+  return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
+}
+
+// An ancestor of pid that also listens on port: then pid is a worker sharing its supervisor's socket.
+function heldAbove(pid, port, procs, holders) {
+  const seen = new Set([pid]);
+  for (let p = procs.get(pid)?.ppid, hops = 0; p > 1 && hops < MAX_HOPS && !seen.has(p); hops++) {
+    if (holders.has(`${p}:${port}`)) return true;
+    seen.add(p);
+    p = procs.get(p)?.ppid;
+  }
+  return false;
+}
+
+// ponytail: an orphan is shown when it runs from home or a temp folder and isn't an agent binary; that drops system
+// services. A service started from ~ would show; a name list is the upgrade.
+const worthShowing = (o, cwd, comm, home) =>
+  o.kind !== "orphan" || (!!cwd && (inside(cwd, home) || TEMP_ROOTS.some((r) => cwd.startsWith(r))) && !AGENT_BINS.includes(basename(comm)));
+
+// Every listening server worth a row: one per pid+port (hosts merged), workers folded into their supervisor, the
+// agents' own ports and system services left out.
+export function servers({ listeners, procs, cwds, ctx, home }) {
+  const groups = new Map();
+  for (const l of listeners) {
+    const key = `${l.pid}:${l.port}`;
+    const g = groups.get(key) ?? { pid: l.pid, port: l.port, command: l.command, hosts: [] };
+    groups.set(key, { ...g, hosts: g.hosts.includes(l.host) ? g.hosts : [...g.hosts, l.host] });
+  }
+  const portsOf = (pid) => [...new Set(listeners.filter((l) => l.pid === pid).map((l) => l.port))].sort((a, b) => a - b);
+  const out = [];
+  for (const [key, g] of groups) {
+    if (heldAbove(g.pid, g.port, procs, groups) || ctx.fg.has(g.pid)) continue;
+    const cwd = cwds.get(g.pid) ?? null, comm = procs.get(g.pid)?.comm ?? g.command;
+    const o = owner(g.pid, procs, cwd ?? undefined, ctx);
+    if (!worthShowing(o, cwd, comm, home)) continue;
+    out.push({ key, pid: g.pid, port: g.port, ports: portsOf(g.pid), command: basename(comm) || g.command, hosts: g.hosts,
+      url: urlFor(g.hosts, g.port), web: isWeb(g.port, comm),
+      network: g.hosts.some((h) => ANY.includes(h) || !LOOPBACK(h)), age: procs.get(g.pid)?.age ?? 0, cwd, owner: o });
+  }
+  return out;
+}
+
+export function sortServers(list) {
+  const orphan = (s) => s.owner.kind === "orphan";
+  return [...list].sort((a, b) => orphan(a) - orphan(b) || (orphan(a) ? b.age - a.age : a.port - b.port));
+}
