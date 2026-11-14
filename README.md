@@ -172,7 +172,11 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/edi
 ```sh
 herdr-app check ~/.config/herdr-app/mods/<name>   # load and render once
 (cd mods/<name> && bun test)                      # Usage also: python3 mods/usage/test_scan.py
+bash install.test.sh                              # the installer and updater, in throwaway homes
 ```
+
+Every push to `main` is what the Update chip pulls: CI (`.github/workflows/check.yml`) runs the tests on each push,
+and `main` must never be force-pushed (clones could no longer fast-forward).
 
 Edits need a reload: switch to `main`, then back to `emergence`. Read [`docs/platform-notes.md`](docs/platform-notes.md)
 first.

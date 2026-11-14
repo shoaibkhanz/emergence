@@ -65,6 +65,9 @@ These are the Herdr 0.1.15 behaviours we hit that the manual gets wrong or leave
 - `render()` is interrupted after about 100 ms ("This view could not be re-rendered; interrupted"); work inside
   `cx.spawn` isn't. Do heavy sums in a task, keep the result keyed on its inputs, and `cx.notify()` when it lands
   (Usage's `memo`).
+- Claude Code's folder-trust prompt swallows a first prompt given on the command line: an orchestrator that starts
+  helpers in a folder Claude Code hasn't seen (`hc run -- claude "task"` in a new worktree) finds them waiting at the
+  prompt with no task. Trust the folder first, or send the task with `hc send` once the agent is idle.
 - After a couple of dozen reloads of a panel holding several MB of data, `JSON.parse` of a 3 MB string threw
   `null` until Herdr was restarted. [Likely the engine running out of memory; not proven.]
 

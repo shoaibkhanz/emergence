@@ -1,0 +1,41 @@
+# Every push to main is what people's Update chip pulls, so main has to stay green.
+# herdr-app check needs Herdr's window, which a runner doesn't have: mods are checked on a person's machine. Here:
+# what can break without it. Linux and macOS (bash 3.2, BSD tools), since install.sh runs on both.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: No leftover debug code
+        run: "! grep -rnE '// ?DEBUG' mods install.sh"
+      - name: JSON parses (keys, programs, layouts, mod manifests)
+        run: for f in keys.json programs.json layouts/*.json mods/*/mod.json; do python3 -m json.tool "$f" >/dev/null || { echo "::error file=$f::not valid JSON"; exit 1; }; done
+      - name: Every mod's JavaScript parses
+        run: for f in mods/*/*.js; do node --input-type=module --check < "$f" || { echo "::error file=$f::doesn't parse"; exit 1; }; done
+      - name: Unit tests
+        run: bun test mods
+      - name: Usage scanner tests
+        run: python3 mods/usage/test_scan.py
+      - name: Installer and updater against throwaway homes
+        run: bash install.test.sh
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: shellcheck -S warning -e SC1010 install.sh install.test.sh # SC1010: `herdr-app do` isn't a loop's do
