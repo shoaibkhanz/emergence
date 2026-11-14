@@ -69,9 +69,9 @@ test("position: added, removed and unchanged lines; SHAs from the version", () =
 });
 
 test("position: a range adds line_range with line codes", () => {
-  const p = { ...at(null, 12), start_line: 10, anchor: { start: { old: null, new: 10 }, end: { old: null, new: 12 } } };
-  const pos = position(p, V, (o, n) => `P_${o ?? ""}_${n ?? ""}`);
-  expect(pos.line_range).toEqual({ start: { line_code: "P__10", type: "new" }, end: { line_code: "P__12", type: "new" } });
+  const p = { ...at(null, 12), start_line: 10, anchor: { start: { old: null, new: 10, pos: [9, 10] }, end: { old: null, new: 12, pos: [9, 12] } } };
+  const pos = position(p, V, (o, n) => `P_${o}_${n}`);
+  expect(pos.line_range).toEqual({ start: { line_code: "P_9_10", type: "new", old_line: null, new_line: 10 }, end: { line_code: "P_9_12", type: "new", old_line: null, new_line: 12 } });
   expect(pos.new_line).toBe(12);
 });
 
@@ -94,4 +94,26 @@ test("forgeOrder: the likely forge first, the other as fallback (GitHub Enterpri
   expect(forgeOrder("https://gitlab.com/neatly-health-agents/agent-factory.git")).toEqual(["gitlab", "github"]);
   expect(forgeOrder("git@ghe-corp:team/app.git")).toEqual(["gitlab", "github"]);
   expect(forgeOrder("")).toEqual(["gitlab", "github"]);
+});
+
+const ranged = (position) => mapThreads([{ id: "r", individual_note: false, notes: [note(1, { type: "DiffNote", resolvable: true, resolved: false, position: { head_sha: "H2", new_path: "a.py", old_path: "a.py", ...position } })] }], MR, "sk").threads[0];
+
+test("mapThreads: a range reads both ends on one side: the old numbers when it ends on a removed line or begins on one", () => {
+  // begins on an unchanged line (old 12, new 13), ends on a removed one (old 14)
+  expect(ranged({ old_line: 14, new_line: null, line_range: { start: { line_code: "8ec9_12_13", type: "new" }, end: { line_code: "8ec9_14_", type: "old" } } }))
+    .toMatchObject({ diffSide: "LEFT", line: 14, startLine: 12 });
+  expect(ranged({ old_line: 14, new_line: null, line_range: { start: { line_code: "8ec9_12_13", old_line: 12, new_line: 13 }, end: { line_code: "8ec9_14_", old_line: 14, new_line: null } } }))
+    .toMatchObject({ diffSide: "LEFT", line: 14, startLine: 12 });
+  // begins on a removed line (old 9), ends on an unchanged one (old 10, new 11)
+  expect(ranged({ old_line: 10, new_line: 11, line_range: { start: { line_code: "8ec9_9_", type: "old" }, end: { line_code: "8ec9_10_11", type: "new" } } }))
+    .toMatchObject({ diffSide: "LEFT", line: 10, startLine: 9 });
+  // new side throughout, begun on an unchanged line
+  expect(ranged({ old_line: null, new_line: 15, line_range: { start: { line_code: "8ec9_12_13", type: "new" }, end: { line_code: "8ec9__15", type: "new" } } }))
+    .toMatchObject({ diffSide: "RIGHT", line: 15, startLine: 13 });
+});
+
+test("position: a range's ends carry their line numbers too (GitLab's own page reads them), an unchanged line with no type", () => {
+  const p = { ...at(9, null), start_line: 8, anchor: { start: { old: 8, new: 8, pos: [8, 8] }, end: { old: 9, new: null, pos: [9, 9] } } };
+  expect(position(p, V, (o, n) => `P_${o}_${n}`).line_range).toEqual({
+    start: { line_code: "P_8_8", type: null, old_line: 8, new_line: 8 }, end: { line_code: "P_9_9", type: "old", old_line: 9, new_line: null } });
 });

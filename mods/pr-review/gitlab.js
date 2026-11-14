@@ -24,7 +24,8 @@ export async function repoInfo(id) {
 
 export async function listPRs(id, state, search) {
   const q = search ? `&search=${encodeURIComponent(search)}` : "";
-  const lists = await Promise.all(glStates(state).map((s) => api(id, `projects/:id/merge_requests?state=${s}&per_page=100${q}`)));
+  // One page a state, the 100 last updated, as gh's --limit 100: --paginate would walk every MR the project ever had.
+  const lists = await Promise.all(glStates(state).map(async (s) => JSON.parse(await glab(id, ["api", `projects/:id/merge_requests?state=${s}&per_page=100&order_by=updated_at${q}`]))));
   return lists.flat().map(mapMR).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 }
 export const viewPR = async (id, number) => mapMR(await one(id, mr(number)));
@@ -37,11 +38,12 @@ export const commitDiff = async (id, _nwo, oid) => commitDiffText(await api(id, 
 export const fileAt = (id, _nwo, path, ref) =>
   glab(id, ["api", `projects/:id/repository/files/${encodeURIComponent(path)}/raw?ref=${encodeURIComponent(ref)}`], 120000);
 
-let me = null; // the signed-in user, once per session
+const me = new Map(); // repo → the signed-in user there, asked once (two repos can be on two hosts or accounts)
 export async function threads(id, _nwo, number) {
   const [discussions, m] = await Promise.all([api(id, `${mr(number)}/discussions`), one(id, mr(number))]);
-  me ??= (await one(id, "user")).username;
-  return mapThreads(discussions, m, me);
+  const key = `${id.machine}|${id.repo}`;
+  if (!me.has(key)) me.set(key, (await one(id, "user")).username);
+  return mapThreads(discussions, m, me.get(key));
 }
 
 export const postComment = (id, _nwo, number, body) => send(id, "POST", `${mr(number)}/notes`, body);
@@ -52,8 +54,10 @@ export async function createComment(id, _nwo, number, payload) {
   const v = versionFor(await api(id, `${mr(number)}/versions`), payload.commit_id);
   let lineCode = null;
   if (payload.start_line != null) {
-    const sha = (await exec("sh", ["-c", 'printf %s "$1" | shasum -a 1', "sh", payload.path], { on: id.machine })).stdout.split(" ")[0];
-    lineCode = (o, n) => `${sha}_${o ?? ""}_${n ?? ""}`;
+    // sha1sum (coreutils) or shasum (perl, macOS): a machine may have only one.
+    const sha = (await exec("sh", ["-c", 'printf %s "$1" | { sha1sum 2>/dev/null || shasum -a 1; }', "sh", payload.path], { on: id.machine })).stdout.split(" ")[0];
+    if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error("A range needs sha1sum or shasum on that machine; comment on one line instead.");
+    lineCode = (o, n) => `${sha}_${o}_${n}`;
   }
   return send(id, "POST", `${mr(number)}/discussions`, payload.body, ["-F", `position=${JSON.stringify(position(payload, v, lineCode))}`]);
 }

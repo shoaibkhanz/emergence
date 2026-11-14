@@ -164,3 +164,26 @@ test("commentPayload: both line numbers of the chosen rows and the old path ride
   const range = commentPayload("b.py", { side: "RIGHT", start: 6, end: 7, from: 2, to: 3 }, rows, "old/b.py");
   expect(range).toMatchObject({ start_line: 6, line: 7, old_path: "old/b.py", anchor: { start: { old: 4, new: 6 }, end: { old: null, new: 7 } } });
 });
+
+test("parseDiff: git's quoted names (octal UTF-8) and the tab after a name with a space", () => {
+  const files = parseDiff([
+    'diff --git "a/docs/new file \\303\\251.md" "b/docs/new file \\303\\251.md"', "new file mode 100644", "--- /dev/null", '+++ "b/docs/new file \\303\\251.md"\t', "@@ -0,0 +1 @@", "+x",
+    "diff --git a/CLAUDE.md b/docs/CLAUDE guide.md", "similarity index 99%", "rename from CLAUDE.md", "rename to docs/CLAUDE guide.md", "--- a/CLAUDE.md", "+++ b/docs/CLAUDE guide.md\t", "@@ -1 +1,2 @@", " a", "+b",
+    "diff --git a/my notes.md b/my notes.md", "--- a/my notes.md\t", "+++ b/my notes.md\t", "@@ -1 +1 @@", "-a", "+b",
+    'diff --git "a/q\\"t\\\\ab.md" "b/q\\"t\\\\ab.md"', '--- "a/q\\"t\\\\ab.md"', '+++ "b/q\\"t\\\\ab.md"', "@@ -1 +1 @@", "-a", "+b",
+  ].join("\n"));
+  expect(files.map((f) => [f.status, f.oldPath, f.path])).toEqual([
+    ["added", null, "docs/new file é.md"], ["renamed", "CLAUDE.md", "docs/CLAUDE guide.md"], ["modified", "my notes.md", "my notes.md"], ["modified", 'q"t\\ab.md', 'q"t\\ab.md']]);
+});
+
+test("commentPayload: each end's place on both sides, as GitLab names a line (the side it isn't on: the next line there)", () => {
+  const [f, added] = parseDiff([
+    "diff --git a/R.md b/R.md", "@@ -6,9 +6,10 @@", " six", "-seven", "+SEVEN", " eight", "-nine", "+NINE", "+ten", " ten", " eleven", " twelve", "-thirteen", "+THIRTEEN",
+    "diff --git a/n.md b/n.md", "new file mode 100644", "--- /dev/null", "+++ b/n.md", "@@ -0,0 +1,2 @@", "+one", "+two",
+  ].join("\n"));
+  const pos = (file, from, to) => { const a = commentPayload(file.path, selectRange(file.rows, from, to), file.rows).anchor; return [a.start.pos, a.end.pos]; };
+  expect(pos(f, 2, 2)).toEqual([[7, 7], [7, 7]]); // -seven
+  expect(pos(f, 6, 8)).toEqual([[10, 9], [10, 11]]); // +NINE … " ten" (old 10, new 11)
+  expect(pos(f, 11, 9)).toEqual([[11, 12], [13, 14]]); // " eleven" … -thirteen
+  expect(pos(added, 1, 2)).toEqual([[0, 1], [0, 2]]);
+});

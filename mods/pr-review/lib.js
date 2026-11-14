@@ -1,7 +1,15 @@
 // Host-free logic for pr-review: unified diff parsing, line selection → GitHub
 // review comment payload, review threads → diff rows. Tested by lib.test.js.
 
-const unquote = (p) => (p.startsWith('"') ? JSON.parse(p) : p);
+// A name as git prints it: a tab ends one holding a space (on ---/+++), and one with special bytes comes quoted,
+// C-style: "caf\303\251.md" (octal UTF-8), \t, \", \\.
+const ESC = { t: "\t", n: "\n", r: "\r" };
+function unquote(p) {
+  p = p.replace(/\t$/, "");
+  if (!p.startsWith('"')) return p;
+  const s = p.slice(1, -1).replace(/%/g, "%25").replace(/\\(?:([0-7]{3})|(.))/g, (_, oct, c) => (oct ? `%${parseInt(oct, 8).toString(16).padStart(2, "0")}` : ESC[c] ?? c));
+  try { return decodeURIComponent(s); } catch { return s; } // bytes that aren't UTF-8: the name with them as %XX
+}
 const strip = (p) => (p === "/dev/null" ? null : unquote(p).replace(/^[ab]\//, ""));
 
 // Unified diff (git / gh pr diff) → files with flat rows:
@@ -72,12 +80,25 @@ export function selectRange(rows, anchor, focus = anchor) {
 }
 
 // Selection → the location fields of POST pulls/{n}/comments; given the rows, also both line numbers of the first and
-// last row and the old path (GitLab places a note by old and new line; github.js drops them).
+// last row, their `pos` and the old path (GitLab places a note by old and new line; github.js drops them).
 export function commentPayload(path, sel, rows, oldPath) {
   const p = { path, line: sel.end, side: sel.side };
   if (sel.start !== sel.end) Object.assign(p, { start_line: sel.start, start_side: sel.side });
-  if (rows) Object.assign(p, { old_path: oldPath ?? path, anchor: { start: { old: rows[sel.from].old, new: rows[sel.from].new }, end: { old: rows[sel.to].old, new: rows[sel.to].new } } });
+  const end = (i) => ({ old: rows[i].old, new: rows[i].new, pos: linePos(rows, i) });
+  if (rows) Object.assign(p, { old_path: oldPath ?? path, anchor: { start: end(sel.from), end: end(sel.to) } });
   return p;
+}
+
+// rows[i]'s place on both sides, [old, new], as GitLab's line codes count: its own numbers, and on the side it isn't
+// on, the next line there (one past the last seen, else the hunk's start).
+function linePos(rows, i) {
+  let { old, new: nu } = rows[i];
+  for (let j = i - 1; j >= 0 && (old == null || nu == null); j--) {
+    const m = rows[j].kind === "hunk" && rows[j].text?.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)/);
+    old ??= m ? +m[1] : rows[j].old != null ? rows[j].old + 1 : null;
+    nu ??= m ? +m[2] : rows[j].new != null ? rows[j].new + 1 : null;
+  }
+  return [old, nu];
 }
 
 // Review threads → { at: Map(rowIndex → threads), loose: threads without a row }.

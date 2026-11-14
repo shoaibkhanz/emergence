@@ -44,20 +44,19 @@ def repo_facts(repo, since):
                 if len(parts) >= 3 and parts[0].isdigit() and parts[1].isdigit() and not GENERATED.search(parts[2]):  # binary files show "-"
                     add += int(parts[0]); dele += int(parts[1])
             commits.append({"t": int(lines[0]) * 1000, "repo": repo, "add": add, "del": dele})
-    # Pull requests on GitHub (gh), merge requests anywhere else (glab: gitlab.com or a self-hosted GitLab).
+    # Pull requests on GitHub (gh), merge requests on GitLab (glab): the likelier by the origin remote first, else the
+    # other (a GitHub Enterprise host or ssh alias needn't say "github"). GitLab's list carries no line counts.
     prs = []
     remote = run(["git", "remote", "get-url", "origin"], repo)
-    if "github" in remote:
-        raw = run(["gh", "pr", "list", "--author", "@me", "--state", "all", "--limit", "300",
-                   "--json", "number,createdAt,mergedAt,state,additions,deletions"], repo)
-        rows = [(p["number"], p.get("createdAt"), p.get("mergedAt"), p.get("state", ""), p.get("additions", 0), p.get("deletions", 0))
-                for p in (json.loads(raw) if raw.strip().startswith("[") else [])]
-    elif remote:
-        raw = run(["glab", "mr", "list", "--author=@me", "--all", "--per-page", "100", "--output", "json"], repo)
-        rows = [(m["iid"], m.get("created_at"), m.get("merged_at"), m.get("state", ""), 0, 0)  # GitLab's list carries no line counts
-                for m in (json.loads(raw) if raw.strip().startswith("[") else [])]
-    else:
-        rows = []
+    tools = [["gh", "pr", "list", "--author", "@me", "--state", "all", "--limit", "300",
+              "--json", "number,createdAt,mergedAt,state,additions,deletions"],
+             ["glab", "mr", "list", "--author=@me", "--all", "--per-page", "100", "--output", "json"]]
+    if "github" not in remote.lower():
+        tools.reverse()
+    raw = (run(tools[0], repo) or run(tools[1], repo)) if remote else ""
+    rows = [(p.get("number", p.get("iid")), p.get("createdAt") or p.get("created_at"), p.get("mergedAt") or p.get("merged_at"),
+             p.get("state", ""), p.get("additions", 0), p.get("deletions", 0))
+            for p in (json.loads(raw) if raw.strip().startswith("[") else [])]
     for n, created, merged, state, add, dele in rows:
         created = ms(created)
         if created and created >= since:

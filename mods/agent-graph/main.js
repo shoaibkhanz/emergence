@@ -48,8 +48,8 @@ async function pulls(on, cwd) {
   try {
     const url = (await exec("git", ["remote", "get-url", "origin"], { cwd, on })).stdout ?? "";
     if (!/github/i.test(url)) { // GitLab, else (GitHub Enterprise, an ssh alias) gh below
-      const r = await exec("glab", ["mr", "list", "--all", "-P", "100", "-F", "json"], { cwd, on });
-      if (r.code === 0) return prsByBranch(mrsAsPRs(JSON.parse(r.stdout)));
+      const r = await exec("glab", ["mr", "list", "--all", "-P", "100", "-F", "json"], { cwd, on }).catch(() => null); // no glab here: gh
+      if (r?.code === 0) return prsByBranch(mrsAsPRs(JSON.parse(r.stdout)));
     }
     const r = await exec("gh", ["pr", "list", "--state", "all", "--limit", "100", "--json", "number,state,isDraft,headRefName,title,url,reviewDecision"], { cwd, on });
     return r.code === 0 ? prsByBranch(JSON.parse(r.stdout)) : null;

@@ -241,9 +241,11 @@ export default class PrReview extends View {
         // The repo's forge: GitHub (gh) or GitLab (glab), the likelier first by its origin remote, else the other;
         // the rest of the panel calls s.api.
         const order = forgeOrder((await git(s.id, ["remote", "get-url", "origin"]).catch(() => "")).trim()), apis = { github, gitlab };
-        for (const [i, name] of order.entries()) {
-          try { s.info = await apis[name].repoInfo(s.id); s.api = apis[name]; break; } catch (e) { if (i === order.length - 1) throw e; }
+        let why; // the likelier forge's error: the other's only says this isn't its kind of remote
+        for (const name of order) {
+          try { s.info = await apis[name].repoInfo(s.id); s.api = apis[name]; break; } catch (e) { why ??= e; }
         }
+        if (!s.info) throw why;
         s.info.defaultBranch ??= (await git(s.id, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).catch(() => "main")).trim().replace(/^origin\//, "");
       } catch (e) {
         s.error = /remote|not a github|no known/i.test(e.message) ? "No GitHub or GitLab remote for this repository." : e.message;
