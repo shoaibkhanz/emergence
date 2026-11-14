@@ -18,7 +18,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import datetime
 
 CACHE_VERSION = 4
@@ -364,14 +364,50 @@ def cached(cache, seen, key, st, parse):
         print(f"usage scan: {key}: {type(ex).__name__}: {ex}", file=sys.stderr)
 
 
-def scan_tree(root, cache, seen, parse):
-    """Session files at <root>/<slug>/<file>.jsonl; anything nested deeper is a sub-agent."""
+# A first scan of a long history parses thousands of files: past this many new or changed ones, they're split across
+# processes (parsing is pure Python, so threads wouldn't run it in parallel). A warm scan has few and stays in one.
+PARALLEL_MIN = 32
+
+
+def parse_file(job):
+    """One session file of a tree harness ("claude", "omp" or "pi"): module-level so worker processes can run it."""
+    h, path, sub = job
+    return parse_claude(path, sub) if h == "claude" else parse_pi(path, h, sub)
+
+
+def scan_tree(root, cache, seen, h):
+    """Session files at <root>/<slug>/<file>.jsonl; anything nested deeper is a sub-agent. Unchanged files keep their
+    cached records; new or changed ones are parsed, across processes when there are many."""
+    stale = []
     for d, _, files in os.walk(root):
         sub = os.path.relpath(d, root).count(os.sep) > 0
         for name in files:
             if name.endswith(".jsonl"):
                 p = os.path.join(d, name)
-                cached(cache, seen, p, lambda: stamp(p), lambda: parse(p, sub))
+                seen.add(p)
+                try:
+                    st = stamp(p)
+                except OSError:
+                    continue  # vanished mid-walk
+                if cache.get(p, {}).get("st") != st:
+                    stale.append((p, st, sub))
+    jobs = [(h, p, sub) for p, _, sub in stale]
+    if len(jobs) >= PARALLEL_MIN:
+        with ProcessPoolExecutor() as pool:
+            results = list(pool.map(safe_parse, jobs, chunksize=8))
+    else:
+        results = [safe_parse(j) for j in jobs]
+    for (p, st, _), r in zip(stale, results):
+        if r is not None:  # one bad file must not drop the rest (safe_parse said why)
+            cache[p] = {"st": st, "r": r}
+
+
+def safe_parse(job):
+    try:
+        return parse_file(job)
+    except Exception as ex:
+        print(f"usage scan: {job[1]}: {type(ex).__name__}: {ex}", file=sys.stderr)
+        return None
 
 
 def scan_opencode(home, cache, seen):
@@ -383,13 +419,11 @@ def scan_opencode(home, cache, seen):
 
 
 HARNESSES = {
-    "omp": lambda home, c, s: scan_tree(os.path.join(home, ".omp", "agent", "sessions"), c, s,
-                                        lambda p, sub: parse_pi(p, "omp", sub)),
-    "claude": lambda home, c, s: scan_tree(os.path.join(home, ".claude", "projects"), c, s, parse_claude),
+    "omp": lambda home, c, s: scan_tree(os.path.join(home, ".omp", "agent", "sessions"), c, s, "omp"),
+    "claude": lambda home, c, s: scan_tree(os.path.join(home, ".claude", "projects"), c, s, "claude"),
     "codex": scan_codex,
     "opencode": scan_opencode,
-    "pi": lambda home, c, s: scan_tree(os.path.join(home, ".pi", "agent", "sessions"), c, s,
-                                       lambda p, sub: parse_pi(p, "pi", sub)),
+    "pi": lambda home, c, s: scan_tree(os.path.join(home, ".pi", "agent", "sessions"), c, s, "pi"),
 }
 
 
