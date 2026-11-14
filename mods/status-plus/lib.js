@@ -70,8 +70,10 @@ export function parseProcs(text) {
 // ---- CPU ----
 
 // CPU between two samples ({ at: ms, procs }): each pid's CPU time grown over the wall time and the cores, as a share
-// of the whole machine (0–100). Only pids in both samples whose time grew count: a new pid has no baseline, and a
-// pid whose time went down is a reused pid. Null on the first poll or when no time passed.
+// of the whole machine (0–100). `ps -ax` lists every process, so a pid missing from the last sample started since,
+// and all its time is this interval's (as is a reused pid's, whose time went down). One pid never counts more than the
+// whole interval. Null on the first poll or when no time passed.
+// ponytail: children that start and exit between two polls are never seen; `ps -S` would roll them into the parent.
 export function cpuSample(prev, next, cores) {
   if (!prev || !next || next.at <= prev.at || !cores) return null;
   const capacity = ((next.at - prev.at) / 1000) * cores;
@@ -79,9 +81,9 @@ export function cpuSample(prev, next, cores) {
   let total = 0;
   for (const [pid, p] of next.procs) {
     const before = prev.procs.get(pid);
-    const grown = before ? p.cpu - before.cpu : 0;
+    const grown = before && p.cpu >= before.cpu ? p.cpu - before.cpu : p.cpu;
     if (grown <= 0) continue;
-    const pct = (grown / capacity) * 100;
+    const pct = (Math.min(grown, capacity) / capacity) * 100;
     byPid.set(pid, pct);
     total += pct;
   }
@@ -131,9 +133,19 @@ export function byAgent(procs, cpu, byPid) {
   return { rows: [...sums.values()], rest };
 }
 
-// The rows worth showing, largest first by the tab's measure ("cpu" or "rss").
-export const visibleAgents = (rows, key) =>
-  rows.filter((r) => r.cpu >= VISIBLE.cpu || r.rss >= VISIBLE.rssKB).sort((a, b) => b[key] - a[key]);
+// The rows worth showing, largest first by the tab's own measure ("cpu": ≥ 1%, "rss": ≥ 100 MB).
+const worth = (r, key) => (key === "cpu" ? r.cpu >= VISIBLE.cpu : r.rss >= VISIBLE.rssKB);
+export const visibleAgents = (rows, key) => rows.filter((r) => worth(r, key)).sort((a, b) => b[key] - a[key]);
+
+// The By-agent rows for a tab, and "Everything else" with the agents left out added in, so the rows add up.
+export function splitAgents(rows, rest, key) {
+  const left = rows.filter((r) => !worth(r, key));
+  return { shown: visibleAgents(rows, key),
+    rest: left.reduce((acc, r) => ({ cpu: acc.cpu + r.cpu, rss: acc.rss + r.rss }), { ...rest }) };
+}
+
+// The port a process's chip opens: the first of its ports Ports has a row for (rowKeys: "pid:port"), else none.
+export const chipPort = (pid, ports, rowKeys) => (ports ?? []).find((port) => rowKeys.has(`${pid}:${port}`));
 
 // The n processes using the most CPU (cpu: Map pid -> %) or memory.
 export function topProcs(procs, cpu, key, n = 8) {

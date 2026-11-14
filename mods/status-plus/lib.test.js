@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { parseVmStat, memUsed, parseSysctl, parseSwap, parseDf, parseBattery, parseProcs, cpuSample,
   localTerminals, chainOwner, byAgent, visibleAgents, topProcs, level, segments, fmtBytes,
-  worktreePaths, parseDu, portsByPid } from "./lib.js";
+  worktreePaths, parseDu, portsByPid, splitAgents, chipPort } from "./lib.js";
 import { VM_STAT, SYSCTL, SWAP, DF, BATT_ON, BATT_AC, PS } from "./fixtures.js";
 
 test("parseVmStat + memUsed: (active + wired + compressor) pages at the stated page size", () => {
@@ -55,11 +55,18 @@ test("cpuSample: two cores busy for 5 s on 10 cores is 20%; per pid as a share o
   expect(s.byPid.get(1)).toBe(10);
 });
 
-test("cpuSample: a process new since the last poll, or whose time went down (pid reused), counts 0 (Review Focus 2)", () => {
-  const s = cpuSample({ at: 0, procs: procs([1, 10], [3, 99]) }, { at: 5000, procs: procs([1, 10], [2, 500], [3, 1]) }, 10);
-  expect(s.total).toBe(0);
-  expect(s.byPid.get(2) ?? 0).toBe(0);
-  expect(s.byPid.get(3) ?? 0).toBe(0);
+test("cpuSample: a process started since the last poll counts all its time; a reused pid (time went down) counts as new; an exited one adds nothing (review: Important 1)", () => {
+  const s = cpuSample({ at: 0, procs: procs([1, 10], [3, 99], [4, 7]) }, { at: 5000, procs: procs([1, 10], [2, 2], [3, 1]) }, 10);
+  expect(s.byPid.get(2)).toBe(4);          // new: 2 s of its own in 5 s on 10 cores
+  expect(s.byPid.get(3)).toBe(2);          // reused pid: its 1 s, not a negative
+  expect(s.byPid.has(4)).toBe(false);      // exited between the polls
+  expect(s.total).toBe(6);
+});
+
+test("cpuSample: no pid counts more than the whole interval on every core (a line ps skipped last time)", () => {
+  const s = cpuSample({ at: 0, procs: procs([1, 0]) }, { at: 5000, procs: procs([1, 0], [2, 500]) }, 10);
+  expect(s.byPid.get(2)).toBe(100);
+  expect(s.total).toBe(100);
 });
 
 // ---- Sums, levels, segments ----
@@ -88,10 +95,10 @@ test("byAgent: every process summed into its owner; the rest kept apart", () => 
   expect(rest).toEqual({ cpu: 1, rss: 7000 });
 });
 
-test("visibleAgents: only ≥ 1% CPU or ≥ 100 MB, largest first by the tab's measure (Review Focus 3)", () => {
+test("visibleAgents: by the tab's own measure, CPU ≥ 1% or Memory ≥ 100 MB, largest first (Review Focus 3)", () => {
   const rows = [{ address: "a", cpu: 0.2, rss: 40 * 1024 }, { address: "b", cpu: 3, rss: 10 }, { address: "c", cpu: 0, rss: 200 * 1024 }];
-  expect(visibleAgents(rows, "cpu").map((r) => r.address)).toEqual(["b", "c"]);
-  expect(visibleAgents(rows, "rss").map((r) => r.address)).toEqual(["c", "b"]);
+  expect(visibleAgents(rows, "cpu").map((r) => r.address)).toEqual(["b"]);
+  expect(visibleAgents(rows, "rss").map((r) => r.address)).toEqual(["c"]);
 });
 
 test("topProcs: the n largest by CPU or memory", () => {
@@ -143,4 +150,22 @@ test("portsByPid: each pid's listening ports from lsof -F, ascending, IPv4/IPv6 
   expect(m.get(10)).toEqual([5173, 24678]);
   expect(m.get(11)).toEqual([5432]);
   expect(portsByPid("").size).toBe(0);
+});
+
+test("splitAgents: rows by the tab's own measure (CPU ≥ 1%, Memory ≥ 100 MB); the rest's sums go to Everything else (review: Important 2)", () => {
+  const rows = [{ address: "idle", cpu: 0.1, rss: 400 * 1024 }, { address: "busy", cpu: 30, rss: 50 * 1024 }];
+  const cpu = splitAgents(rows, { cpu: 5, rss: 1000 }, "cpu");
+  expect(cpu.shown.map((r) => r.address)).toEqual(["busy"]);
+  expect(cpu.rest.cpu).toBeCloseTo(5.1, 5);           // the idle agent's CPU, so the rows add up to the headline
+  const mem = splitAgents(rows, { cpu: 5, rss: 1000 }, "rss");
+  expect(mem.shown.map((r) => r.address)).toEqual(["idle"]);
+  expect(mem.rest.rss).toBe(1000 + 50 * 1024);
+});
+
+test("chipPort: a chip only for a port Ports has a row for, so it never closes the popup for nothing (review: Important 3)", () => {
+  const rowKeys = new Set(["10:5173"]);
+  expect(chipPort(10, [5173, 24678], rowKeys)).toBe(5173);
+  expect(chipPort(10, [24678], rowKeys)).toBe(undefined);
+  expect(chipPort(11, [5000], rowKeys)).toBe(undefined);
+  expect(chipPort(10, undefined, rowKeys)).toBe(undefined);
 });

@@ -8,7 +8,7 @@ import { div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { exec, home, props, closeOverlay, theme, terminals, panes, agents, run, shared, setShared } from "herdr";
 import { parseVmStat, memUsed, parseSysctl, parseSwap, parseDf, parseProcs, cpuSample, localTerminals, chainOwner, byAgent,
-  visibleAgents, topProcs, level, fmtBytes, worktreePaths, parseDu, portsByPid } from "./lib.js";
+  topProcs, level, fmtBytes, worktreePaths, parseDu, portsByPid, splitAgents, chipPort } from "./lib.js";
 
 const FIRST_MS = 1000; // the second sample comes quickly, so CPU shows within a second
 const FAST_MS = 5000;
@@ -23,7 +23,6 @@ const PAD = 24, GAP = 16;
 const EXEC = { timeout: 4000 };
 const MONO = "Geist Mono";
 const TABS = [["cpu", "CPU"], ["mem", "Memory"], ["disk", "Disk"]];
-const AGENT_BINS = ["claude", "codex", "omp", "pi", "opencode"]; // their own ports aren't servers (as Ports' lib)
 
 async function out(cmd, args, opts = EXEC) {
   const r = await exec(cmd, args, opts).catch(() => null);
@@ -145,8 +144,7 @@ export class Popup {
     const agentOf = new Map(agents().map((a) => [a.address, a]));
     const where = (address) => paneOf.get(address)?.branch || basename(paneOf.get(address)?.cwd ?? terms.get(address)?.foreground?.cwd) || address;
     const byPid = localTerminals(terminals());
-    // An agent's own listening port (Claude Code's internal one) isn't a server: Ports hides it, so no chip here either.
-    const agentFg = new Set(terminals().filter((x) => x.program?.agent || x.report).map((x) => x.foreground?.pid).filter(Boolean));
+    const rowKeys = new Set(shared("ports.rows") ?? []); // chips only for ports Ports has a row for (it opens the card)
     const procs = this.sample?.procs ?? new Map(), cpuBy = this.cpu?.byPid ?? new Map();
     const acts = [];
     const act = (fn) => { acts.push(fn); return acts.length - 1; };
@@ -165,10 +163,10 @@ export class Popup {
       .child(div().h(6).w_full().rounded(3).bg(t.raised)
         .child(div().h_full().rounded(3).bg(ink[lvl] ?? t.accent).w(`${Math.max(0, Math.min(100, (fill ?? 0) * 100))}%`)));
 
-    // A section's header names its columns, at the same widths as its rows'.
+    // A section's header names its columns, at the same widths and alignment as its rows' ("left" for text, else right).
     const section = (label, cols = []) => h_flex().flex_none().pt(10).pb(4).px(10).gap(10).items_center().text_size(11.5).text_color(t.dim)
       .child(div().flex_1().child(label))
-      .children(cols.map(([text, w]) => div().w(w).flex_none().text_right().child(text)));
+      .children(cols.map(([text, w, align]) => div().w(w).flex_none().when(align !== "left", (el) => el.text_right()).child(text)));
     const row = (id, i, children, onClick) => h_flex().id(id).h(ROW_H).px(10).gap(10).flex_none().items_center().rounded(8).text_size(12.5)
       .when(!!onClick, (el) => el.cursor_pointer().hover((x) => x.bg(t.hover)).on_click(() => onClick()))
       .when(i != null && ringed(i), (el) => el.bg(t.selected))
@@ -188,14 +186,14 @@ export class Popup {
         ])) : [quiet(this.measuring ? "Finding worktrees…" : "No worktrees in your open terminals")])];
     } else {
       const key = tab === "cpu" ? "cpu" : "rss", measure = tab === "cpu" ? "CPU" : "Memory";
-      const { rows, rest } = byAgent(procs, cpuBy, byPid);
+      const { shown, rest } = (({ rows, rest }) => splitAgents(rows, rest, key))(byAgent(procs, cpuBy, byPid));
       const fmt = (v) => (key === "cpu" ? pct(v) : fmtBytes(v * 1024));
       head = tab === "cpu"
         ? (this.cpu ? headline(pct(this.cpu.total), `of ${this.sys?.cores ?? "?"} cores`, this.cpu.total / 100, level("cpu", this.cpu.total)) : headline("…", "measuring", 0, "ok"))
         : (this.mem ? headline(`${fmtBytes(this.mem.used)} of ${fmtBytes(this.mem.total)}`,
           `pressure ${this.mem.pressure}${this.mem.swap != null ? ` · swap ${fmtBytes(this.mem.swap)}` : ""}`, this.mem.used / this.mem.total, level("mem", this.mem.pressure))
           : headline("…", "", 0, "ok"));
-      const agentRows = visibleAgents(rows, key).map((r) => {
+      const agentRows = shown.map((r) => {
         const i = act(() => this.goTo(r.address));
         return row(`ag-${r.address}`, i, [
           this.mark(t, agentOf.get(r.address)?.program ?? terms.get(r.address)?.program),
@@ -204,7 +202,7 @@ export class Popup {
         ], () => this.goTo(r.address));
       });
       const procRows = topProcs(procs, cpuBy, key, TOP_N).map((p) => {
-        const owner = chainOwner(p.pid, procs, byPid), port = agentFg.has(p.pid) || AGENT_BINS.includes(basename(p.comm)) ? undefined : this.ports.get(p.pid)?.[0];
+        const owner = chainOwner(p.pid, procs, byPid), port = chipPort(p.pid, this.ports.get(p.pid), rowKeys);
         const i = port ? act(() => this.openPort(p.pid, port)) : null;
         return row(`pr-${p.pid}`, i, [
           h_flex().flex_1().min_w(0).gap(8).items_center()
@@ -220,7 +218,7 @@ export class Popup {
         section("By agent", [[measure, COL.value]]),
         ...(agentRows.length ? agentRows : [quiet("No agent is using much")]),
         row("ag-rest", null, [div().size(14).flex_none(), div().flex_1().text_color(t.dim).child("Everything else"), cell(fmt(rest[key]), COL.value, t.dim)]),
-        section("Top processes", [["Started by", COL.owner], [measure, COL.value]]),
+        section("Top processes", [["Started by", COL.owner, "left"], [measure, COL.value]]),
         ...procRows,
       ];
     }

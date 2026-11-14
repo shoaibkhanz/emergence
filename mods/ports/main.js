@@ -95,6 +95,7 @@ export default class Ports extends View {
       const rows = sortServers(servers({ listeners, procs: parsePs(ps.stdout), cwds: parseCwds(cw.stdout), ctx, home: home() }));
       const sig = JSON.stringify([rows.map((r) => [r.key, r.owner, r.web, r.network, r.ports, r.owner.kind === "orphan" && ago(r.age)])]);
       this.rows = rows;
+      this.publishKeys(rows);
       if (sig !== this.sig || this.error) { this.sig = sig; this.error = null; cx.notify(); }
     } catch (e) {
       const error = String(e?.message ?? e).includes("not found") ? "lsof not found" : "Couldn't read ports";
@@ -112,6 +113,14 @@ export default class Ports extends View {
       const root = rootOf(await exec("git", ["-C", d, "rev-parse", "--show-toplevel"], EXEC).catch(() => null));
       if (root !== undefined) this.roots.set(d, root); // a failure isn't "not a repo": asked again next poll
     }));
+  }
+
+  // The rows' keys ("pid:port"), for the System popup to chip only ports this list can open. Written only on change.
+  publishKeys(rows) {
+    const keys = rows.map((r) => r.key);
+    if (JSON.stringify(keys) === this.keysSent) return;
+    this.keysSent = JSON.stringify(keys);
+    setShared("ports.rows", keys);
   }
 
   // What the block needs (lib's blockHeight, from the row count alone), for the inbox to size it: the inbox shares the
@@ -168,13 +177,13 @@ export default class Ports extends View {
     cx.notify();
   }
 
-  // The System popup's port chip (shared "ports.open" { key, port, at }): that row's card, once the popup has closed.
-  // A worker folded into its supervisor matches by port.
+  // The System popup's port chip (shared "ports.open" { key, at }): that row's card, once the popup has closed. The
+  // popup chips only keys this list published (ports.rows).
   openAsked(cx, rows) {
     const want = shared("ports.open");
     if (!want || want.at === this.openAt) return;
     this.openAt = want.at;
-    const r = rows.find((x) => x.key === want.key) ?? rows.find((x) => x.port === want.port);
+    const r = rows.find((x) => x.key === want.key);
     if (r) cx.timer.after(OPEN_AFTER_MS, () => this.card(r, this.who(r, this.model())));
   }
 
