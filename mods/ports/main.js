@@ -49,7 +49,7 @@ function task(a, tab) {
   return t && t !== p?.name && t.toLowerCase() !== p?.key && !/^[~/]/.test(t) && !t.includes("@") ? t : p?.name ?? tab?.name ?? "";
 }
 
-const NOBODY = { program: null, task: "", status: null, address: null, sub: false, probable: false };
+const NOBODY = { program: null, task: "", status: null, address: null, sub: false, probable: false, agent: false, tab: null, folder: null, branch: null };
 
 export default class Ports extends View {
   init(_props, cx) {
@@ -125,9 +125,11 @@ export default class Ports extends View {
     return {
       label: pane?.branch || basename(folder) || o.address,
       program: agent?.program ?? term?.program ?? null,
-      task: agent ? task(agent, model.tabs.get(agent.tab)) : clean(term?.title),
+      task: [agent ? task(agent, model.tabs.get(agent.tab)) : clean(term?.title)].map((x) => (x === pane?.branch ? clean(agent?.title ?? term?.title) : x))
+        .find((x) => x && x !== pane?.branch) ?? "", // a tab named after its branch says nothing the Branch line doesn't
       status: agent?.status ?? term?.status ?? null,
       address: o.address, sub: !!term?.parent, probable: o.kind === "probable", kind: o.kind,
+      agent: !!(term?.program?.agent || term?.report), tab: pane?.tab ?? agent?.tab ?? null, folder: folder ?? null, branch: pane?.branch ?? null,
     };
   }
 
