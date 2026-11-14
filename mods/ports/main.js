@@ -2,7 +2,8 @@
 // card (mods/port-card): details, Open, Go to agent, Stop. lib.js decides everything; this file polls and draws.
 // Its foot is the sidebar's last row, "Working N" (moved here from the inbox so it stays last), opening the graph.
 // Polls every 5 s (lsof, ps, and git rev-parse once per agent folder) while the sidebar is open; nothing animates,
-// and it re-renders only when the rows change.
+// and it re-renders only when the rows change. The inbox sizes this block (rows right under its cards, the slack below
+// them, Working last); this mod publishes what it needs as shared "ports.want".
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
@@ -110,11 +111,12 @@ export default class Ports extends View {
     }));
   }
 
-  // The block's height follows the row count (lib's blockHeight), sent only when it changes.
-  size(px) {
-    if (px === this.px) return;
-    this.px = px;
-    run("layout.resize", { id: "ports", px });
+  // What the block needs (lib's blockHeight, from the row count alone), for the inbox to size it: the inbox shares the
+  // column out and gives Ports the slack under its cards. Published only when it changes (shared writes to disk).
+  want(px) {
+    if (px === this.wantPx) return;
+    this.wantPx = px;
+    setShared("ports.want", px);
   }
 
   // How a row names its owner, from Herdr's live model (re-read every render: branches and states move).
@@ -238,7 +240,7 @@ export default class Ports extends View {
 
   render(cx) {
     const t = theme(), collapsed = folded(), rows = this.rows;
-    this.size(blockHeight(rows.length, collapsed));
+    this.want(blockHeight(rows.length, collapsed));
     // The cursor stays on its row; when that row goes, it takes the row now in its place.
     let i = rows.findIndex((r) => r.key === this.cur);
     if (i < 0) i = Math.min(this.curI ?? 0, rows.length - 1);

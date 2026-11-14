@@ -5,7 +5,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { subAgents } from "./lib.js";
+import { subAgents, splitColumn } from "./lib.js";
 import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared, nextCommand, focused } from "herdr";
 
 function find(node, id) {
@@ -46,6 +46,7 @@ function ago(ms) {
 }
 
 const GLYPH = { cmd: "⌘", shift: "⇧", alt: "⌥", ctrl: "⌃" };
+const PORTS_FALLBACK = 64; // Ports' empty height ("Ports none" + Working) until it says what it needs
 const RANK = { blocked: 0, done: 1, idle: 2 };
 
 export default class Inbox extends View {
@@ -99,24 +100,25 @@ export default class Inbox extends View {
     });
   }
 
-  // Spaces gets the height its rows ask for (spaces.want: its rows, worktrees and machine headers, as Spaces drew
-  // them) while this inbox's own content still fits below; past that, at least half.
+  // The column is shared by Spaces, this inbox and Ports (lib.js splitColumn): Spaces the height its rows ask for
+  // (spaces.want) while the inbox's content still fits; Ports what its rows need (ports.want) plus the slack under the
+  // inbox's cards, so it sits right below them and Working stays last.
   fitSpaces(collapsed, need) {
-    const ms = machines().length, H = this.H ?? 0, sp = find(layout(), "spaces");
+    const ms = machines().length, sp = find(layout(), "spaces"), po = find(layout(), "ports");
     if (!sp || sp.hidden) return;
-    const want = shared("spaces.want") ?? 45 + (Math.max(spaces().length, 1) + (ms > 1 ? ms : 0)) * (collapsed ? 26 : 30);
-    const px = Math.round(H ? Math.max(60, Math.min(want, H - 90, Math.max(H - need, H / 2))) : Math.min(want, 285));
-    if (px === this.spacesPx) return;
-    this.spacesPx = px;
-    run("layout.resize", { id: "spaces", px });
+    const spacesWant = shared("spaces.want") ?? 45 + (Math.max(spaces().length, 1) + (ms > 1 ? ms : 0)) * (collapsed ? 26 : 30);
+    const portsMin = po ? shared("ports.want") ?? PORTS_FALLBACK : 0;
+    const { spaces: px, ports } = splitColumn({ H: this.H ?? 0, spacesWant, need, portsMin, collapsed });
+    if (px !== this.spacesPx) { this.spacesPx = px; run("layout.resize", { id: "spaces", px }); }
+    if (po && ports !== this.portsPx) { this.portsPx = ports; run("layout.resize", { id: "ports", px: ports }); }
   }
 
-  // This block's height plus Spaces' is what the two share; measured after every layout pass.
+  // This block's height plus Spaces' and Ports' is what the three share; measured after every layout pass.
   measured(el) {
     return el.on_size_change((size, cx) => {
       const sp = find(layout(), "spaces");
       if (!sp || sp.hidden) return;
-      const H = Math.round(size.height / (settings().zoom ?? 1)) + (sp.size?.px ?? 0);
+      const H = Math.round(size.height / (settings().zoom ?? 1)) + (sp.size?.px ?? 0) + (find(layout(), "ports")?.size?.px ?? 0);
       if (H !== this.H) { this.H = H; cx.notify(); }
     });
   }
