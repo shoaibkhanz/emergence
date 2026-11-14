@@ -167,3 +167,29 @@ export function segments({ cpu, mem, disk, battery }, width) {
   if (battery?.onBattery && width >= WIDE) out.push({ id: "battery", text: `${battery.percent}%`, level: level("battery", battery.percent) });
   return out;
 }
+
+// ---- The popup's Disk and ports ----
+
+// `git worktree list --porcelain` -> every worktree's path (a bare repository has none to measure).
+export function worktreePaths(text) {
+  return (text ?? "").split(/\n\n+/).map((block) => ({ path: /^worktree (.+)$/m.exec(block)?.[1], bare: /^bare$/m.test(block) }))
+    .filter((w) => w.path && !w.bare).map((w) => w.path);
+}
+
+// `du -sk <path>` -> KB, or null.
+export function parseDu(text) {
+  const m = /^(\d+)\s/.exec(text ?? "");
+  return m ? Number(m[1]) : null;
+}
+
+// `lsof -nP -iTCP -sTCP:LISTEN -Fpn` -> Map pid -> its listening ports, ascending, each once.
+export function portsByPid(text) {
+  const out = new Map();
+  let pid = 0;
+  for (const line of (text ?? "").split("\n")) {
+    if (line[0] === "p") pid = Number(line.slice(1));
+    const port = line[0] === "n" && pid ? Number(/:(\d+)$/.exec(line)?.[1]) : 0;
+    if (port) out.set(pid, [...new Set([...(out.get(pid) ?? []), port])].sort((a, b) => a - b));
+  }
+  return out;
+}

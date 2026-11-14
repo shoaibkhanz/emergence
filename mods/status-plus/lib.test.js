@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import { parseVmStat, memUsed, parseSysctl, parseSwap, parseDf, parseBattery, parseProcs, cpuSample,
-  localTerminals, chainOwner, byAgent, visibleAgents, topProcs, level, segments, fmtBytes } from "./lib.js";
+  localTerminals, chainOwner, byAgent, visibleAgents, topProcs, level, segments, fmtBytes,
+  worktreePaths, parseDu, portsByPid } from "./lib.js";
 import { VM_STAT, SYSCTL, SWAP, DF, BATT_ON, BATT_AC, PS } from "./fixtures.js";
 
 test("parseVmStat + memUsed: (active + wired + compressor) pages at the stated page size", () => {
@@ -124,4 +125,22 @@ test("segments: cpu, memory, disk, battery; dropped battery → disk → memory 
   expect(segments({ ...state, cpu: null }, 1200)[0].text).toBe("–");
   expect(segments({ ...state, battery: { onBattery: false, percent: 100 } }, 1200).map((s) => s.id)).toEqual(["cpu", "mem", "disk"]);
   expect(segments({ cpu: null, mem: null, disk: null, battery: null }, 1200)).toEqual([{ id: "cpu", text: "–", level: "ok" }]);
+});
+
+test("worktreePaths: every worktree's path from git worktree list --porcelain, bare entries skipped", () => {
+  const text = "worktree /w/app\nHEAD 1a2b\nbranch refs/heads/main\n\nworktree /w/app/.claude/worktrees/x y\nHEAD 3c4d\nbranch refs/heads/feat\n\nworktree /w/bare.git\nbare\n";
+  expect(worktreePaths(text)).toEqual(["/w/app", "/w/app/.claude/worktrees/x y"]);
+  expect(worktreePaths("")).toEqual([]);
+});
+
+test("parseDu: KB from du -sk (path may hold spaces); null otherwise", () => {
+  expect(parseDu("1052\t/Users/me/code/x y\n")).toBe(1052);
+  expect(parseDu("")).toBe(null);
+});
+
+test("portsByPid: each pid's listening ports from lsof -F, ascending, IPv4/IPv6 once", () => {
+  const m = portsByPid("p10\ncnode\nf3\nn*:5173\nf4\nn[::1]:5173\nf5\nn127.0.0.1:24678\np11\ncpg\nf6\nn127.0.0.1:5432\n");
+  expect(m.get(10)).toEqual([5173, 24678]);
+  expect(m.get(11)).toEqual([5432]);
+  expect(portsByPid("").size).toBe(0);
 });

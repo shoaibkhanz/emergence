@@ -1,0 +1,234 @@
+// The System popup: CPU, Memory and Disk tabs, each saying which agent and which process is using it. Opened by the
+// bar (bar.js) on the tab clicked; polls only while open. By-agent rows go to the agent; a process that listens on a
+// port has a chip that opens that port's card in Ports (shared "ports.open"). Disk measures each worktree once,
+// one at a time, and keeps the sizes five minutes (shared "system.du").
+// Every close gives the keyboard back to where it was (shared emergence.over), unless a row took it elsewhere.
+
+import { div, image, svg } from "gpui-kit";
+import { v_flex, h_flex } from "gpui-base";
+import { exec, home, props, closeOverlay, theme, terminals, panes, agents, run, shared, setShared } from "herdr";
+import { parseVmStat, memUsed, parseSysctl, parseSwap, parseDf, parseProcs, cpuSample, localTerminals, chainOwner, byAgent,
+  visibleAgents, topProcs, level, fmtBytes, worktreePaths, parseDu, portsByPid } from "./lib.js";
+
+const FIRST_MS = 1000; // the second sample comes quickly, so CPU shows within a second
+const FAST_MS = 5000;
+const DU_KEEP_MS = 5 * 60 * 1000;
+const DU_TIMEOUT_MS = 30000;
+const TOP_N = 8;
+const ROW_H = 30;
+const DU_MAX_H = 8 * ROW_H; // the worktree list scrolls past eight rows (a popup sizes to its content: no flex height)
+const EXEC = { timeout: 4000 };
+const MONO = "Geist Mono";
+const TABS = [["cpu", "CPU"], ["mem", "Memory"], ["disk", "Disk"]];
+const AGENT_BINS = ["claude", "codex", "omp", "pi", "opencode"]; // their own ports aren't servers (as Ports' lib)
+
+async function out(cmd, args, opts = EXEC) {
+  const r = await exec(cmd, args, opts).catch(() => null);
+  return r?.code === 0 ? r.stdout : null;
+}
+
+const basename = (p) => (p ?? "").split("/").filter(Boolean).pop() ?? "";
+const tilde = (p) => (p && home() && p.startsWith(home()) ? `~${p.slice(home().length)}` : p ?? "");
+const pct = (v) => (v >= 10 ? `${Math.round(v)}%` : `${v.toFixed(1)}%`);
+
+export class Popup {
+  constructor(cx) {
+    setShared("emergence.over", { at: Date.now(), open: true });
+    this.handle = cx.focus_handle();
+    this.handle.focus();
+    this.tab = props()?.tab ?? "cpu";
+    this.cur = 0; // the keyboard's row among the actionable ones
+    this.ports = new Map();
+    this.sizes = shared("system.du")?.at > Date.now() - DU_KEEP_MS ? shared("system.du").sizes : null;
+    this.poll(cx);
+    cx.timer.after(FIRST_MS, (cx) => this.poll(cx));
+    cx.timer.every(FAST_MS, (cx) => this.poll(cx));
+    out("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"]).then((t) => { this.ports = portsByPid(t); cx.notify(); });
+    out("df", ["-k", home()]).then((t) => { this.disk = t && parseDf(t); cx.notify(); });
+    if (this.tab === "disk") this.measure(cx);
+  }
+
+  async poll(cx) {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      const [ps, vm, sys, swap] = await Promise.all([
+        out("ps", ["-axo", "pid=,ppid=,rss=,time=,comm="]), out("vm_stat", []),
+        out("sysctl", ["-n", "hw.memsize", "hw.ncpu", "kern.memorystatus_vm_pressure_level"]), out("sysctl", ["-n", "vm.swapusage"]),
+      ]);
+      this.sys = sys && parseSysctl(sys);
+      const v = vm && parseVmStat(vm);
+      this.mem = this.sys && v ? { used: memUsed(v), total: this.sys.total, pressure: this.sys.pressure, swap: swap && parseSwap(swap) } : null;
+      if (ps && this.sys) {
+        const next = { at: Date.now(), procs: parseProcs(ps) };
+        this.cpu = cpuSample(this.sample, next, this.sys.cores) ?? this.cpu;
+        this.sample = next;
+      }
+      cx.notify();
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  // Every worktree of the repos this computer's terminals are in, measured one at a time (du is slow on big trees).
+  async measure(cx) {
+    if (this.sizes || this.measuring) return;
+    this.measuring = true;
+    this.sizes = {};
+    const dirs = [...new Set(terminals().filter((t) => t.state === "live" && t.machine == null && !String(t.address).includes("/"))
+      .map((t) => t.foreground?.cwd ?? t.cwd).filter(Boolean))];
+    const lists = await Promise.all(dirs.map((d) => out("git", ["-C", d, "worktree", "list", "--porcelain"])));
+    const paths = [...new Set(lists.flatMap((l) => worktreePaths(l)))];
+    this.paths = paths;
+    cx.notify();
+    for (const p of paths) {
+      const kb = parseDu(await out("du", ["-sk", p], { timeout: DU_TIMEOUT_MS }));
+      this.sizes = { ...this.sizes, [p]: kb ?? "big" };
+      cx.notify();
+    }
+    setShared("system.du", { at: Date.now(), sizes: this.sizes });
+    this.measuring = false;
+  }
+
+  dismiss(went = false) {
+    this.went = went;
+    closeOverlay(props().overlay);
+  }
+
+  async dismissed() { setShared("emergence.over", { at: Date.now(), open: false, went: !!this.went }); }
+
+  goTo(address) {
+    run("agent.focus", { terminal: address });
+    run("pane.focus", { terminal: address });
+    this.dismiss(true);
+  }
+
+  openPort(pid, port) {
+    setShared("ports.open", { key: `${pid}:${port}`, port, at: Date.now() });
+    this.dismiss(true);
+  }
+
+  switchTab(k, cx) {
+    this.tab = k;
+    this.cur = 0;
+    if (k === "disk") this.measure(cx);
+    cx.notify();
+  }
+
+  key(e, cx) {
+    const acts = this.acts ?? [];
+    const i = TABS.findIndex(([k]) => k === this.tab);
+    if (e.key === "escape") this.dismiss();
+    else if (e.key === "left" || e.key === "right") this.switchTab(TABS[(i + (e.key === "left" ? -1 : 1) + TABS.length) % TABS.length][0], cx);
+    else if (e.key === "up" || e.key === "down") { this.cur = Math.max(0, Math.min(acts.length - 1, this.cur + (e.key === "up" ? -1 : 1))); cx.notify(); }
+    else if (e.key === "enter") acts[this.cur]?.();
+    else return;
+    cx.stop_propagation();
+  }
+
+  // The program's mark, as Ports and the inbox draw it.
+  mark(t, p) {
+    if (!p?.icon) return div().size(14).flex_none().rounded(7).border(1).border_color(t.dim);
+    if (p.tint && p.tile) return h_flex().size(14).flex_none().rounded(4).bg(p.tile).items_center().justify_center()
+      .child(svg(p.icon).size(9).text_color(p.color ?? t.foreground));
+    return p.tint ? svg(p.icon).size(14).flex_none().text_color(t.foreground) : image(p.icon).w(14).h(14).flex_none().rounded(4);
+  }
+
+  render() {
+    const t = theme(), tab = this.tab;
+    const ink = { ok: t.accent, warn: t.working, crit: t.blocked };
+    const terms = new Map(terminals().map((x) => [x.address, x]));
+    const paneOf = new Map(panes().filter((p) => p.terminal).map((p) => [p.terminal, p]));
+    const agentOf = new Map(agents().map((a) => [a.address, a]));
+    const where = (address) => paneOf.get(address)?.branch || basename(paneOf.get(address)?.cwd ?? terms.get(address)?.foreground?.cwd) || address;
+    const byPid = localTerminals(terminals());
+    // An agent's own listening port (Claude Code's internal one) isn't a server: Ports hides it, so no chip here either.
+    const agentFg = new Set(terminals().filter((x) => x.program?.agent || x.report).map((x) => x.foreground?.pid).filter(Boolean));
+    const procs = this.sample?.procs ?? new Map(), cpuBy = this.cpu?.byPid ?? new Map();
+    const acts = [];
+    const act = (fn) => { acts.push(fn); return acts.length - 1; };
+    const ringed = (i) => i === this.cur;
+
+    const tabs = h_flex().h(28).p(2).gap(2).flex_none().rounded(8).bg(t.raised)
+      .children(TABS.map(([k, label]) => h_flex().id(`sys-tab-${k}`).flex_1().h_full().items_center().justify_center().rounded(6).text_size(12)
+        .cursor_pointer().when(tab === k, (el) => el.bg(t.background).text_color(t.foreground).font_medium())
+        .when(tab !== k, (el) => el.text_color(t.muted).hover((x) => x.text_color(t.foreground)))
+        .on_click((_e, cx) => this.switchTab(k, cx)).child(label)));
+
+    const headline = (big, caption, fill, lvl) => v_flex().gap(8).flex_none()
+      .child(h_flex().items_baseline().gap(8)
+        .child(div().text_size(15).font_semibold().text_color(t.foreground).child(big))
+        .child(div().flex_1()).child(div().text_size(11.5).text_color(t.dim).child(caption)))
+      .child(div().h(6).w_full().rounded(3).bg(t.raised)
+        .child(div().h_full().rounded(3).bg(ink[lvl] ?? t.accent).w(`${Math.max(0, Math.min(100, (fill ?? 0) * 100))}%`)));
+
+    const section = (label) => div().pt(6).pb(2).text_size(11.5).text_color(t.dim).flex_none().child(label);
+    const row = (id, i, children, onClick) => h_flex().id(id).h(ROW_H).px(8).gap(8).flex_none().items_center().rounded(7).text_size(12.5)
+      .when(!!onClick, (el) => el.cursor_pointer().hover((x) => x.bg(t.hover)).on_click(() => onClick()))
+      .when(i != null && ringed(i), (el) => el.bg(t.selected))
+      .children(children);
+    const value = (text) => div().flex_none().font_family(MONO).text_size(12).text_color(t.foreground).child(text);
+
+    let body;
+    if (tab === "disk") {
+      const d = this.disk, sizes = this.sizes ?? {};
+      const list = (this.paths ?? Object.keys(sizes)).map((p) => [p, sizes[p]]).sort((a, b) => (typeof b[1] === "number" ? b[1] : -1) - (typeof a[1] === "number" ? a[1] : -1));
+      body = v_flex().gap(4).min_h(0)
+        .child(d ? headline(`${fmtBytes(d.free * 1024)} free`, `of ${fmtBytes(d.size * 1024)}`, 1 - d.free / d.size, level("disk", d.free / d.size)) : div().text_color(t.dim).child("…"))
+        .child(section("Worktrees by size"))
+        .child(v_flex().id("sys-du").flex_none().max_h(DU_MAX_H).overflow_y_scrollbar()
+          .when(list.length === 0, (el) => el.child(div().px(8).h(ROW_H).flex().items_center().text_size(12).text_color(t.dim)
+            .child(this.measuring ? "Finding worktrees…" : "No worktrees in your open terminals")))
+          .children(list.map(([p, kb]) => row(`du-${p}`, null, [
+            div().flex_1().min_w(0).whitespace_nowrap().overflow_hidden().text_ellipsis_middle().font_family(MONO).text_size(12).text_color(t.foreground).child(tilde(p)),
+            div().flex_none().font_family(MONO).text_size(12).text_color(kb == null ? t.dim : t.foreground)
+              .child(kb == null ? "…" : kb === "big" ? "too big to measure" : fmtBytes(kb * 1024)),
+          ]))));
+    } else {
+      const key = tab === "cpu" ? "cpu" : "rss";
+      const { rows, rest } = byAgent(procs, cpuBy, byPid);
+      const shown = visibleAgents(rows, key);
+      const fmt = (r) => (key === "cpu" ? pct(r.cpu) : fmtBytes(r.rss * 1024));
+      const head = tab === "cpu"
+        ? (this.cpu ? headline(pct(this.cpu.total), `of ${this.sys?.cores ?? "?"} cores`, this.cpu.total / 100, level("cpu", this.cpu.total)) : headline("…", "measuring", 0, "ok"))
+        : (this.mem ? headline(`${fmtBytes(this.mem.used)} of ${fmtBytes(this.mem.total)}`,
+          `pressure ${this.mem.pressure}${this.mem.swap != null ? ` · swap ${fmtBytes(this.mem.swap)}` : ""}`, this.mem.used / this.mem.total, level("mem", this.mem.pressure))
+          : headline("…", "", 0, "ok"));
+      const agentRows = shown.map((r) => {
+        const i = act(() => this.goTo(r.address));
+        return row(`ag-${r.address}`, i, [
+          this.mark(t, agentOf.get(r.address)?.program ?? terms.get(r.address)?.program),
+          div().flex_1().min_w(0).truncate().text_color(t.foreground).child(where(r.address)),
+          value(fmt(r)),
+        ], () => this.goTo(r.address));
+      });
+      const procRows = topProcs(procs, cpuBy, key, TOP_N).map((p) => {
+        const owner = chainOwner(p.pid, procs, byPid), port = agentFg.has(p.pid) || AGENT_BINS.includes(basename(p.comm)) ? undefined : this.ports.get(p.pid)?.[0];
+        const i = port ? act(() => this.openPort(p.pid, port)) : null;
+        return row(`pr-${p.pid}`, i, [
+          div().flex_none().max_w(140).truncate().text_color(t.foreground).child(basename(p.comm)),
+          port ? h_flex().id(`pr-port-${p.pid}`).flex_none().h(18).px(5).items_center().rounded(4).border(1).border_color(t.border)
+            .font_family(MONO).text_size(11).text_color(t.muted).cursor_pointer().hover((x) => x.text_color(t.foreground))
+            .tooltip("Open its port card").on_click((_e, cx) => { cx.stop_propagation(); this.openPort(p.pid, port); }).child(`:${port}`) : div(),
+          div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(t.dim).child(owner ? where(owner) : "—"),
+          value(key === "cpu" ? pct(cpuBy.get(p.pid) ?? 0) : fmtBytes(p.rss * 1024)),
+        ], port ? () => this.openPort(p.pid, port) : null);
+      });
+      body = v_flex().gap(4).min_h(0)
+        .child(head)
+        .child(section("By agent"))
+        .children(agentRows.length ? agentRows : [div().px(8).h(ROW_H).flex().items_center().text_size(12).text_color(t.dim).child("No agent is using much")])
+        .child(row("ag-rest", null, [div().size(14).flex_none(), div().flex_1().text_color(t.dim).child("Everything else"),
+          div().flex_none().font_family(MONO).text_size(12).text_color(t.dim).child(key === "cpu" ? pct(rest.cpu) : fmtBytes(rest.rss * 1024))]))
+        .child(section("Top processes"))
+        .children(procRows);
+    }
+    this.acts = acts;
+    this.cur = Math.min(this.cur, Math.max(0, acts.length - 1));
+
+    return v_flex().id("system-card").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
+      .w_full().min_h(0).p(16).gap(12).rounded(10).bg(t.popover).text_size(13)
+      .child(h_flex().gap(10).items_center().child(div().flex_1().child(tabs)).child(div().flex_none().text_size(11).text_color(t.dim).child("Esc")))
+      .child(body);
+  }
+}

@@ -11,6 +11,7 @@ import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago,
 
 const POLL_MS = 5000;
 const FOCUS_CHECK_MS = 250;
+const OPEN_AFTER_MS = 150; // after the System popup has closed
 const FORGOTTEN_S = 3600; // an orphan older than this reads as forgotten (amber age)
 const RAIL_W = 160; // the sidebar folds to a rail below this width (as Inbox reads it)
 const EXEC = { timeout: 4000 };
@@ -57,6 +58,7 @@ export default class Ports extends View {
     this.fh = cx.focus_handle();
     this.list = ScrollHandle.new();
     this.cur = null; // the cursor's row key
+    this.openAt = shared("ports.open")?.at; // a request from before this load isn't for us
     cx.timer.every(POLL_MS, (cx) => this.poll(cx));
     cx.timer.after(0, (cx) => this.poll(cx));
     cx.timer.every(FOCUS_CHECK_MS, (cx) => { if (this.fh.is_focused() !== this.ringed) cx.notify(); }); // no blur event
@@ -161,6 +163,16 @@ export default class Ports extends View {
     cx.notify();
   }
 
+  // The System popup's port chip (shared "ports.open" { key, port, at }): that row's card, once the popup has closed.
+  // A worker folded into its supervisor matches by port.
+  openAsked(cx, rows) {
+    const want = shared("ports.open");
+    if (!want || want.at === this.openAt) return;
+    this.openAt = want.at;
+    const r = rows.find((x) => x.key === want.key) ?? rows.find((x) => x.port === want.port);
+    if (r) cx.timer.after(OPEN_AFTER_MS, () => this.card(r, this.who(r, this.model())));
+  }
+
   // A dialog of ours took the keyboard from here: it comes back when that closes (as inbox's comeBack).
   comeBack(cx, held, focus) {
     const ov = shared("emergence.over");
@@ -235,6 +247,7 @@ export default class Ports extends View {
     if (!rows.some((r) => r.key === this.hovered)) this.hovered = null;
     this.comeBack(cx, this.ringed, () => this.fh.focus());
     this.ringed = this.fh.is_focused();
+    this.openAsked(cx, rows);
     const root = v_flex().id("ports").size_full().min_h(0).bg(t.chrome).text_size(13)
       .track_focus(this.fh).on_key_down((e, cx) => this.key(e.keystroke, cx));
     if (collapsed) return root;
