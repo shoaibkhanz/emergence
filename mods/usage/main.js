@@ -166,7 +166,7 @@ export default class Usage extends View {
 
   // What the work delivered: commits, lines, PRs, worktrees, and what agent spend each of them cost.
   outputView(t, r0, r, p, o0, o) {
-    if (!o) return [div().p(12).text_center().text_size(12).text_color(t.dim).child(this.busy ? "Reading git and gh in your repos…" : "No git or gh data yet: rescan (↻).")];
+    if (!o) return [div().p(12).text_center().text_size(13).text_color(t.muted).child(this.busy ? "Reading git and gh in your repos…" : "No git or gh data yet: rescan (↻).")];
     const base = (path) => path.split("/").filter(Boolean).pop();
     const tiles = this.tileRow(t, [
       ["Commits", String(o.commits), o.activeDays ? `${(o.commits / o.activeDays).toFixed(1)} per day you committed` : "none"],
@@ -230,7 +230,7 @@ export default class Usage extends View {
 
   header(t, present, counts, p) {
     const button = (id, tip, glyph, onClick) => h_flex().id(id).size(24).flex_none().items_center().justify_center().rounded(6)
-      .border(1).border_color(t.border).text_color(t.muted).tooltip(tip).cursor_pointer()
+      .text_color(t.muted).tooltip(tip).cursor_pointer()
       .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(onClick).child(glyph);
     // Pointer handlers on Input are dropped (gpui-kit: only div/h_flex/...): the wrapper stops the press, so the
     // panel's own press-to-focus doesn't take the box's focus.
@@ -678,7 +678,7 @@ export default class Usage extends View {
     }
     if (!this.memo) return root.child(v_flex().flex_1().items_center().justify_center().text_size(12).text_color(t.dim).child("Adding up…"));
     const { r0, r, o0, o, cells } = this.memo, shown = present.filter((h) => on.has(h));
-    const empty = div().p(12).text_center().text_size(12).text_color(t.dim).child(`No sessions in ${p.label} for the harnesses shown.`);
+    const empty = div().p(12).text_center().text_size(13).text_color(t.muted).child(`No sessions in ${p.label} for the harnesses shown.`);
     const view = this.tab === "harnesses" ? (r0.tiles.sessions ? [this.over(t, r0, r, shown), this.models(t, r), this.effort(t, r, shown)] : [empty])
       : this.tab === "compare" ? [this.compare(t, r)]
       : this.tab === "output" ? this.outputView(t, r0, r, p, o0, o)

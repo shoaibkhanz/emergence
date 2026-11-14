@@ -117,3 +117,7 @@ export function layout(repos) {
   });
   return { nodes, edges, width: right, height: Math.max(0, y - (ROW - SIZE.agent.h)) };
 }
+
+// Two theme colours (#rrggbb) blended, k of `b`: an opaque stand-in for `b` at alpha k over `a`.
+export const mix = (a, b, k) => "#" + [1, 3, 5].map((i) =>
+  Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - k) + parseInt(b.slice(i, i + 2), 16) * k).toString(16).padStart(2, "0")).join("");

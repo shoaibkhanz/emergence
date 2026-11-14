@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE } from "./lib.js";
+import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -84,4 +84,10 @@ test("mrsAsPRs: GitLab MRs as the PRs prsByBranch and prChip read", () => {
   expect(m.get("feature/e2e")).toMatchObject({ number: 8, state: "OPEN", isDraft: false, title: "Run page", url: "https://gitlab.com/x/y/-/merge_requests/8", reviewDecision: null });
   expect(prChip(m.get("feature/e2e")).label).toBe("#8 open");
   expect(prChip(m.get("wip")).state).toBe("draft");
+});
+
+test("mix blends two theme colours into an opaque one", () => {
+  expect(mix("#000000", "#ffffff", 0.5)).toBe("#808080");
+  expect(mix("#0e0e0e", "#ff0000", 0)).toBe("#0e0e0e");
+  expect(mix("#102030ff", "#ffffff", 1)).toBe("#ffffff");
 });

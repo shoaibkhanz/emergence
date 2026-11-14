@@ -5,7 +5,7 @@
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout } from "herdr";
-import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK } from "./lib.js";
+import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000;
 const MONO = "Geist Mono";
@@ -57,6 +57,8 @@ async function pulls(on, cwd) {
     return null;
   }
 }
+
+const GRAIN = 256, GRAIN_OPACITY = 0.08; // grain.png's tile (logical px at zoom 1) and how strong: felt more than seen
 
 export default class AgentGraph extends View {
   init(_props, cx) {
@@ -275,7 +277,8 @@ export default class AgentGraph extends View {
       .border(1).border_color(t.border).text_size(12).text_color(t.muted).cursor_pointer().tooltip(tip)
       .hover((s) => s.bg(t.hover).border_color(t.input).text_color(t.foreground))
       .on_click((_e, cx) => { onClick(cx); cx.notify(); });
-    const icon = (el) => el.w(24).px(0).justify_center();
+    const icon = (el) => el.w(24).px(0).justify_center().border_color(alpha(t.border, 0)) // icon buttons have no box, as in every panel
+      .hover((s) => s.bg(t.hover).text_color(t.foreground));
     const on = this.activeOnly, label = W >= 520;
     const hint = !this.panel ? "↑↓ select · ↵ focus · F fit · R reset · Esc close" : W >= 1000 ? "↑↓ select · ↵ focus · F fit · R reset" : null;
     return h_flex().flex_none().items_center().border_b(1).border_color(t.border)
@@ -352,7 +355,7 @@ export default class AgentGraph extends View {
 
   canvas(t, items, tree, L, foc) {
     const Z = this.Z;
-    const el = this.measure(div().id("ag-canvas").flex_1().min_h(0).relative().overflow_hidden().bg(t.background))
+    let el = this.measure(div().id("ag-canvas").flex_1().min_h(0).relative().overflow_hidden().bg(t.background))
       .map((el) => (this.drag?.moved ? el.cursor_grabbing() : el.cursor_grab()))
       .on_scroll_wheel((e, cx) => {
         if (!this.fitted) return;
@@ -385,6 +388,11 @@ export default class AgentGraph extends View {
       })
       .on_hover((h) => { if (!h) this.endDrag(); });
     if (!this.size) return el;
+    // Film grain behind everything, for depth: grain.png (512px: light and dark specks, so any theme) tiled at one image
+    // px per screen px on a 2x display, still while the graph pans and zooms.
+    const g = GRAIN / Z;
+    for (let y = 0; y < this.size.height; y += g) for (let x = 0; x < this.size.width; x += g)
+      el = el.child(image("mods/agent-graph/grain.png").absolute().left(x).top(y).w(g).h(g).opacity(GRAIN_OPACITY));
 
     const quiet = (line, hint, action) => el.child(v_flex().absolute().left(0).top(0).size_full().px(16).items_center().justify_center().gap(8)
       .child(div().text_size(13).text_color(t.muted).child(line))
@@ -437,7 +445,7 @@ export default class AgentGraph extends View {
   // `tone`: the colour an agent that needs looking at is drawn in (blocked, working), else none.
   card(t, n, x, y, z, tone) {
     return v_flex().id(n.id).absolute().left(x).top(y).w(n.w * z).h(n.h * z).px(12 * z).justify_center().gap(4 * z)
-      .rounded(10 * z).border(1).border_color(tone ? alpha(tone, 0.8) : t.border).bg(tone ? alpha(tone, 0.08) : t.surface)
+      .rounded(10 * z).border(1).border_color(tone ? alpha(tone, 0.8) : t.border).bg(tone ? mix(t.background, tone, 0.08) : t.surface) // opaque: no grain through a card
       .when(this.drag?.node === n.id && this.drag.moved, (el) => el.cursor_grabbing().shadow_lg())
       .on_mouse_down("left", (e, cx) => {
         cx.stop_propagation();
@@ -481,7 +489,7 @@ export default class AgentGraph extends View {
       .when(sel && !tone, (el) => el.bg(t.selected))
       .when(isFoc, (el) => el.border_color(t.accent))
       .cursor_pointer()
-      .hover((s) => s.bg(tone ? alpha(tone, 0.14) : sel ? t.selected : t.raised).border_color(isFoc ? t.accent : tone ?? t.input).shadow_sm())
+      .hover((s) => s.bg(tone ? mix(t.background, tone, 0.14) : sel ? t.selected : t.raised).border_color(isFoc ? t.accent : tone ?? t.input).shadow_sm())
       .on_click(() => { if (!this.drag?.moved) this.focusAgent(d); }) // a pan that started on the card isn't a click
       .when(isFoc, (el) => el.child(div().absolute().left(-4 * z).top(-4 * z).w(n.w * z + 8 * z).h(n.h * z + 8 * z)
         .rounded(13 * z).border(2).border_color(alpha(t.accent, 0.3))))

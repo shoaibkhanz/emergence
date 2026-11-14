@@ -152,6 +152,6 @@ export default class Jump extends View {
           const el = div().id(`jump-${i}`).on_click(() => this.go(r)).child(row(r, i));
           return i === firstWt ? v_flex().child(div().px(16).pt(10).pb(4).text_size(11).font_semibold().text_color(t.dim).child("Worktrees, not open")).child(el) : el;
         }))
-        .when(!rows.length, (x) => x.child(div().p(16).text_center().text_size(13).text_color(t.dim).child("Nothing matches."))));
+        .when(!rows.length, (x) => x.child(div().p(16).text_center().text_size(13).text_color(t.muted).child("Nothing matches."))));
   }
 }
