@@ -239,10 +239,11 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - Tab names (`autoName`, one `git rev-parse --show-toplevel` per folder, again after 30 s if it couldn't run; a rename
     not landed in 10 s is sent again) and `jump.recent`, both from `render`.
   - Updates: finds the clone with `git -C <appHome>/mods/tabs-plus rev-parse --show-toplevel` (the mod is a link into
-    it), only on `main` with this repo as `origin`; at start and every 6 h, `git fetch` of the public HTTPS URL into
+    it), only on `main` with this repo as `origin`; at start and every hour, `git fetch` of the public HTTPS URL into
     `origin/main` (an ssh origin would ask for a passphrase); behind with no local commits shows the chip. Its click
     runs one `bash -c`: fetch again, `git merge --ff-only`, `install.sh`, and `layout.switch` main → emergence when
-    `mods/` or `layouts/` changed and emergence shows. A pull into the clone isn't a save Herdr sees (the mods are
+    `mods/` or `layouts/` changed since the last whole update (`refs/emergence/updated`, so a retry after a
+    half-done one still reloads) and emergence shows. A pull into the clone isn't a save Herdr sees (the mods are
     links), and switching to the shown layout is a no-op, hence the detour. `install.sh` run by hand does the same
     detour when emergence already shows, and prints how to reload by hand if a switch fails.
 - **`mods/inbox`**: `agents()`, `terminals()` (parent), `panes()` (cwd, branch), `spaces()` (tabs, settled,

@@ -87,15 +87,17 @@ async function git(dir, ...args) {
   return r.stdout.trim();
 }
 // EMERGENCE_UPDATE stops install.sh checking mods and switching layouts; the layout reloads only if it's showing.
+// refs/emergence/updated is where the last whole update ended: a retry after a pull that landed but failed later
+// still reloads (no ref yet reads as changed).
 const UPDATE = `set -e; d="$1"
 [ "$(git -C "$d" symbolic-ref -q --short HEAD)" = main ] || { echo "error: not on main" >&2; exit 1; }
-old="$(git -C "$d" rev-parse HEAD)"
 git -C "$d" ${FETCH.join(" ")}
 git -C "$d" merge --ff-only --quiet origin/main
 EMERGENCE_UPDATE=1 bash "$d/install.sh" >/dev/null
-if ! git -C "$d" diff --quiet "$old" HEAD -- mods layouts && herdr-app status 2>/dev/null | grep -q '"layout": "emergence"'; then
+if ! git -C "$d" diff --quiet refs/emergence/updated HEAD -- mods layouts 2>/dev/null && herdr-app status 2>/dev/null | grep -q '"layout": "emergence"'; then
   herdr-app do layout.switch --name main >/dev/null; sleep 1; herdr-app do layout.switch --name emergence >/dev/null
-fi`;
+fi
+git -C "$d" update-ref refs/emergence/updated HEAD`;
 
 export default class Tabs extends View {
   init(_props, cx) {

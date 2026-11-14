@@ -133,7 +133,7 @@ Not ⌘⇧J (Homerow's scroll mode); not ⌘⇧B (Blueprint).
 **Remove**: `herdr-app do layout.switch --name main`, delete the links
 (`find ~/.config/herdr-app/mods ~/.config/herdr-app/layouts -maxdepth 1 -lname "$HOME/code/emergence/*" -delete`),
 then remove the `tabs-plus.*`, `mod.open:jump`, `mod.open:emergence-keys`, `mod:spaces-plus` and `mod:inbox` entries
-from `~/.config/herdr-app/keys.json` and `omp` from `programs.json`.
+from `~/.config/herdr-app/keys.json` and `omp` from `programs.json`, and delete `~/code/emergence`.
 
 ## Optional: ctrl-h/j/k/l between panes
 

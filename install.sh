@@ -7,16 +7,21 @@
 # old copy, a link into another clone) is moved aside to <home>/replaced/, so no old copy keeps running.
 set -euo pipefail
 shopt -s nullglob
+for need in git python3; do command -v "$need" >/dev/null || { echo "error: Emergence needs $need" >&2; exit 1; }; done
 
 # Piped, or run outside a clone: get the clone first, then run its own copy of this script.
 src="${BASH_SOURCE[0]:-}"
 if [ -z "$src" ] || [ ! -f "$(dirname "$src")/layouts/emergence.json" ]; then
   dir="${EMERGENCE_DIR:-$HOME/code/emergence}"
-  if [ -d "$dir/.git" ]; then git -C "$dir" pull --ff-only --quiet; else git clone --quiet https://github.com/shoaibkhanz/emergence "$dir"; fi
+  if [ ! -d "$dir/.git" ]; then git clone --quiet https://github.com/shoaibkhanz/emergence "$dir"
+  elif ! git -C "$dir" pull --ff-only --quiet; then
+    echo "error: $dir can't take the update (changes or commits of its own?). Move it aside and run this again." >&2; exit 1
+  fi
   exec bash "$dir/install.sh"
 fi
-repo="$(cd "$(dirname "$src")" && pwd)"
+repo="$(cd "$(dirname "$src")" && pwd -P)" # the real path, as the Update chip finds it: one spelling, so no relinking
 home="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
+mkdir -p "$home/mods" "$home/layouts" # a home Herdr hasn't made yet
 
 link() { # link <repo path> <home path> <label>
   if [ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]; then echo "ok      $3"; return; fi
@@ -53,7 +58,10 @@ RETIRED = {"keys.json": [("global", k, "tabs-plus." + a) for k, a in (
 for name in ("keys.json", "programs.json"):
     ours = json.load(open(os.path.join(sys.argv[1], name)))
     path = os.path.realpath(os.path.join(sys.argv[2], name))  # may be a dotfiles symlink: write through it
-    theirs = json.load(open(path)) if os.path.exists(path) else {}
+    try:
+        theirs = json.load(open(path)) if os.path.exists(path) else {}
+    except ValueError as e:
+        sys.exit(f"error: {path} isn't valid JSON ({e}). Fix it and run this again.")
     changed = False
     retired = RETIRED.get(name, [])
     def free(section, key, value):
@@ -88,7 +96,8 @@ if [ -z "${EMERGENCE_UPDATE:-}" ] && herdr-app status >/dev/null 2>&1; then
   for dir in "$repo"/mods/*/; do herdr-app check "$home/mods/$(basename "$dir")"; done
   # Switching to the shown layout is a no-op, and a pull into the clone isn't a save Herdr sees (the mods are links),
   # so an emergence already showing goes via main to load the new mod code.
-  if herdr-app status | grep -q '"layout": "emergence"'; then herdr-app do layout.switch --name main >/dev/null && sleep 1; fi
+  if [[ "$(herdr-app status)" == *'"layout": "emergence"'* ]]; then herdr-app do layout.switch --name main >/dev/null && sleep 1; fi
   if herdr-app do layout.switch --name emergence >/dev/null; then echo "layout  emergence, reloaded (cmd-shift-l cycles back)"
   else echo "reload  couldn't switch layouts: switch to another layout and back (cmd-shift-l) to load the new mods" >&2; fi
+elif [ -z "${EMERGENCE_UPDATE:-}" ]; then echo "next    Herdr isn't running: open it and press cmd-shift-l until the emergence layout shows"
 fi
