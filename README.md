@@ -92,6 +92,14 @@ Usage keeps every session it has read.</td>
 - **Working N**, the last row: opens the graph on what's working (everything at 0).
 - **Sizes**: open, rail, dots (⌘B, ⌘⌥B).
 
+### Status bar
+
+This Mac's CPU, memory, free disk and (on battery) battery, on the right. Amber or red when it's high: CPU at 80%,
+memory under pressure (not merely full: macOS keeps memory full of cache), disk under 10% / 5% free, battery under
+20% / 10%. Click one for **System**: CPU, Memory and Disk tabs, each with a meter, what every agent uses (click to go
+to it; everything else in one row), the top processes and who started them (a port chip opens that port's card), and
+on Disk the size of every worktree of the repos you have open.
+
 ### Jump (⌘E)
 
 Every tab and unopened worktree, most recent first; ⌘E ↵ flips between your last two. Type to filter (a space's name
@@ -131,6 +139,8 @@ Not ⌘⇧J (Homerow's scroll mode); not ⌘⇧B (Blueprint).
 - **Spaces**: `git rev-parse`, `rev-list`, `worktree list`, `for-each-ref`; delete runs `git worktree remove`.
 - **Tab bar**: hourly `git fetch` of `main` into your clone. Only for a clone on `main` with no commits of its own.
 - **Inbox**: nothing outside Herdr.
+- **Status bar**: `ps`, `vm_stat`, `sysctl` every 5 s; `df` and `pmset` each minute. System, while open: the same, plus
+  `lsof` once and, on Disk, `git worktree list` and `du -sk` per worktree (kept 5 minutes).
 - **Ports**: `lsof` and `ps` every 5 s while the sidebar is open, `git rev-parse --show-toplevel` once per agent
   folder; the card runs `ps` on its one process, and Stop runs `lsof` on it, then `kill` (SIGTERM).
 
@@ -168,6 +178,7 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/edi
 | `mods/agent-graph`, `pr-review`, `skills`, `usage` | the four panels |
 | `mods/inbox`, `spaces-plus`, `ports` | the sidebar |
 | `mods/port-card` | a port's card |
+| `mods/status-plus` | the status bar and its System popup |
 | `mods/tabs-plus` | tab bar, panel buttons, tab names, updates |
 | `mods/jump` | ⌘E |
 | `mods/emergence-keys` | ⌘⇧/ |
@@ -176,7 +187,7 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/edi
 | `layouts/emergence.json` | the layout |
 | `RECIPE.md` | how to rebuild it |
 
-`spaces-plus`, `tabs-plus` and the layout are copies of Herdr 0.1.15's own.
+`spaces-plus`, `tabs-plus`, `status-plus` and the layout are copies of Herdr 0.1.15's own.
 
 ```sh
 herdr-app check ~/.config/herdr-app/mods/<name>   # load and render once

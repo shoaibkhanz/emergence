@@ -37,9 +37,10 @@ Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` div
     - At the foot, once anything is settled, a "Settled N" shelf.
     - With nothing waiting: a circle-check and "All caught up".
     - Folded: only the count of rows, at the foot: a 22px round `blocked` badge on the rail, the number on dots.
-  - **Ports** (`ports`), below the inbox, sized by itself (`layout.resize`) from its row count alone: "Ports N"
-    header (41px, as the inbox's) and up to 5 rows of 30px (then it scrolls), or one 32px "Ports none" row; then
-    "Working N ›" (32px, spinner glyph, still), the sidebar's last row. Folded: 0px, and no polling.
+  - **Ports** (`ports`), right under the inbox's cards: "Ports N" header (41px, as the inbox's) and its rows (30px),
+    or one 32px "Ports none" row; the slack below; then "Working N ›" (32px, spinner glyph, still), the sidebar's last
+    row. The inbox sizes the block (`splitColumn`, with Spaces): what Ports publishes in `shared("ports.want")` (header,
+    up to 5 rows, Working; from its row count alone) plus the room under the inbox's cards. Folded: 0px, no polling.
     - A row: the owner's program mark (14px; half strength when the owner is only probable; a hollow ring for no
       agent or Docker), `:port` in Geist Mono 12.5px, the process name (12px `muted`), and on the right a `dim` globe
       when it listens on every interface, then the owner's branch (else folder) in Geist Mono 11.5px `dim`, or "no
@@ -57,7 +58,19 @@ Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` div
 - **Side panel** (368px, 280–4000, hidden until a button opens it; each panel keeps its own width: Agents 620, PRs
   860, Library 440, Usage 760): a stack of Files, Changes, `agent-graph`, `pr-review`, `skills`, `usage`, each with
   `{panel: true}`, in a 10px-radius bordered card.
-- **Status bar** (28px, `workspace-status`), and a 0px `nav-keys` block in the work column.
+- **Status bar** (28px, `status-plus`, Herdr's `workspace-status` plus this Mac's numbers): left as Herdr's; on the
+  right, before the commands hint, CPU (`–` until two samples, then the mean of the last two, 10 s), memory used/total
+  (GB), disk free (home volume) and battery (only on battery), each a 13px Lucide icon and Geist Mono 11.8px, `muted`,
+  `working` or `blocked` by level (CPU ≥ 80%; memory pressure warn / critical; disk free < 10% / 5%; battery < 20% /
+  10%). Narrow bars drop battery (< 1100px), disk (< 900px), then the memory total (< 760px). A dim "This Mac" leads
+  them when the space is on another machine.
+  - Click one: **System**, status-plus opened as a 380px popup at the pointer (`props: { popup: true, tab }`): the
+    Library's segmented tabs (CPU, Memory, Disk), a 15px headline with a `dim` caption and a 6px meter (`accent`,
+    `working`, `blocked`), then "By agent" (30px rows: mark, branch, value; ≥ 1% CPU or ≥ 100 MB; click goes to the
+    agent), "Everything else" (`dim`), and "Top processes" (8: name, a `:port` chip unless it's an agent's own, owner
+    branch or —, value). Disk: free of total, then every worktree of the open terminals' repos by size (`du -sk`, one
+    at a time, 30 s each, kept 5 minutes in `shared("system.du")`; "…" until measured, "too big to measure").
+- A 0px `nav-keys` block in the work column.
 
 Colours are theme tokens throughout. The data colours are fixed:
 - Harnesses use Okabe–Ito: omp `#56b4e9`, Claude Code `#e69f00`, Codex `#009e73`, OpenCode `#cc79a7`, pi `#f0e442`.
@@ -267,9 +280,9 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
 
 - **`layouts/emergence.json`**, a clone of `main` 0.1.15 (`titlebar: none`, `traffic_lights: [12, 16]`):
   - root row → `sidebar` column (`brand` workspace-chrome; `sidebar-lists` column of `spaces` spaces-plus px 75 min 60
-    and `inbox` inbox weight 1 min 90; `sidebar-footer` workspace-chrome `{footer: true}`)
+    `inbox` inbox weight 1 min 90 and `ports` ports px 32 min 0; `sidebar-footer` workspace-chrome `{footer: true}`)
   - `work` column (`tabs` tabs-plus 42px; `work-body` row of `main` and a `panel` column → `panel-body` stack of
-    files, changes, graph, prs, skills, usage; `status` workspace-status; `nav-keys` 0px `{resident: true}`).
+    files, changes, graph, prs, skills, usage; `status` status-plus; `nav-keys` 0px `{resident: true}`).
 - **`mods/tabs-plus`** (clone of `tabs`):
   - PANELS `[id, label, icon, width]`; remembers each panel's width and per-space choice; hides settled tabs.
   - `nextCommand` handles `graph`, `prs`, `skills`, `usage`, `attention`, `rail`, `thinner`, `fold`, `back`, `worktrees` and `update`.
@@ -286,12 +299,17 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
 - **`mods/inbox`**: `agents()`, `terminals()` (parent), `panes()` (cwd, branch), `spaces()` (tabs, settled,
   changed_at), `keys()`, `focused()`, `shared("spaces.want")`, `setAgentOrder`, `run("agent.focus" | "tab.settle" |
   "tab.select" | "tabs-plus.rail" | "tabs-plus.fold" | "spaces-plus.focus" | "ports.toggle" | "pane.focus")`, and
-  `layout.resize` for the Spaces block. Commands `focus`, `toggle`.
+  `layout.resize` for the Spaces and Ports blocks. Commands `focus`, `toggle`.
 - **`mods/ports`**: `exec` (`lsof`, `ps`, `git`), `terminals()` (pid, foreground, machine, parent), `agents()`,
-  `panes()`, `spaces()`, `layout.resize` for its own block, `openOverlay` (`port-card`), `setShared("graph.want")`,
+  `panes()`, `spaces()`, `openOverlay` (`port-card`), `shared("ports.open")`, `setShared("graph.want" | "ports.want")`,
   `run("tabs-plus.graph" | "tabs-plus.fold" | "inbox.focus" | "spaces-plus.focus" | "pane.focus")`. Commands
   `focus`, `back`, `toggle`. `lib.js` (`parseLsof`, `parsePs`, `ownerContext`, `owner`, `servers`, `urlFor`, `isWeb`,
   `blockHeight`, `subAgents`, …) is pure and tested.
+- **`mods/status-plus`**: Herdr's `workspace-status` (bar.js) and the System popup (popup.js), picked by props in
+  main.js. `exec` (`ps`, `vm_stat`, `sysctl`, `df`, `pmset`; the popup also `lsof`, `git worktree list`, `du`),
+  `terminals()`, `panes()`, `agents()`, `openOverlay` (itself), `run("agent.focus" | "pane.focus" | "app.palette")`,
+  `setShared("ports.open" | "system.du" | "emergence.over")`. `lib.js` (parsers, `cpuSample`, `byAgent`, `segments`,
+  `level`, …) is pure and tested; ownership is the parent chain only.
 - **`mods/port-card`**: props `{ server, who, ask }` from ports; `exec` (`ps`, `lsof`, `kill`), `open_url`,
   `write_to_clipboard`, `run("agent.focus" | "pane.focus" | "tab.select" | "terminal.peek")`, `notify`,
   `setShared("emergence.over")`. `lib.js` copies ports' `parseLsof` / `holds`.
