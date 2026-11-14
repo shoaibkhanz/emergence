@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { wilson, levels, clean, heat, summarize, startOfDay, DAY, kindOf, rhythmOf, outputOf, span, keepOf, tabAfter } from "./lib.js";
+import { wilson, levels, clean, heat, summarize, startOfDay, DAY, kindOf, rhythmOf, outputOf, span, keepOf, tabAfter, skillsOf, categoryOf } from "./lib.js";
 
 const NOW = new Date(2026, 10, 12, 15).getTime(); // Thu 12 Nov 2026, 15:00 local
 const s = (h, daysAgo, extra = {}) => ({
@@ -139,4 +139,54 @@ test("tabAfter: ← / → walk the tabs (wrapping), but not while a date field h
   expect(tabAfter(tabs, "overview", "left", false)).toBe("rhythm");
   expect(tabAfter(tabs, "rhythm", "right", false)).toBe("overview");
   expect(tabAfter(tabs, "compare", "left", true)).toBe(null); // typing a custom range: the caret's, not the tabs'
+});
+
+// Skills: what each is used for, how its sessions do, against the same harnesses' sessions without it.
+const sk = (h, skills, { commits = 0, cost = 1, aborts = 0, sub = false, start = 1000, model = "opus" } = {}) =>
+  ({ h, skills, commits, cost, aborts, apiErr: 0, compactions: 0, tools: 10, toolErr: 0, sub, start, models: { [model]: 1 } });
+
+test("categoryOf: a skill's category from its name, else Other", () => {
+  expect(categoryOf("ponytail-review")).toBe("Code review");
+  expect(categoryOf("writing-plans")).toBe("Planning and design");
+  expect(categoryOf("test-driven-development")).toBe("Testing and debugging");
+  expect(categoryOf("clear-explanations")).toBe("Writing and explaining");
+  expect(categoryOf("built-in-browser")).toBe("Browsing");
+  expect(categoryOf("claude-api")).toBe("Other");
+});
+
+test("skillsOf: per skill, its sessions against the same harnesses' sessions without it", () => {
+  const sessions = [
+    sk("claude", { brainstorming: 2 }, { commits: 3, cost: 2 }),
+    sk("claude", { brainstorming: 1, "writing-plans": 1 }, { commits: 1, cost: 4, aborts: 1 }),
+    sk("claude", {}, { commits: 0, cost: 1 }),
+    sk("claude", {}, { commits: 2, cost: 3 }),
+    sk("omp", { "writing-plans": 1 }, { commits: 5, cost: 10 }),
+    sk("omp", {}, { commits: 1, cost: 2 }),
+    sk("claude", { brainstorming: 9 }, { sub: true }),        // a sub-agent: not counted
+    sk("claude", { brainstorming: 9 }, { start: 99999 }),     // outside the period
+  ];
+  const { rows, tiles } = skillsOf(sessions, { from: 0, to: 5000 });
+  const b = rows.find((r) => r.key === "brainstorming");
+  expect(b.n).toBe(2);
+  expect(b.commit.p).toBe(1);             // both led to a commit (a share, not a count: counts overlap across sessions)
+  expect(b.costMed).toBe(3);              // median of 2 and 4
+  expect(b.base.n).toBe(2);               // the two claude sessions without it (omp isn't its harness)
+  expect(b.base.commit.p).toBe(0.5);      // one of the two led to a commit
+  expect(b.base.costMed).toBe(2);         // median of 1 and 3
+  expect(b.clean.p).toBe(0.5);
+  expect(b.few).toBe(true);               // under 5 sessions: too few to tell
+  const w = rows.find((r) => r.key === "writing-plans");
+  expect(w.n).toBe(2);
+  expect(w.harnesses.map((x) => [x.key, x.n])).toEqual([["claude", 1], ["omp", 1]]);
+  expect(w.base.n).toBe(4);               // 3 claude + 1 omp session without writing-plans
+  expect(tiles).toMatchObject({ sessions: 6, skilled: 3, distinct: 2, top: "brainstorming" });
+  expect(tiles.costSkilled).toBe(4);      // median of 2, 4, 10
+  expect(tiles.costUnskilled).toBe(2);    // median of 1, 3, 2
+});
+
+test("skillsOf: by category merges a session's skills in one category once; harnesses filter", () => {
+  const sessions = [sk("claude", { brainstorming: 1, "writing-plans": 1 }), sk("omp", { "ponytail-review": 1 })];
+  const { rows } = skillsOf(sessions, { from: 0, to: 5000, by: "category" });
+  expect(rows.map((r) => [r.key, r.n])).toEqual([["Code review", 1], ["Planning and design", 1]]);
+  expect(skillsOf(sessions, { from: 0, to: 5000, harnesses: new Set(["omp"]) }).rows.map((r) => r.key)).toEqual(["ponytail-review"]);
 });

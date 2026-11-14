@@ -21,7 +21,7 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import datetime
 
-CACHE_VERSION = 4
+CACHE_VERSION = 5  # 5: skills per session
 EFFORTS = {"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 # Envelope timestamp. JSON escapes quotes inside strings, so this only matches structural keys.
 TS = re.compile(rb'"timestamp":"(\d{4}-[^"]+)"')
@@ -56,12 +56,34 @@ def tool_cat(name):
     return TOOL_CATS.get(n) or next((c for p, c in TOOL_PREFIXES if n.startswith(p)), "other")
 
 
+# A skill is used when Claude calls its Skill tool, or another harness's agent reads the skill's SKILL.md. A skill
+# named in a prompt's listing, searched for (glob) or written isn't a use. A plugin prefix is dropped.
+SKILL_FILE = re.compile(r"/skills/([^/\s\"']+)/SKILL\.md$")
+READ_TOOLS = {"read", "view", "read_file"}
+
+
+def skill_name(name):
+    n = str(name or "").split(":")[-1].strip()
+    return n or None
+
+
+def skill_read(tool, path):
+    """The skill a read tool call opens (its SKILL.md), else None."""
+    m = SKILL_FILE.search(str(path or "")) if str(tool or "").lower() in READ_TOOLS else None
+    return m and skill_name(m.group(1))
+
+
+def add_skill(r, name):
+    if name:
+        r["skills"][name] = r["skills"].get(name, 0) + 1
+
+
 def blank(h, sid, sub):
     return {"h": h, "id": sid, "start": None, "end": None, "cwd": None, "sub": sub,
             "models": {}, "effort": None, "tok": 0, "tin": 0, "tout": 0, "tcr": 0, "tcw": 0,
             "cost": 0.0, "req": 0, "tools": 0, "toolErr": 0,
             "tc": dict.fromkeys(("edit", "read", "bash", "web", "agent", "other"), 0),
-            "aborts": 0, "apiErr": 0, "compactions": 0}
+            "aborts": 0, "apiErr": 0, "compactions": 0, "skills": {}}
 
 
 def add_tool(r, name):
@@ -124,6 +146,8 @@ def parse_pi(path, h, sub):
                         for c in msg.get("content") or ():
                             if isinstance(c, dict) and c.get("type") == "toolCall":
                                 add_tool(r, c.get("name"))
+                                args = c.get("arguments") if isinstance(c.get("arguments"), dict) else {}
+                                add_skill(r, skill_read(c.get("name"), args.get("path") or args.get("file_path")))
                     elif b'"role":"toolResult"' in head:
                         # isError sits after content/details, near the end of the line
                         r["toolErr"] += b'"isError":true' in line[-300:]
@@ -157,7 +181,7 @@ INTERRUPT = "[Request interrupted by user"  # fixed marker Claude writes on Esc;
 def parse_claude(path, sub):
     sid = os.path.basename(path)[:-6]
     r = blank("claude", sid, sub)
-    msgs, tools, cost, lo, hi = {}, {}, None, None, None
+    msgs, tools, skills, cost, lo, hi = {}, {}, {}, None, None, None
     # resuming copies earlier records (keeping their old sessionId) into the new session file;
     # those belong to the original session, so a top-level file only counts its own records
     own = None if sub else f'"sessionId":"{sid}"'.encode()
@@ -186,6 +210,8 @@ def parse_claude(path, sub):
                 for c in msg.get("content") or ():
                     if isinstance(c, dict) and c.get("type") == "tool_use":
                         tools[c.get("id")] = c.get("name")
+                        if c.get("name") == "Skill":  # keyed by call id: a streamed repeat counts once
+                            skills[c.get("id")] = skill_name((c.get("input") or {}).get("skill"))
             elif t == "user":
                 content = (o.get("message") or {}).get("content")
                 content = content if isinstance(content, list) else ()
@@ -209,6 +235,8 @@ def parse_claude(path, sub):
             eff[e] += 1
     for name in tools.values():
         add_tool(r, name)
+    for name in skills.values():
+        add_skill(r, name)
     r["req"], r["cost"] = len(msgs), cost or 0
     span(r, lo, hi)
     return [finish(r, eff)]
@@ -260,6 +288,11 @@ def codex_record(row, path):
                 usage = u
         elif pt in CODEX_TOOLS:
             add_tool(r, p.get("name") or pt[:-5])  # local_shell_call -> local_shell, web_search_call -> web_search
+            try:
+                args = json.loads(p.get("arguments") or "{}")
+            except (TypeError, ValueError):
+                args = {}
+            add_skill(r, skill_read(p.get("name"), isinstance(args, dict) and (args.get("path") or args.get("file_path"))))
         elif pt == "turn_aborted":
             r["aborts"] += 1
         elif pt == "compacted":
@@ -313,6 +346,9 @@ def parse_opencode(db):
             " (select session_id, json_extract(data,'$.type') t, json_extract(data,'$.tool') tool,"
             " json_extract(data,'$.state.status') s from part) where t in ('tool','compaction')"
             " group by session_id, t, tool").fetchall()
+        reads = con.execute(
+            "select session_id, json_extract(data,'$.tool'), json_extract(data,'$.state.input.filePath') from part"
+            " where json_extract(data,'$.type') = 'tool' and data like '%SKILL.md%'").fetchall()
     finally:
         con.close()
     recs, effs = {}, {}
@@ -342,6 +378,9 @@ def parse_opencode(db):
             r["tools"] += n
             r["tc"][tool_cat(tool)] += n
             r["toolErr"] += err or 0
+    for sid, tool, path in reads:
+        if sid in recs:
+            add_skill(recs[sid], skill_read(tool, path))
     return [finish(r, effs[sid]) for sid, r in recs.items()]
 
 
@@ -513,7 +552,8 @@ def scan(home):
                     "sub": r["sub"], "models": r["models"], "effort": r["effort"], "tok": r["tok"],
                     "tin": r["tin"], "tout": r["tout"], "tcr": r["tcr"], "tcw": r["tcw"], "cost": r["cost"],
                     "req": r["req"], "tools": r["tools"], "toolErr": r["toolErr"], "tc": r["tc"], "aborts": r["aborts"],
-                    "apiErr": r["apiErr"], "compactions": r["compactions"], "commits": commits})
+                    "apiErr": r["apiErr"], "compactions": r["compactions"], "commits": commits,
+                    "skills": r.get("skills") or {}})
     return {"scanned_at": int(time.time() * 1000), "sessions": out}
 
 

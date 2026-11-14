@@ -55,7 +55,9 @@ one searchable list showing where each lives.
 ### Usage (⌘⇧U)
 
 Cost and output across omp, Claude Code, Codex, OpenCode and pi, from their local logs and your git history. Any
-period; drag across a chart and every number follows, until you clear the pick (✕ on its chip, top right). Nothing
+period; drag across a chart and every number follows, until you clear the pick (✕ on its chip, top right). **Skills**
+shows which of your skills do well across every harness: how often each is used, how its sessions do against the same
+harnesses' sessions without it (commits, median cost, clean runs), by harness and model, and by category. Nothing
 leaves your machine.
 
 <table>

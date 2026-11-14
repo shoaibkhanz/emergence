@@ -304,6 +304,14 @@ inside.
     - **Output:** commits, lines, PRs/MRs, worktrees; added/removed bars; top repos; spend per commit, merged PR and
       1K lines; recent PRs.
     - **Harnesses:** stacked tokens by harness, models, effort.
+    - **Skills:** which skills do well. A skill counts when Claude Code calls its Skill tool, or another harness's
+      agent reads its `SKILL.md` (a listing in a prompt, a glob or a write doesn't; a plugin prefix is dropped; `scan.py`
+      records `skills` per session). Tiles: sessions with a skill, skills used, median cost with and without one,
+      categories. A table per skill, or per category (Code review, Planning and design, Testing and debugging, Writing
+      and explaining, Browsing, Other: from how a word of the name starts, `lib.js` `categoryOf`): sessions, the share
+      that led to a commit, median cost, clean runs. Each is shown against the same harnesses' sessions without it, with
+      ▲ / ▼ at a 20% difference; rows under 5 sessions are dimmed. Click a row for its harnesses and models.
+      Correlation, not cause; a session using several skills counts for each (`lib.js` `skillsOf`).
     - **Rhythm:** a vertical hour grid (hours down, weekdays across, 11px squares) with a time-of-day split beside it,
       agents at once, run lengths, days of the week.
   - Hovering any bar or square writes its numbers into a line under the chart. Tooltips on tiny cells don't show in

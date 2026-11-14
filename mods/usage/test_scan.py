@@ -263,6 +263,63 @@ class ScanTest(unittest.TestCase):
         self.assertEqual((r["tok"], r["req"], r["start"]), (5, 1, T * 1000))
 
 
+class SkillsTest(unittest.TestCase):
+    """A skill counts when it's used (Claude's Skill tool; a read of its SKILL.md elsewhere), never when it's only
+    listed in a prompt, searched for or written. A plugin prefix is dropped: one skill, whoever ships it."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = self.tmp.name
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_names_drop_the_plugin_prefix(self):
+        self.assertEqual(scan.skill_name("superpowers:writing-plans"), "writing-plans")
+        self.assertEqual(scan.skill_name(" brainstorming "), "brainstorming")
+        self.assertEqual(scan.skill_name(""), None)
+
+    def test_claude_counts_skill_calls_once_each(self):
+        def a(mid, content):
+            return {"type": "assistant", "timestamp": iso(T), "cwd": "/w", "sessionId": "s",
+                    "message": {"id": mid, "model": "opus", "content": content, "usage": {"output_tokens": 1}}}
+        call = lambda i, name: {"type": "tool_use", "id": i, "name": "Skill", "input": {"skill": name}}
+        p = os.path.join(self.dir, "s.jsonl")
+        jsonl(p, [a("m1", [call("t1", "superpowers:writing-plans")]),
+                  a("m1", [call("t1", "superpowers:writing-plans")]),  # the same call, streamed again
+                  a("m2", [call("t2", "writing-plans"), call("t3", "brainstorming"),
+                           {"type": "tool_use", "id": "t4", "name": "Read", "input": {"file_path": "/x/skills/tdd/SKILL.md"}}])])
+        self.assertEqual(scan.parse_claude(p, False)[0]["skills"], {"writing-plans": 2, "brainstorming": 1})
+
+    def test_omp_counts_reads_of_a_skill_file_only(self):
+        def m(content):
+            return {"type": "message", "id": "x", "timestamp": iso(T + 1),
+                    "message": {"role": "assistant", "model": "m", "usage": {"totalTokens": 1}, "content": content}}
+        tc = lambda name, path: {"type": "toolCall", "name": name, "arguments": {"path": path}}
+        p = os.path.join(self.dir, "o.jsonl")
+        jsonl(p, [{"type": "session", "id": "o", "timestamp": iso(T), "cwd": "/w",
+                   "systemPrompt": "Skills: /u/.claude/skills/listed/SKILL.md"},  # a listing, not a use
+                  m([tc("read", "/u/.claude/skills/brainstorming/SKILL.md"), tc("read", "/u/notes.md"),
+                     tc("glob", "/u/.claude/skills/**/SKILL.md"), tc("write", "/u/.claude/skills/new/SKILL.md")]),
+                  m([tc("read", "/u/.claude/skills/brainstorming/SKILL.md")])])
+        self.assertEqual(scan.parse_pi(p, "omp", False)[0]["skills"], {"brainstorming": 2})
+
+    def test_opencode_counts_skill_reads(self):
+        db = os.path.join(self.dir, "opencode.db")
+        con = sqlite3.connect(db)
+        con.execute("create table session (id, parent_id, directory, time_created, time_updated, title)")
+        con.execute("create table message (id, session_id, data)")
+        con.execute("create table part (id, session_id, data)")
+        con.execute("insert into session values ('s1', null, '/w', ?, ?, 't')", (T * 1000, (T + 9) * 1000))
+        con.execute("insert into message values ('1', 's1', ?)", (json.dumps({"role": "assistant", "modelID": "glm", "tokens": {"input": 1}}),))
+        parts = [{"type": "tool", "tool": "read", "state": {"status": "completed", "input": {"filePath": "/u/.opencode/skills/today-note/SKILL.md"}}},
+                 {"type": "tool", "tool": "write", "state": {"status": "completed", "input": {"filePath": "/u/.opencode/skills/new/SKILL.md"}}}]
+        con.executemany("insert into part values (?, 's1', ?)", [(str(i), json.dumps(d)) for i, d in enumerate(parts)])
+        con.commit()
+        con.close()
+        self.assertEqual(scan.parse_opencode(db)[0]["skills"], {"today-note": 1})
+
+
 import output  # noqa: E402
 
 
