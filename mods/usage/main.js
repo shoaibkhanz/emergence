@@ -695,7 +695,8 @@ export default class Usage extends View {
             .child(v_flex().flex_1().min_w(0).gap(12).child(this.parallel(t, r0, r)).child(lengths).child(days))
           : v_flex().gap(12).child(this.punch(t, r0, r)).child(this.parallel(t, r0, r)).child(lengths).child(days)];
       })() : [empty])
-      : [this.tiles(t, r), this.heatmap(t, cells, weeks), ...(r.tiles.sessions ? [this.pair(this.tokensCard(t, r), this.workCard(t, r))] : [])];
+      : [this.tiles(t, r), this.heatmap(t, cells, weeks), ...(r.tiles.sessions ? [this.pair(this.tokensCard(t, r), this.workCard(t, r))]
+        : this.sel ? [div().p(12).text_center().text_size(13).text_color(t.muted).child(`No sessions in ${this.selLabel()}. Clear it (✕, top right) to see ${p.label}.`)] : [])];
     return root.child(v_flex().id("usage-body").flex_1().min_h(0).p(16).gap(12).overflow_y_scrollbar().children(view));
   }
 }
