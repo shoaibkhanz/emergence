@@ -48,6 +48,11 @@ These are the Herdr 0.1.15 behaviours we hit that the manual gets wrong or leave
   from the mod or the CLI leaves `is_focused()` true. `pane.focus {pane | terminal}` always takes it back.
 - `focused()` keeps reporting the terminal while a mod holds the keyboard: it's the pane to go back to.
 - No blur or focus-change event: a mod that draws its focus re-checks `is_focused()` on a timer to clear it.
+- When a dialog or popup closes, Herdr gives the keyboard back to a mod only if `pane.go` gave it; after the mod's own
+  `handle.focus()` it goes to the terminal. A mod can't see overlays (`window.has_active_dialog()` throws: no
+  ShellRoot); `herdr-app status` lists them by mod name, windows included. Hence `emergence.over` (RECIPE, Focus rule).
+- A handle doesn't report a focused child: with the keyboard in an `Input` inside the tracked element, `is_focused()`
+  is false, and that `InputState`'s `focus` / `blur` events didn't fire in a layout panel (the Library).
 - `exec(cmd, args, {cwd, on})`: `args` is an array.
 - `herdr-app check` misses a missing import (`shared is not defined`): it throws at render time, once data arrives.
 
@@ -78,6 +83,10 @@ These are the Herdr 0.1.15 behaviours we hit that the manual gets wrong or leave
   `herdr-app shot` and `herdr-app status`, then delete the loop before committing. Right after a `layout.switch`,
   commands can land in a copy that isn't the shown one; a temporary default in `init` (a tab, a range) plus
   one `layout.switch` is the reliable way to screenshot a particular view.
+- Where the keyboard is, from a `herdr-app shot`: the focused pane's border is `accent` (and its cursor solid) only
+  while a terminal has it; with a mod holding it the border is `border` grey and the cursor hollow. Spaces and the
+  Inbox draw an accent ring. Sampling those pixels makes a focus check a script can run after each `herdr-app do`.
+  `herdr-app do overlay.close` closes the top dialog or popup as Esc does (the mod's `close()` runs).
 - To learn whether pointer events arrive at all, log from the handlers into memory and flush it with
   `fs.writeFile` under `~/.config/herdr-app/data/`, then ask the person to click.
 - A synthetic agent for a test: a terminal that prints `\033]7501;state=<working|blocked|done|idle>:app=<claude|codex|pi|…>\033\\`
