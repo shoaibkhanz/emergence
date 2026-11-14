@@ -274,7 +274,7 @@ export default class Skills extends View {
     const keys = (e, cx) => {
       const k = e.keystroke; // exact chords: ⇧↑ and ⇧↓ stay the search box's, ⌘⇧R isn't a rescan
       if (k === "escape" && this.plugin) { this.goto("plugins", null); cx.notify(); }
-      else if (k === "escape" && !panel) closeOverlay(this.overlay);
+      else if (k === "escape") panel ? run("tabs-plus.back") : closeOverlay(this.overlay); // the panel: back to the terminal
       else if (k === "down") move(1, cx);
       else if (k === "up") move(-1, cx);
       // ← / →: Skills ↔ Plugins (out of an open plugin), as every panel's arrows walk its tabs; with text in the

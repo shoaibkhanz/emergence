@@ -3,17 +3,20 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { keys, props, closeOverlay, theme } from "herdr";
+import { keys, props, closeOverlay, theme, setShared } from "herdr";
 import { rows } from "./lib.js";
 
 export default class EmergenceKeys extends View {
   init(_props, cx) {
+    setShared("emergence.over", { at: Date.now(), open: true }); // the keyboard goes back where it was when this closes
     this.filter = "";
     this.input = InputState.new({ placeholder: "Type to filter…" });
     this.input.on("change", (_e, cx) => { this.filter = this.input.value(); cx.notify(); });
     this.input.focus();
     cx.timer.after(600, () => this.input.focus());
   }
+
+  async close() { setShared("emergence.over", { at: Date.now(), open: false }); }
 
   render() {
     const t = theme(), close = () => closeOverlay(props().overlay);

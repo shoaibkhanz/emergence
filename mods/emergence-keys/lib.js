@@ -6,7 +6,7 @@ export const GROUPS = [
     [{ action: "tabs-plus.prs" }, "PRs: review pull requests and compare branches"],
     [{ action: "tabs-plus.skills" }, "Library: every skill and plugin"],
     [{ action: "tabs-plus.usage" }, "Usage: what your agents cost and deliver"],
-    [{ keys: "↑ ↓ · ← → · ↵ · Esc" }, "In a panel: step through · switch tabs · open · close"],
+    [{ keys: "↑ ↓ · ← → · ↵ · Esc" }, "In a panel: step through · switch tabs · open · step back, then to the terminal"],
   ]],
   ["Sidebar", [
     [{ action: "tabs-plus.rail" }, "Open it with the keyboard in Spaces; in it, fold it"],

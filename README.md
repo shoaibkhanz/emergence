@@ -95,8 +95,8 @@ finds its worktrees too), or a new branch name to make a worktree. Unnamed tabs 
 ## Keys
 
 Added without replacing yours; all but ⌘E only in the `emergence` layout. ⌘⇧/ (or the tab bar's keyboard button)
-lists them all. Closing a panel's window or popup (a skill, a PR, Agents or Usage large) gives the keyboard back to the
-panel.
+lists them all. Closing something gives the keyboard back to where it was: Jump, the keys list, a worktree dialog
+or menu to Spaces, the Inbox or the panel you opened it from; a panel's window or popup to the panel.
 
 | Key | Where | What |
 |---|---|---|
@@ -109,7 +109,7 @@ panel.
 | ↑ ↓ · ↵ | sidebar | move · open |
 | ← → | Spaces | repo: fold · worktree: delete / archive |
 | ctrl-j · ctrl-k · ctrl-l | sidebar | to Inbox · to Spaces · back to the terminal (also Esc) |
-| ↑ ↓ · ← → · ↵ · Esc | panels | list · tabs · open · close |
+| ↑ ↓ · ← → · ↵ · Esc | panels | list · tabs · open · step back, then back to the terminal |
 | ⌘F · [ ] | PRs | find · previous / next commit |
 | ctrl-h/j/k/l | terminals | between panes ([optional](#optional-ctrlhjkl-between-panes)) |
 

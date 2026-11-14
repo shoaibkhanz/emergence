@@ -37,6 +37,13 @@ function maxPanel() {
   return Math.round(globalThis.window.viewport_size().width / (settings().zoom ?? 1)) - side - 25 - 200;
 }
 
+// The keyboard back to the pane it came from (focused() keeps reporting it while a mod holds it). Also the panels'
+// Esc ("tabs-plus.back").
+function back() {
+  const f = focused();
+  if (f) run("pane.focus", f.pane ? { pane: f.pane } : { terminal: f.terminal });
+}
+
 // ⌘B moves the keyboard with the sidebar (`keys`); ⌘⌥B only changes the size.
 function open(keys) {
   for (const id of ["brand", "spaces", "sidebar-footer"]) run("layout.show", { id });
@@ -52,9 +59,7 @@ function fold(to = shared("sidebar.folded") ?? "rail", keys = false) {
   run("layout.show", { id: "spaces" }); // the old 14px fold hid it
   run("layout.resize", { id: "sidebar", px: to === "dots" ? 20 : 48 });
   setShared("sidebar.folded", to);
-  // The keyboard goes back to the pane it came from (focused() keeps reporting it while a mod holds it).
-  const f = keys && focused();
-  if (f) run("pane.focus", f.pane ? { pane: f.pane } : { terminal: f.terminal });
+  if (keys) back();
 }
 
 function rail() {
@@ -113,7 +118,7 @@ export default class Tabs extends View {
     // "tabs-plus.update" applies a pending update (the chip's click).
     // ⌘⇧I: the keyboard into the Inbox (↑↓ pick, ↵ goes to the agent, Esc back), the sidebar opening if folded.
     const attention = () => { const s = find(layout(), "sidebar"); if (!s || sizeOf(s) !== "open") open(false); run("inbox.focus"); };
-    const commands = { attention, rail, thinner, fold: () => fold(undefined, true) };
+    const commands = { attention, rail, thinner, back, fold: () => fold(undefined, true) };
     cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); if (commands[c]) commands[c](); else if (c === "update") this.applyUpdate(cx); else if (c === "worktrees") openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: focused()?.space, folder: focused()?.cwd, action: "open" } }); else if (PANELS.some(([id]) => id === c)) this.toggle(c); cx.notify(); } });
     this.update = null; // { behind, busy?, error? } once main has commits this clone lacks
     cx.spawn(async (cx) => { await cx.sleep(16); this.checkUpdate(cx); }); // host calls before the first frame never resolve

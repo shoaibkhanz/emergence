@@ -1,13 +1,15 @@
 // A context menu with the items its opener passes, drawn as Herdr's menu mod (whose items are fixed).
-// Opened as a popup with props { items: [[label, command, args, icon, hint, split], …] }; split draws a divider above
-// that item. ↑/↓ move, Enter runs, Esc closes.
+// Opened as a popup with props { items: [[label, command, args, icon, hint, split, stays], …] }; split draws a divider
+// above that item. ↑/↓ move, Enter runs, Esc closes. Closing gives the keyboard back to where it was (shared
+// emergence.over), unless an item was chosen that isn't `stays` (it opens something of its own).
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, theme } from "herdr";
+import { run, props, closeOverlay, theme, setShared } from "herdr";
 
 export default class RowMenu extends View {
   init(_props, cx) {
+    setShared("emergence.over", { at: Date.now(), open: true });
     this.at = 0;
     this.handle = cx.focus_handle();
     this.handle.focus();
@@ -16,9 +18,12 @@ export default class RowMenu extends View {
   choose(i) {
     const it = props()?.items?.[i];
     if (!it) return;
+    this.went = !it[6];
     closeOverlay(props()?.overlay);
     run(it[1], it[2] ?? {});
   }
+
+  async close() { setShared("emergence.over", { at: Date.now(), open: false, went: this.went }); }
 
   render() {
     const t = theme(), list = props()?.items ?? [];

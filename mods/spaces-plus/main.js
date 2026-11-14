@@ -304,15 +304,14 @@ export default class Spaces extends View {
       if (st.code !== 0) return notify({ title: `Couldn't check ${label}`, body: st.stderr.trim(), level: "error" });
       if (st.stdout.trim()) return notify({ title: `${label} has uncommitted changes`, body: "Not deleted. → archives it instead.", level: "warning" });
     }
-    this.asked = { kind, target };
+    this.asked = { kind, target, keys: this.resume || this.ringed }; // asked from the keyboard (or its menu), not a click from the terminal
     const del = kind === "delete";
-    // Every close (Confirm or Cancel) gives the keyboard back to Spaces.
+    // Every close (Confirm, Cancel, Esc) gives the keyboard back to Spaces if it was here (comeBack).
     openOverlay({ mod: "confirm-safe", kind: "dialog", width: 440, height: space ? 256 : 228, props: {
       title: `${del ? "Delete" : "Archive"} worktree?`, name: label,
       detail: del ? "Removes this folder from disk. Its branch stays." : "Hides it from the sidebar; the folder stays. Reopen it from ⌘E Jump.",
       path, warn: space ? "Its open space and terminals close." : null, action: del ? "Delete" : "Archive", danger: del,
-      command: { name: `spaces-plus.${kind}` }, after: { name: "spaces-plus.focus" } } });
-    cx.notify();
+      command: { name: `spaces-plus.${kind}` } } });
   }
 
   async act(kind, cx) {
@@ -321,7 +320,7 @@ export default class Spaces extends View {
     if (a?.kind !== kind) return;
     const { on, path, label, space } = a.target;
     if (kind === "archive") setShared("spaces.archived", { ...(shared("spaces.archived") ?? {}), [JSON.stringify([on, path])]: space });
-    if (space) { run("space.close", { id: space, confirmed: true }); cx.timer.after(300, () => this.fh.focus()); } // the next space's terminal takes the keyboard
+    if (space) { run("space.close", { id: space, confirmed: true }); if (a.keys) cx.timer.after(300, () => this.fh.focus()); } // the next space's terminal takes the keyboard
     if (kind === "delete") {
       const r = await exec("git", ["-C", path, "worktree", "remove", path], { on });
       if (r.code !== 0) notify({ title: `Couldn't delete ${label}`, body: r.stderr.trim(), level: "error" });
@@ -338,8 +337,8 @@ export default class Spaces extends View {
       ...(target.space
         ? [["Rename", "space.rename", { id: target.space }, I + "square-pen.svg"], ["Close space", "space.close", { id: target.space }, I + "x.svg"]]
         : [["Open", "space.new", { folder: target.path, machine: target.on ?? "" }, I + "plus.svg", "↵"]]),
-      ["Archive worktree…", "spaces-plus.ask-archive", {}, I + "archive.svg", "→", true],
-      ["Delete worktree…", "spaces-plus.ask-delete", {}, "mods/row-menu/trash.svg", "←"],
+      ["Archive worktree…", "spaces-plus.ask-archive", {}, I + "archive.svg", "→", true, true], // stays: its confirm follows
+      ["Delete worktree…", "spaces-plus.ask-delete", {}, "mods/row-menu/trash.svg", "←", false, true],
     ];
     openOverlay({ mod: "row-menu", kind: "popup", width: 230, height: 160, props: { items } });
   }
@@ -599,6 +598,21 @@ export default class Spaces extends View {
     return this.cur === key && this.ringed;
   }
 
+  // A dialog or menu of ours (shared emergence.over: Jump, the keys, a confirm, the row menu) took the keyboard from
+  // here: it comes back when that closes, unless that went somewhere (a jump, a menu item). Herdr gives it to the
+  // terminal. `held`: the keyboard was here at the last frame.
+  comeBack(cx, held, focus) {
+    const ov = shared("emergence.over");
+    if (!ov || ov.at === this.ovAt) return;
+    this.ovAt = ov.at;
+    if (ov.open) this.resume ||= held;
+    else if (this.resume) cx.timer.after(80, (cx) => {
+      if (shared("emergence.over")?.open) return; // the next one is up already (menu, then confirm)
+      this.resume = false;
+      if (!ov.went) { focus(); cx.notify(); }
+    });
+  }
+
   // Keys while the list holds the keyboard; the folded sizes take only ctrl-j/l and Esc. pane.go releases only
   // a keyboard pane.go gave, not one this mod took (spaces-plus.focus, ⌘B): so ctrl-j goes to the inbox by name, and
   // ctrl-l / Esc focus the pane focused() still reports, the one you came from.
@@ -644,7 +658,7 @@ export default class Spaces extends View {
         .child(div().size(8).rounded(2).bg(fill(w, t)).when(!w.active, (el) => el.opacity(0.55))));
   }
 
-  render() {
+  render(cx) {
     const t = theme();
     const collapsed = narrow(), dots = collapsed && dotsSize(), top = lights();
     const palette = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
@@ -659,6 +673,7 @@ export default class Spaces extends View {
       changed = true;
     }
     if (changed) setShared("space.colors", kept);
+    this.comeBack(cx, this.ringed, () => this.fh.focus());
     this.ringed = this.fh.is_focused();
     return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13)
       .track_focus(this.fh).on_key_down((e, cx) => this.key(e.keystroke, cx))

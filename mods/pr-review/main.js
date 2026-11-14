@@ -101,9 +101,23 @@ export default class PrReview extends View {
     if (this.panel) setShared("pr-review.wide", false); // full size doesn't outlive the copy (widen's wideFrom)
     // The panel leaves polling to the window while one is open on top (one set of GitHub calls, not two).
     cx.timer.every(5000, (cx) => (this.shown() && !this.yields() ? this.poll(this.cur, cx) : (this.stale = true)));
-    if (this.panel) return;
+    if (this.panel) return void cx.timer.every(250, (cx) => { if (this.handle.is_focused() !== this.held) cx.notify(); }); // no blur event (comeBack)
     this.handle.focus();
     cx.timer.after(150, () => this.handle.focus());
+  }
+
+  // A dialog of ours (Jump, the keys) took the keyboard from this panel: it comes back when that closes (as
+  // spaces-plus comeBack).
+  comeBack(cx, held) {
+    const ov = shared("emergence.over");
+    if (!ov || ov.at === this.ovAt) return;
+    this.ovAt = ov.at;
+    if (ov.open) this.resume ||= held;
+    else if (this.resume) cx.timer.after(80, (cx) => {
+      if (shared("emergence.over")?.open) return;
+      this.resume = false;
+      if (!ov.went) { this.handle.focus(); cx.notify(); }
+    });
   }
 
   // The window forgets its id when it goes, so a later open never closes some other overlay that reuses it.
@@ -546,7 +560,7 @@ export default class PrReview extends View {
       // Wide: back from a stacked diff to its tree, then out of the entry (the arrows walk the PR list again).
       else if (!this.narrow && s?.entry != null) { const d = s.diffs.get(s.entry); if (!this.side() && d?.view === "diff") d.view = "files"; else s.entry = null; }
       else if (!this.panel) return this.dismiss();
-      else return;
+      else return run("tabs-plus.back"); // nothing left to step out of: back to the terminal
     } else if (this.typing) return;
     // The PR list's search and ← / → over its Open / Closed / All (as every panel's arrows walk its tabs), only where the list shows.
     else if (k === "/" && !this.inSearch && s && this.listShows(s)) this.search.focus();
@@ -733,6 +747,7 @@ export default class PrReview extends View {
       if (o?.id === BLOCK && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.handle.focus()); }
       const back = this.panel && shared("emergence.back"); // a panel's window or popup closed: the keyboard comes back
       if (back && back !== this.backAt) { this.backAt = back; if (Date.now() - back < 3000) cx.timer.after(80, () => this.handle.focus()); }
+      if (this.panel) { this.comeBack(cx, this.held); this.held = this.handle.is_focused(); }
     } else this.stale = true;
     const t = theme();
     const s = this.cur;

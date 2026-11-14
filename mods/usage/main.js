@@ -51,6 +51,7 @@ export default class Usage extends View {
     this.panel = props()?.panel === true;
     this.backAt = shared("emergence.back");
     this.handle = cx.focus_handle(); // a press anywhere takes the keyboard: ← / → walk the view tabs, as every panel's arrows do
+    if (this.panel) cx.timer.every(250, (cx) => { if (this.handle.is_focused() !== this.held) cx.notify(); }); // no blur event (comeBack)
     // Every minute while it shows: a rescan reads only the logs that changed (about 1.5 s); Output's git and gh every 15.
     cx.timer.every(60000, (cx) => { if (this.shown() && Date.now() - scanned > 50000) this.scan(cx, true); });
     const r = localStorage.getItem("range");
@@ -597,6 +598,20 @@ export default class Usage extends View {
       .when(rows.length > 0, (el) => el.child(this.anatomy(t, r)));
   }
 
+  // A dialog of ours (Jump, the keys) took the keyboard from this panel: it comes back when that closes (as
+  // spaces-plus comeBack).
+  comeBack(cx, held) {
+    const ov = shared("emergence.over");
+    if (!ov || ov.at === this.ovAt) return;
+    this.ovAt = ov.at;
+    if (ov.open) this.resume ||= held;
+    else if (this.resume) cx.timer.after(80, (cx) => {
+      if (shared("emergence.over")?.open) return;
+      this.resume = false;
+      if (!ov.went) { this.handle.focus(); cx.notify(); }
+    });
+  }
+
   // The large popup (mod.open) closing gives the keyboard back to the side panel showing (emergence.back).
   async close() { if (!this.panel && props()?.overlay) setShared("emergence.back", Date.now()); }
 
@@ -607,6 +622,7 @@ export default class Usage extends View {
     if (opened?.id === "usage" && opened.at !== this.openedAt && Date.now() - opened.at < 3000) { this.openedAt = opened.at; cx.timer.after(50, () => this.handle.focus()); }
     const back = this.panel && vis && shared("emergence.back"); // a panel's window or popup closed: the keyboard comes back
     if (back && back !== this.backAt) { this.backAt = back; if (Date.now() - back < 3000) cx.timer.after(80, () => this.handle.focus()); }
+    if (this.panel) { this.comeBack(cx, this.held); this.held = this.handle.is_focused(); }
     this.wasShown = vis;
     const root = (this.panel
       ? v_flex().size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
@@ -614,6 +630,7 @@ export default class Usage extends View {
       .id("usage-root").text_size(13).text_color(t.foreground).track_focus(this.handle)
       .on_size_change((s, cx) => { const w = s.width / settings().zoom; if (Math.abs(w - this.width) > 1) { this.width = w; cx.notify(); } })
       .on_key_down((e, cx) => {
+        if (e.keystroke === "escape" && this.panel) return run("tabs-plus.back"); // back to the terminal
         if (e.keystroke !== "left" && e.keystroke !== "right") return;
         const i = TABS.findIndex(([id]) => id === this.tab);
         this.tab = TABS[(i + (e.keystroke === "right" ? 1 : TABS.length - 1)) % TABS.length][0];

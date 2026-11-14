@@ -71,6 +71,7 @@ export default class AgentGraph extends View {
     this.offsets = new Map(JSON.parse(localStorage.getItem("offsets") || "[]")); // node id -> { x, y } the person dragged it by
     this.sel = null;
     this.h = cx.focus_handle();
+    if (this.panel) cx.timer.every(250, (cx) => { if (this.h.is_focused() !== this.held) cx.notify(); }); // no blur event (comeBack)
     if (!this.panel) {
       this.h.focus();
       cx.timer.after(300, () => this.h.focus());
@@ -189,6 +190,20 @@ export default class AgentGraph extends View {
     this.view = { z, x: px - (px - v.x) * k, y: py - (py - v.y) * k };
   }
 
+  // A dialog of ours (Jump, the keys) took the keyboard from this panel: it comes back when that closes (as
+  // spaces-plus comeBack).
+  comeBack(cx, held) {
+    const ov = shared("emergence.over");
+    if (!ov || ov.at === this.ovAt) return;
+    this.ovAt = ov.at;
+    if (ov.open) this.resume ||= held;
+    else if (this.resume) cx.timer.after(80, (cx) => {
+      if (shared("emergence.over")?.open) return;
+      this.resume = false;
+      if (!ov.went) { this.h.focus(); cx.notify(); }
+    });
+  }
+
   // The large popup (mod.open) closing gives the keyboard back to the side panel showing (emergence.back).
   async close() { if (!this.panel && props()?.overlay) setShared("emergence.back", Date.now()); }
 
@@ -205,6 +220,7 @@ export default class AgentGraph extends View {
     if (o?.id === "graph" && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.h.focus()); }
     const back = this.panel && shown && shared("emergence.back"); // a panel's window or popup closed: the keyboard comes back
     if (back && back !== this.backAt) { this.backAt = back; if (Date.now() - back < 3000) cx.timer.after(80, () => this.h.focus()); }
+    if (this.panel) { this.comeBack(cx, this.held); this.held = this.h.is_focused(); }
     this.wasShown = shown;
     const items = this.items();
     if (shown && !this.busy && items.some((i) => i.cwd && !this.git.has(key(i.machine, i.cwd)))) this.refresh(cx);
@@ -227,7 +243,7 @@ export default class AgentGraph extends View {
       .on_key_down((e, cx) => {
         const k = e.key, i = picks.findIndex((n) => n.data.id === this.sel), m = e.modifiers;
         if (m.platform || m.control || m.alt) return; // ⌘R, ⌘= … belong to the app
-        if (k === "escape" && !this.panel) return this.dismiss();
+        if (k === "escape") return this.panel ? run("tabs-plus.back") : this.dismiss(); // the panel: back to the terminal
         if (k === "f") this.view = null;
         else if ((k === "-" || k === "=" || k === "+") && this.fitted && this.size) this.zoomAt(k === "-" ? 0.8 : 1.25, this.size.width / 2, this.size.height / 2);
         else if (k === "r") { this.offsets.clear(); localStorage.removeItem("offsets"); this.view = null; }

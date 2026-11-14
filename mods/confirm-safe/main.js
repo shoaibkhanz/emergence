@@ -3,12 +3,12 @@
 // Props: { title, detail, command: { name, args } } as confirm's, plus
 //   name, path: what it acts on (a branch) and where, in a mono box (the path with home as ~, shortened in the middle);
 //   action: the button's verb ("Delete"); danger: draw it in the blocked colour;
-//   warn (optional): a second consequence, on its own line with an amber dot;
-//   after (optional): a command run on every close, Confirm, Cancel or Esc (the opener taking the keyboard back).
+//   warn (optional): a second consequence, on its own line with an amber dot.
+// Every close (Confirm, Cancel, Esc) gives the keyboard back to where it was (shared emergence.over).
 
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { run, props, closeOverlay, theme, home } from "herdr";
+import { run, props, closeOverlay, theme, home, setShared } from "herdr";
 import { shortPath } from "./lib.js";
 
 const MONO = "Geist Mono";
@@ -17,6 +17,7 @@ const alpha = (c, a) => c.slice(0, 7) + Math.round(a * 255).toString(16).padStar
 
 export default class ConfirmSafe extends View {
   init(_props, cx) {
+    setShared("emergence.over", { at: Date.now(), open: true }); // the keyboard goes back where it was when this closes
     this.handle = cx.focus_handle();
     this.handle.focus();
     this.yes = false; // the selected button: Cancel
@@ -24,14 +25,12 @@ export default class ConfirmSafe extends View {
 
   done(yes) {
     const p = props();
-    this.finished = true;
     closeOverlay(p.overlay);
     if (yes) run(p.command.name, p.command.args ?? {});
-    if (p.after) run(p.after.name);
   }
 
-  // Herdr closes a dialog on Esc itself (and on a click outside), past key(): `after` still runs.
-  async close() { if (!this.finished && props()?.after) run(props().after.name); }
+  // Herdr closes a dialog on Esc itself (and on a click outside), past key(): this still runs.
+  async close() { setShared("emergence.over", { at: Date.now(), open: false }); }
 
   key(e, cx) {
     if (e.key === "escape") this.done(false);

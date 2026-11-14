@@ -86,6 +86,19 @@ export default class Inbox extends View {
     else { run("agent.focus", { terminal: a.address }); run("pane.focus", { terminal: a.address }); }
   }
 
+  // A dialog of ours took the keyboard from here: it comes back when that closes (as spaces-plus comeBack).
+  comeBack(cx, held, focus) {
+    const ov = shared("emergence.over");
+    if (!ov || ov.at === this.ovAt) return;
+    this.ovAt = ov.at;
+    if (ov.open) this.resume ||= held;
+    else if (this.resume) cx.timer.after(80, (cx) => {
+      if (shared("emergence.over")?.open) return; // the next one is up already (menu, then confirm)
+      this.resume = false;
+      if (!ov.went) { focus(); cx.notify(); }
+    });
+  }
+
   // Spaces gets the height its rows ask for (spaces.want: its rows, worktrees and machine headers, as Spaces drew
   // them) while this inbox's own content still fits below; past that, at least half.
   fitSpaces(collapsed, need) {
@@ -148,7 +161,7 @@ export default class Inbox extends View {
       .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(11).text_color(t.dim));
   }
 
-  render() {
+  render(cx) {
     const t = theme();
     const collapsed = narrow();
     const now = Date.now();
@@ -166,6 +179,7 @@ export default class Inbox extends View {
     this.cards = cards;
     this.cur = cards[i]?.address ?? null;
     this.curI = Math.max(i, 0);
+    this.comeBack(cx, this.ringed, () => this.fh.focus());
     this.ringed = this.fh.is_focused();
     if (!cards.some((a) => a.address === this.hovered)) this.hovered = null; // gone without a hover-out
     setAgentOrder([...cards, ...all.filter((a) => !cards.includes(a))].map((a) => a.address)); // ⌘] / ⌘[ walk the inbox first

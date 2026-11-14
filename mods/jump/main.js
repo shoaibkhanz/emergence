@@ -8,7 +8,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, ScrollHandle } from "gpui-base";
-import { agents, spaces, panes, focused, exec, run, theme, props, shared, openOverlay, closeOverlay } from "herdr";
+import { agents, spaces, panes, focused, exec, run, theme, props, shared, setShared, openOverlay, closeOverlay } from "herdr";
 
 const MONO = "Geist Mono";
 const inside = (p, dir) => Boolean(p) && (p === dir || p.startsWith(dir + "/"));
@@ -49,6 +49,7 @@ async function worktrees() {
 
 export default class Jump extends View {
   init(_props, cx) {
+    setShared("emergence.over", { at: Date.now(), open: true }); // the keyboard goes back where it was when this closes
     this.input = InputState.new({ placeholder: "Jump to a session or worktree…" });
     this.input.on("change", (_e, cx) => { this.at = null; cx.notify(); });
     this.input.on("submit", () => this.go(this.rows()[this.at]));
@@ -60,7 +61,10 @@ export default class Jump extends View {
     cx.spawn(async (cx) => { await cx.sleep(16); this.wts = await worktrees(); cx.notify(); }); // host calls before the first frame never resolve
   }
 
-  close() { closeOverlay(props().overlay); }
+  dismiss() { closeOverlay(props().overlay); }
+
+  // Every close (Esc is Herdr's own). `went`: a row was picked, so the keyboard follows it instead.
+  async close() { setShared("emergence.over", { at: Date.now(), open: false, went: this.went }); }
 
   rows() {
     const q = this.input.value().replace(/^\s*\//, "").trim(), words = q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -91,7 +95,8 @@ export default class Jump extends View {
 
   go(r) {
     if (!r) return;
-    this.close();
+    this.went = true;
+    this.dismiss();
     if (r.kind === "tab") run("tab.select", { id: r.tb.id });
     else if (r.kind === "wt") run("space.new", { folder: r.path, machine: r.machine ?? "" });
     else openOverlay({ mod: "worktree", kind: "dialog", width: 560, height: 480, props: { space: r.space.id, folder: r.cwd, action: "new", branch: r.branch } });
@@ -134,7 +139,7 @@ export default class Jump extends View {
     const move = (by, cx) => { if (rows.length) { this.at = (this.at + by + rows.length) % rows.length; this.list.scroll_to_item(this.at); } cx.stop_propagation(); cx.notify(); };
     return v_flex().id("jump").size_full().bg(t.popover).font_family("Geist").text_size(13)
       .on_key_down((e, cx) => {
-        if (e.key === "escape") this.close();
+        if (e.key === "escape") this.dismiss();
         else if (e.key === "down") move(1, cx);
         else if (e.key === "up") move(-1, cx);
       })

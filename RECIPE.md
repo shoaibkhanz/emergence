@@ -89,8 +89,9 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - On a worktree (greyed, or an open space in a linked worktree; not a main checkout: lib.js `actionTarget`), ←
     deletes and → archives, each after `confirm-safe` (Herdr's confirm with Cancel selected: Enter alone cancels;
     a short title, one sentence, the branch and its path (shortened in the middle) in a mono box, an amber line when a space closes, and a
-    button named for the action, red for Delete). Its `after` command (`spaces-plus.focus`) runs on every close, and
-    after a `space.close` Spaces takes the keyboard back again 300 ms later (the next space's terminal grabs it).
+    button named for the action, red for Delete). Every close gives the keyboard back to Spaces if it was there (the
+    Focus rule below; asked by a click from the terminal, it stays in the terminal), and after a `space.close`
+    Spaces takes it again 300 ms later (the next space's terminal grabs it).
     Delete: `git status --porcelain` first (dirty: a warning toast, no dialog), then `space.close` if open and
     `git worktree remove` (the branch stays). Archive: shared `spaces.archived` (JSON [machine, path] → the space it
     closed), skipped by `addWorktrees`; reopening it in another space drops it from the archive (`reopened`).
@@ -115,7 +116,9 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - Opening a panel (its ⌘⇧ key or the tab bar) gives it the keyboard: tabs-plus sets `shared("emergence.opened")` and
     the panel focuses itself (clicking one does too). Inside every panel the same arrows: ↑/↓ walk the list (PRs and their
     files, skills, agents), ←/→ walk the tabs along the top (PRs: Open, Closed, All while the list shows; Library:
-    Skills, Plugins, with an empty search box; Usage: Overview to Rhythm), ↵ opens, Esc goes back or closes.
+    Skills, Plugins, with an empty search box; Usage: Overview to Rhythm), ↵ opens, Esc steps back and, with nothing
+    left to step out of, gives the keyboard back to the terminal (`tabs-plus.back`; the panel stays open). In a
+    window or popup Esc closes it.
 - **Tab names.** tabs-plus renames an unnamed tab after its first terminal's branch, or its repo (else folder, `~` at
   home) when the branch is main, master, trunk or develop. It remembers the names it gave in `shared("tabs.auto")`,
   so a given name keeps following the branch while a name you give (`tab.rename`) stays yours.
@@ -142,9 +145,10 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
     `glab mr list` for a non-GitHub remote and falls back to `gh`. GitLab:
     `glab api --paginate --output ndjson` for reads (plain `--paginate` glues pages as `][`), no `--paginate` on writes;
     a line comment POSTs `position` as one JSON value with `old_line` and/or `new_line` (both on an unchanged line),
-    base/start SHAs from the MR version its head belongs to (`versions`), and a range as `line_range` line codes
-    (`sha1(path)_<old>_<new>`), read back from the code since GitLab returns no numbers there. MR lists carry no
-    +/- counts (blank). An outdated thread (written at an older head) gets no line, so it shows apart from the diff as on
+    base/start SHAs from the MR version its head belongs to (`versions`), and a range as `line_range` whose ends carry
+    `old_line`/`new_line`, the line's type and its line code (`sha1(path)_<old>_<new>`, each number the line's place on
+    that side: lib.js `linePos`); codes alone collapse to the last line after the next push. Read back, both ends are
+    on one side. MR lists are one page of 100 per state, last updated first, and carry no +/- counts (blank). An outdated thread (written at an older head) gets no line, so it shows apart from the diff as on
     GitHub (GitLab keeps the old version's numbers). Verified live on a throwaway MR: every line kind, range, reply, edit, delete, resolve, MR comment,
     tag badge.
   - Shows the focused repo's PRs (Open, Closed, All, search) and "This branch vs main". Under "This branch"'s header a
@@ -235,7 +239,7 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
     files, changes, graph, prs, skills, usage; `status` workspace-status; `nav-keys` 0px `{resident: true}`).
 - **`mods/tabs-plus`** (clone of `tabs`):
   - PANELS `[id, label, icon, width]`; remembers each panel's width and per-space choice; hides settled tabs.
-  - `nextCommand` handles `graph`, `prs`, `skills`, `usage`, `attention`, `rail`, `thinner`, `fold`, `worktrees` and `update`.
+  - `nextCommand` handles `graph`, `prs`, `skills`, `usage`, `attention`, `rail`, `thinner`, `fold`, `back`, `worktrees` and `update`.
   - Tab names (`autoName`, one `git rev-parse --show-toplevel` per folder, again after 30 s if it couldn't run; a rename
     not landed in 10 s is sent again) and `jump.recent`, both from `render`.
   - Updates: finds the clone with `git -C <appHome>/mods/tabs-plus rev-parse --show-toplevel` (the mod is a link into
@@ -285,11 +289,20 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - `usage`: runs `python3` on its own scripts, which read `~/.omp`, `~/.claude`, `~/.codex`, `~/.local/share/opencode`
     and `~/.pi` session logs and run `git`, `gh` and `glab`. Only counts, models and timestamps are read, never prompt
     text.
-- **Focus rule.** A panel's own window or popup (skill window, PR window, Agents or Usage opened large) sets shared
-  `emergence.back` (a timestamp) in its `close()` when it goes for good (not when replaced); the side panel showing
-  focuses its handle on seeing a new one. Each panel reads the current value in `init`, so only later closes count.
-  Spaces' dialogs use `confirm-safe`'s `after` (`spaces-plus.focus`) instead. Overlays started from the terminal
-  (⌘E Jump, tab-bar menus) don't take part.
+- **Focus rule: closing something gives the keyboard back to where it was.** Herdr does this only for a keyboard
+  `pane.go` gave; one a mod took itself (⌘B, ⌘⇧I, a panel's key) goes to the terminal when a dialog closes. So:
+  - Our dialogs and menus (Jump, the keys, `confirm-safe`, `row-menu`) set shared `emergence.over`
+    `{at, open: true}` in `init` and `{at, open: false, went}` in `close()` (which also runs when Herdr closes them
+    on Esc or a click outside). Spaces, the Inbox and the Agents, PRs and Usage panels each keep `comeBack`: had the
+    keyboard at the last frame when one opened → focus again 80 ms after it closes, unless `went` (a Jump row picked,
+    a menu item that opens something of its own) or the next one is already up (menu, then confirm). They notice
+    losing the keyboard on a 250 ms timer (no blur event). Started from the terminal, nothing takes it.
+  - A panel's own window or popup (skill window, PR window, Agents or Usage opened large) sets shared
+    `emergence.back` (a timestamp) in its `close()` when it goes for good (not when replaced); the side panel showing
+    focuses itself on seeing a new one. Each panel reads the current value in `init`, so only later closes count.
+  - Not covered: Herdr's own dialogs (⌘⇧O worktrees, ⌘/ keys, a space's menu, a sub-agent's peek) and any dialog over
+    the Library, whose keyboard is in its search box (a handle can't see that, and the box's focus and blur events
+    don't fire). Those end in the terminal.
 - **Gotchas that bit the first build.**
   - `on_size_change` reports zoomed px: divide by `settings().zoom`.
   - A collapsed column counts as not shown, so `<mod>.<command>` fails there. That's why `nav-keys` and every command
