@@ -1,8 +1,7 @@
 // GitLab REST (glab api) JSON → the shapes github.js returns, so the panel has one code path. Pure: no herdr import.
 
-export const forgeOf = (url) => (/github/i.test(url ?? "") ? "github" : "gitlab");
-// Which to try first, and the other as fallback: a GitHub Enterprise host or ssh alias needn't say "github".
-export const forgeOrder = (url) => (forgeOf(url) === "github" ? ["github", "gitlab"] : ["gitlab", "github"]);
+// Which forge to try first, and the other as fallback: a GitHub Enterprise host or ssh alias needn't say "github".
+export const forgeOrder = (url) => (/github/i.test(url ?? "") ? ["github", "gitlab"] : ["gitlab", "github"]);
 
 const STATE = { opened: "OPEN", merged: "MERGED", closed: "CLOSED", locked: "CLOSED" };
 // GitLab's list carries no line counts: null, and the panel shows none.

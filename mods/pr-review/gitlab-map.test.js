@@ -1,13 +1,6 @@
 import { test, expect } from "bun:test";
-import { forgeOf, forgeOrder, mapMR, glStates, mapThreads, commitDiffText, position, versionFor } from "./gitlab-map.js";
+import { forgeOrder, mapMR, glStates, mapThreads, commitDiffText, position, versionFor } from "./gitlab-map.js";
 import { parseDiff } from "./lib.js";
-
-test("forgeOf: github hosts vs everything else", () => {
-  expect(forgeOf("git@github.com:a/b.git")).toBe("github");
-  expect(forgeOf("https://github.com/shoaibkhanz/emergence.git")).toBe("github");
-  expect(forgeOf("https://gitlab.com/neatly-health-agents/agent-factory.git")).toBe("gitlab");
-  expect(forgeOf("https://git.example.org/x/y.git")).toBe("gitlab");
-});
 
 test("mapMR: GitLab fields to the PR shape; counts unknown", () => {
   expect(mapMR({ iid: 7, title: "T", state: "opened", draft: false, author: { username: "sk" }, updated_at: "2026-11-01T00:00:00Z", source_branch: "feature/x", target_branch: "main" }))
@@ -97,6 +90,8 @@ test("mapThreads: a range stored as line codes only (as GitLab returns it) still
 
 test("forgeOrder: the likely forge first, the other as fallback (GitHub Enterprise or an alias has no 'github' in it)", () => {
   expect(forgeOrder("https://github.com/a/b.git")).toEqual(["github", "gitlab"]);
+  expect(forgeOrder("git@github.com:a/b.git")).toEqual(["github", "gitlab"]);
+  expect(forgeOrder("https://gitlab.com/neatly-health-agents/agent-factory.git")).toEqual(["gitlab", "github"]);
   expect(forgeOrder("git@ghe-corp:team/app.git")).toEqual(["gitlab", "github"]);
   expect(forgeOrder("")).toEqual(["gitlab", "github"]);
 });

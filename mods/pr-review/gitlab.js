@@ -10,12 +10,11 @@ async function glab(id, args, timeout) {
   return r.stdout;
 }
 // ndjson: one item per line, every page (`--paginate` alone glues pages together as `][`).
-const api = async (id, path, ...more) =>
-  (await glab(id, ["api", "--paginate", "--output", "ndjson", path, ...more])).split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
+const api = async (id, path) =>
+  (await glab(id, ["api", "--paginate", "--output", "ndjson", path])).split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
 const one = async (id, path) => (await api(id, path))[0];
-const fields = (o) => Object.entries(o).flatMap(([k, v]) => [typeof v === "string" ? "-f" : "-F", `${k}=${v}`]);
-// Writes: glab refuses --paginate on anything but GET.
-const send = async (id, method, path, o, more = []) => JSON.parse((await glab(id, ["api", "-X", method, path, ...fields(o), ...more])) || "null");
+// Writes (a comment body, maybe more fields): glab refuses --paginate on anything but GET.
+const send = async (id, method, path, body, more = []) => JSON.parse((await glab(id, ["api", "-X", method, path, "-f", `body=${body}`, ...more])) || "null");
 const mr = (n) => `projects/:id/merge_requests/${n}`;
 
 export async function repoInfo(id) {
@@ -45,7 +44,7 @@ export async function threads(id, _nwo, number) {
   return mapThreads(discussions, m, me);
 }
 
-export const postComment = (id, _nwo, number, body) => send(id, "POST", `${mr(number)}/notes`, { body });
+export const postComment = (id, _nwo, number, body) => send(id, "POST", `${mr(number)}/notes`, body);
 
 // payload as github.js's plus anchor ({ start, end } rows' { old, new }) and old_path. Placed on the MR version its
 // commit_id belongs to; a range carries line codes (sha1 of the path).
@@ -56,11 +55,11 @@ export async function createComment(id, _nwo, number, payload) {
     const sha = (await exec("sh", ["-c", 'printf %s "$1" | shasum -a 1', "sh", payload.path], { on: id.machine })).stdout.split(" ")[0];
     lineCode = (o, n) => `${sha}_${o ?? ""}_${n ?? ""}`;
   }
-  return send(id, "POST", `${mr(number)}/discussions`, { body: payload.body }, ["-F", `position=${JSON.stringify(position(payload, v, lineCode))}`]);
+  return send(id, "POST", `${mr(number)}/discussions`, payload.body, ["-F", `position=${JSON.stringify(position(payload, v, lineCode))}`]);
 }
 export const reply = (id, _nwo, number, _commentId, body, threadId) =>
-  send(id, "POST", `${mr(number)}/discussions/${threadId}/notes`, { body });
-export const editComment = (id, _nwo, commentId, body, _where, number) => send(id, "PUT", `${mr(number)}/notes/${commentId}`, { body });
+  send(id, "POST", `${mr(number)}/discussions/${threadId}/notes`, body);
+export const editComment = (id, _nwo, commentId, body, _where, number) => send(id, "PUT", `${mr(number)}/notes/${commentId}`, body);
 export const deleteComment = (id, _nwo, commentId, _where, number) => glab(id, ["api", "-X", "DELETE", `${mr(number)}/notes/${commentId}`]);
 const resolve = (resolved) => (id, threadId, _nwo, number) => glab(id, ["api", "-X", "PUT", `${mr(number)}/discussions/${threadId}`, "-F", `resolved=${resolved}`]);
 export const resolveThread = resolve(true);
