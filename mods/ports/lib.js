@@ -210,3 +210,16 @@ export const subAgents = (terminals, known) => terminals
   .filter((x) => x.state === "live" && x.parent && (x.program?.agent || x.report) && !known.has(x.address))
   .map((x) => ({ address: x.address, status: x.status === "error" ? "blocked" : x.status, program: x.program, title: x.title || x.name,
     space_name: (x.foreground?.cwd ?? x.cwd ?? "").split("/").filter(Boolean).pop(), sub: true }));
+
+// ---- The card ----
+
+// The port card's measures (mods/port-card draws with the same numbers): it opens as a centred dialog, which needs
+// its height up front, so the height follows the lines the card will show.
+export const CARD = { width: 520, pad: 24, gap: 16, header: 22, url: 34, line: 20, task: 20, fieldGap: 10, buttons: 34 };
+
+export function cardHeight(server, who) {
+  const owned = who.kind === "sure" || who.kind === "probable";
+  const fields = [true, !!who.branch, true, !!server.cwd && server.cwd !== who.folder, true, true, server.ports.length > 1].filter(Boolean).length;
+  const body = fields * CARD.line + (fields - 1) * CARD.fieldGap + (owned && who.task ? CARD.task : 0);
+  return 2 * CARD.pad + CARD.header + CARD.url + body + CARD.buttons + 3 * CARD.gap;
+}

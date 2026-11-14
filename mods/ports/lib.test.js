@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { parseLsof, parseCwds, parsePs, parseEtime, slug, scratchSlug, ownerContext, owner,
-  urlFor, isWeb, servers, sortServers, holds, ago, blockHeight, subAgents } from "./lib.js";
+  urlFor, isWeb, servers, sortServers, holds, ago, blockHeight, subAgents, cardHeight } from "./lib.js";
 import { LSOF, CWDS, PS, SCRATCH } from "./fixtures.js";
 
 test("parseLsof: one entry per pid+host+port; IPv4/IPv6 sockets of one pid kept apart by host", () => {
@@ -199,9 +199,9 @@ test("ago: now, minutes, hours, days", () => {
 test("blockHeight: from the row count alone (no measured size to chase); 0 folded; capped rows; Working's 32px foot", () => {
   expect(blockHeight(0, true)).toBe(0);
   expect(blockHeight(3, true)).toBe(0);
-  expect(blockHeight(0, false)).toBe(32 + 32);
-  expect(blockHeight(2, false)).toBe(41 + 2 * 30 + 32);
-  expect(blockHeight(9, false)).toBe(41 + 5 * 30 + 32);
+  expect(blockHeight(0)).toBe(32 + 32);
+  expect(blockHeight(2)).toBe(41 + 2 * 30 + 32);
+  expect(blockHeight(9)).toBe(41 + 5 * 30 + 32);
 });
 
 test("subAgents (from inbox's lib): live agent sub-terminals agents() misses; not tab agents, shells or the dead", () => {
@@ -213,4 +213,14 @@ test("subAgents (from inbox's lib): live agent sub-terminals agents() misses; no
     { address: "t5", state: "finished", parent: "t1", status: "working", program: { agent: true } },
   ];
   expect(subAgents(terms, new Set(["t1"])).map((a) => [a.address, a.status])).toEqual([["t6", "working"], ["t3", "blocked"]]);
+});
+
+test("cardHeight: the centred card fits its lines; optional lines add height", () => {
+  const server = { cwd: "/w/a", ports: [5173] }, who = { kind: "sure", task: "", branch: "main", folder: "/w/a" };
+  const base = cardHeight(server, who);
+  expect(cardHeight(server, { ...who, task: "Fix it" })).toBeGreaterThan(base);              // the task line
+  expect(cardHeight({ ...server, ports: [5173, 24678] }, who)).toBeGreaterThan(base);          // Also
+  expect(cardHeight({ ...server, cwd: "/tmp/x" }, who)).toBeGreaterThan(base);                 // Folder
+  expect(cardHeight(server, { ...who, branch: null })).toBeLessThan(base);                    // no Branch
+  expect(cardHeight({ cwd: null, ports: [1] }, { kind: "orphan", task: "", branch: null, folder: null })).toBeGreaterThan(200);
 });

@@ -6,15 +6,13 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { exec, home, agents, terminals, panes, spaces, layout, settings, run, theme, shared, setShared, nextCommand, focused, openOverlay } from "herdr";
-import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago, basename, blockHeight, subAgents, ROW_H, HEADER_H, EMPTY_H, FOOT_H } from "./lib.js";
+import { exec, home, agents, terminals, panes, spaces, layout, run, theme, shared, setShared, nextCommand, focused, openOverlay } from "herdr";
+import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago, basename, blockHeight, subAgents, cardHeight, CARD, ROW_H, HEADER_H, EMPTY_H, FOOT_H } from "./lib.js";
 
 const POLL_MS = 5000;
 const FOCUS_CHECK_MS = 250;
 const FORGOTTEN_S = 3600; // an orphan older than this reads as forgotten (amber age)
 const RAIL_W = 160; // the sidebar folds to a rail below this width (as Inbox reads it)
-const FOOTER_H = 69; // sidebar-footer, right below this block
-const CARD = { width: 340, height: 440 };
 const EXEC = { timeout: 4000 };
 const MONO = "Geist Mono";
 const ICON = (name) => `mods/ports/${name}.svg`;
@@ -144,14 +142,9 @@ export default class Ports extends View {
     };
   }
 
-  // The port card beside the row from the keyboard, at the pointer from a click.
-  card(s, who, at, ask = false) {
-    openOverlay({ mod: "port-card", kind: "popup", ...CARD, at, props: { server: s, who, ask } });
-  }
-
-  keyAt(i) {
-    const z = settings().zoom ?? 1, h = window.viewport_size().height / z;
-    return { x: width() + 8, y: Math.max(8, Math.round(h - FOOTER_H - (this.px ?? 0) + HEADER_H + i * ROW_H)) };
+  // The port card, centred (a dialog, as confirm-safe), as tall as the lines it will show.
+  card(s, who, ask = false) {
+    openOverlay({ mod: "port-card", kind: "dialog", width: CARD.width, height: cardHeight(s, who), props: { server: s, who, ask } });
   }
 
   key(k, cx) {
@@ -163,7 +156,7 @@ export default class Ports extends View {
       this.cur = rows[j]?.key ?? null;
       if (this.cur) this.list.scroll_to_item(j);
     } else if ((k === "enter" || k === "left") && i >= 0) {
-      this.card(rows[i], this.who(rows[i], this.model()), this.keyAt(i), k === "left");
+      this.card(rows[i], this.who(rows[i], this.model()), k === "left");
     }
     cx.notify();
   }
@@ -207,7 +200,7 @@ export default class Ports extends View {
       .hover((st) => st.bg(t.hover))
       .when(this.ringed && this.cur === s.key, (el) => el.border_1().border_color(t.accent))
       .on_hover((on, cx) => { if (on) this.hovered = s.key; else if (this.hovered === s.key) this.hovered = null; cx.notify(); })
-      .on_click(() => { this.cur = s.key; this.card(s, w, "pointer"); })
+      .on_click(() => { this.cur = s.key; this.card(s, w); })
       .child(this.mark(t, w, 14))
       .child(div().flex_none().font_family(MONO).text_size(12.5).text_color(t.foreground).child(`:${s.port}`))
       .child(div().flex_none().text_size(12).text_color(t.muted).child(s.command))

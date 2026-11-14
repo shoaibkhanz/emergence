@@ -13,7 +13,9 @@ const REFRESH_MS = 5000;
 const STOP_CHECK_MS = 1000, STOP_WAIT_MS = 10000; // after SIGTERM: check each second, give up after ten
 const CLOSE_AFTER_STOP_MS = 1200;
 const COPIED_MS = 1500;
-const LABEL_W = 64;
+const LABEL_W = 72;
+// The same measures as mods/ports/lib.js CARD, which sizes this dialog from them (keep the two in step).
+const M = { pad: 24, gap: 16, header: 22, url: 34, line: 20, task: 20, fieldGap: 10, buttons: 34 };
 const EXEC = { timeout: 4000 };
 const MONO = "Geist Mono";
 const ICON = (name) => `mods/port-card/${name}.svg`;
@@ -167,8 +169,8 @@ export default class PortCard extends View {
     const t = theme(), p = props();
     if (!p?.server) return div().id("port-card").size_full().bg(t.popover); // herdr-app check
     const s = p.server, w = p.who;
-    const field = (label, value) => h_flex().gap(10).items_start()
-      .child(div().w(LABEL_W).flex_none().pt(1).text_size(11.5).text_color(t.dim).child(label))
+    const field = (label, value) => h_flex().min_h(M.line).gap(12).items_start()
+      .child(div().w(LABEL_W).h(M.line).flex_none().flex().items_center().text_size(11.5).text_color(t.dim).child(label))
       .child(div().flex_1().min_w(0).child(value));
     const mono = (text, tip) => div().id(`v-${text}`).truncate().font_family(MONO).text_size(12).text_color(t.foreground)
       .when(Boolean(tip), (el) => el.tooltip(tip)).child(text);
@@ -176,11 +178,12 @@ export default class PortCard extends View {
 
     const agentLine = w.kind === "docker" ? div().text_color(t.foreground).child("Docker")
       : w.kind === "orphan" ? div().text_color(t.muted).child("no agent")
-      : v_flex().gap(2)
-        .child(h_flex().gap(6).items_center().text_color(t.foreground)
+      : v_flex()
+        .child(h_flex().h(M.line).gap(6).items_center().text_color(t.foreground)
           .child(this.mark(t, w, 14))
           .child(div().truncate().child([w.program?.name ?? "Terminal", w.probable ? "probably" : w.agent ? STATUS[w.status] ?? w.status : null].filter(Boolean).join(" · "))))
-        .when(Boolean(w.task), (el) => el.child(div().truncate().text_size(12).text_color(t.muted).child(w.task)));
+        .when(Boolean(w.task), (el) => el.child(div().h(M.task).flex().items_center().text_size(12).text_color(t.muted)
+          .child(div().truncate().child(w.task))));
 
     const st = this.stat;
     const running = this.state === "stopping" ? "Stopping…" : this.state === "stopped" ? "Stopped" : this.state === "still" ? "Still running"
@@ -188,7 +191,7 @@ export default class PortCard extends View {
     const others = s.ports.filter((x) => x !== s.port);
 
     const list = this.buttons(), sel = this.selected(list);
-    const button = (b) => h_flex().id(`pc-${b.id}`).h(32).px(14).gap(6).items_center().rounded(8).cursor_pointer()
+    const button = (b) => h_flex().id(`pc-${b.id}`).h(M.buttons).px(14).gap(6).items_center().rounded(8).cursor_pointer()
       .border_1().border_color(sel === b.id ? t.accent : b.ink ? alpha(b.ink, 0.4) : t.input)
       .bg(b.ink ? alpha(b.ink, sel === b.id ? 0.2 : 0.1) : sel === b.id ? t.selected : t.raised)
       .text_color(b.ink ?? t.foreground).font_medium().hover((x) => x.opacity(0.88))
@@ -196,18 +199,18 @@ export default class PortCard extends View {
       .child(b.label).when(Boolean(b.hint), (el) => el.child(div().text_size(11).opacity(0.7).child(b.hint)));
 
     return v_flex().id("port-card").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
-      .w_full().min_h(0).p(20).gap(14).rounded(10).bg(t.popover).text_size(13)
-      .child(h_flex().items_center().gap(10)
+      .size_full().min_h(0).p(M.pad).gap(M.gap).rounded(10).bg(t.popover).text_size(13)
+      .child(h_flex().h(M.header).flex_none().items_center().gap(10)
         .child(div().flex_none().font_family(MONO).text_size(15).font_semibold().text_color(t.foreground).child(`:${s.port}`))
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(s.command))
         .child(div().flex_none().text_size(11).text_color(t.dim).child("Esc")))
-      .child(h_flex().id("pc-url").px(10).h(32).gap(8).items_center().rounded(6).bg(t.surface).border_1().border_color(t.border)
+      .child(h_flex().id("pc-url").flex_none().px(12).h(M.url).gap(8).items_center().rounded(6).bg(t.surface).border_1().border_color(t.border)
         .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(t.foreground).child(address))
         .child(h_flex().id("pc-copy").flex_none().gap(4).items_center().cursor_pointer().text_size(11).text_color(t.muted)
           .hover((x) => x.text_color(t.foreground)).tooltip("Copy")
           .on_click((_e, cx) => this.copy(cx, address))
           .child(this.copied ? div().child("Copied") : svg(ICON("copy")).size(13))))
-      .child(v_flex().gap(8)
+      .child(v_flex().flex_1().min_h(0).gap(M.fieldGap)
         .child(field("Agent", agentLine))
         .when(!!w.branch, (el) => el.child(field("Branch", mono(w.branch))))
         .child(field("Command", div().id("pc-cmd").whitespace_nowrap().overflow_hidden().text_ellipsis().font_family(MONO).text_size(12).text_color(t.foreground)
@@ -221,10 +224,10 @@ export default class PortCard extends View {
           ? h_flex().gap(6).items_center().text_color(t.foreground).child(svg(ICON("globe")).size(12).text_color(t.muted)).child("Your network")
           : div().text_color(t.foreground).child("This Mac only")))
         .when(others.length > 0, (el) => el.child(field("Also", mono(others.map((x) => `:${x}`).join("  "))))))
-      .child(this.asking
-        ? v_flex().gap(10)
-          .child(div().text_color(t.muted).child(`Stop ${s.command} (pid ${s.pid})? Closes ${s.ports.map((x) => `:${x}`).join(", ")}.`))
-          .child(h_flex().justify_end().gap(8).text_size(12.5).children(list.map(button)))
-        : h_flex().justify_end().gap(8).text_size(12.5).children(list.map(button)));
+      // The Stop question shares the button row, so asking never changes the dialog's height.
+      .child(h_flex().h(M.buttons).flex_none().gap(8).items_center().text_size(12.5)
+        .child(div().flex_1().min_w(0).text_size(12).line_height("16px").text_color(t.muted)
+          .when(this.asking, (el) => el.child(`Stop ${s.command} (pid ${s.pid})? Closes ${s.ports.map((x) => `:${x}`).join(", ")}.`)))
+        .children(list.map(button)));
   }
 }
