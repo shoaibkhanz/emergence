@@ -139,7 +139,7 @@ Not ⌘⇧J (Homerow's scroll mode); not ⌘⇧B (Blueprint).
 - **PRs**: `git` and `gh` (or `glab`, by the repo's remote) in the focused repo; comments go through that forge's API.
 - **Library**: lists the skill folders above and `~/.claude/plugins/installed_plugins.json`.
 - **Usage**: `mods/usage/scan.py` reads session logs (counts, models, timestamps; never prompts), cached in Herdr's
-  `data/usage/`; `output.py` runs `git log`, `gh`/`glab` and `git worktree list`.
+  `data/usage/`; `output.py` runs `git log` (diffing each commit once), `gh`/`glab` and `git worktree list`.
 - **Spaces**: `git rev-parse`, `rev-list`, `worktree list`, `for-each-ref`; delete runs `git worktree remove`.
 - **Tab bar**: an hourly `git fetch` of `main` into your clone, for the [Update](#update-or-remove) chip.
 - **Inbox**: nothing outside Herdr.

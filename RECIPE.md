@@ -363,8 +363,15 @@ inside.
 - **`mods/skills`**: finds skills with `find` and reads `~/.claude/plugins/installed_plugins.json`.
 - **`mods/usage`**:
   - `scan.py` (python3 stdlib, `git`, optional `zstd`) turns the harness logs into one record per session (tokens by
-    kind, cost, effort, tool calls by kind, errors, aborts, commits) and caches them in `data/usage/cache.json`.
-  - `output.py` runs `git log --numstat`, `gh pr list` or `glab mr list`, and `git worktree list`.
+    kind, cost, effort, tool calls by kind, errors, aborts, commits) and caches them in `data/usage/cache.json`. New or
+    changed logs are parsed across processes once there are 32 or more (a first scan: about 8 s for 8 GB of logs, was
+    27 s on one).
+  - `output.py` lists your commits (`git log`, no diffs), diffs only commits it hasn't counted before (`git show
+    --numstat`; a commit's counts never change, kept in `data/usage/commits.json` for the year's window), then runs
+    `gh pr list` or `glab mr list` and `git worktree list`.
+  - Every copy shares one scan (a copy opened mid-scan waits for it), and the sessions show as soon as `scan.py`
+    returns; Output fills in after `output.py`. While nothing is read yet the panel counts the seconds, and past 5 s
+    says why ("The first scan reads every session these harnesses have kept…").
   - `lib.js` does the maths: Wilson intervals, quartile levels, cost anatomy, rhythm.
   - `main.js` draws with divs only.
 - **`programs.json`**: gives omp its icon (`mods/inbox/omp.svg`, omp's MIT favicon).
@@ -409,7 +416,7 @@ inside.
     its ctrl-h/j/k/l over its socket (`nvim --server … --remote-send`) and keeps `hc keys` for vim.
   - More in `docs/platform-notes.md`.
 - **Limits.**
-  - Usage's first scan reads every log (about 30s on a heavy machine); later runs read only what changed.
+  - Usage's first scan reads every log (about 8 s on a heavy machine, in parallel); later runs read only what changed.
   - Output looks back one year.
   - "Led to a commit" counts your own commits from the run's start to at most 8h + 30min later.
   - The kind of work is a heuristic over tool calls.
