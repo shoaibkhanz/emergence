@@ -17,9 +17,9 @@ Or run it yourself:
 curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/emergence/main/install.sh | bash
 ```
 
-It clones to `~/code/emergence`, links every mod, adds the [keys](#keys) and switches to the `emergence` layout
-(`⌘⇧L` cycles back). Old copies of its mods are moved to `~/.config/herdr-app/replaced/`. Needs Herdr 0.1.15+, `git`,
-`python3`; `gh` (or `glab`) for pull requests.
+It clones to `~/code/emergence` (`EMERGENCE_DIR` moves it), links every mod, adds the [keys](#keys) and switches to
+the `emergence` layout (`⌘⇧L` cycles back). Old copies of its mods are moved to `~/.config/herdr-app/replaced/`. Needs
+Herdr 0.1.15+, `git`, `python3`; `gh` (or `glab`) for pull requests. To update later, see [Update](#update-or-remove).
 
 ## What you get
 
@@ -51,7 +51,8 @@ one searchable list showing where each lives.
 ### Usage (⌘⇧U)
 
 Cost and output across omp, Claude Code, Codex, OpenCode and pi, from their local logs and your git history. Any
-period; drag across a chart and every number follows. Nothing leaves your machine.
+period; drag across a chart and every number follows, until you clear the pick (✕ on its chip, top right). Nothing
+leaves your machine.
 
 <table>
 <tr>
@@ -84,21 +85,19 @@ Usage keeps every session it has read.</td>
   the keyboard in Spaces.
 - **Inbox**: every agent waiting on you, newest first, including a blocked sub-agent another agent started (click to
   peek at it); Settle puts one away.
-- **Ports**: every server listening on this Mac and the agent that started it, its branch on the right. A server
-  whose agent is gone says "no agent" and its age (amber past an hour); one started in the background (`&`, `nohup`)
-  shows its agent's icon at half strength (matched by folder). A globe means your network can reach it. Hover for
-  Open; click (or ↵) for its card: address, agent and task, command, uptime, CPU and memory, Open, Go to agent, and
-  Stop, which asks first and checks the process still holds the port before stopping it (← asks straight away).
+- **Ports**: every server listening on this Mac and the agent that started it. "no agent" means its agent is gone
+  (amber past an hour); a half-strength icon means probably that agent (started in the background, matched by
+  folder); a globe means your network can reach it. Click (or ↵) for its card: address, agent, command, uptime, CPU
+  and memory, with Open, Go to agent and Stop (asks first, and checks the process still holds the port).
 - **Working N**, the last row: opens the graph on what's working (everything at 0).
 - **Sizes**: open, rail, dots (⌘B, ⌘⌥B).
 
 ### Status bar
 
-This Mac's CPU, memory, free disk and (on battery) battery, on the right. Amber or red when it's high: CPU at 80%,
-memory under pressure (not merely full: macOS keeps memory full of cache), disk under 10% / 5% free, battery under
-20% / 10%. Click one for **System**: CPU, Memory and Disk tabs, each with a meter, what every agent uses (click to go
-to it; everything else in one row), the top processes and who started them (a port chip opens that port's card), and
-on Disk the size of every worktree of the repos you have open.
+CPU, memory, free disk and (on battery) battery, amber or red when high: CPU at 80%, memory under pressure (not just
+full: macOS fills it with cache), disk under 10% / 5% free, battery under 20% / 10%. Click one for **System**: what
+each agent and the top processes use (click an agent to go to it; a port chip opens that port's card), and on Disk
+the size of every worktree of the repos you have open.
 
 ### Jump (⌘E)
 
@@ -137,7 +136,7 @@ Not ⌘⇧J (Homerow's scroll mode); not ⌘⇧B (Blueprint).
 - **Usage**: `mods/usage/scan.py` reads session logs (counts, models, timestamps; never prompts), cached in Herdr's
   `data/usage/`; `output.py` runs `git log`, `gh`/`glab` and `git worktree list`.
 - **Spaces**: `git rev-parse`, `rev-list`, `worktree list`, `for-each-ref`; delete runs `git worktree remove`.
-- **Tab bar**: hourly `git fetch` of `main` into your clone. Only for a clone on `main` with no commits of its own.
+- **Tab bar**: an hourly `git fetch` of `main` into your clone, for the [Update](#update-or-remove) chip.
 - **Inbox**: nothing outside Herdr.
 - **Status bar**: `ps`, `vm_stat`, `sysctl` every 5 s; `df` and `pmset` each minute. System, while open: the same, plus
   `lsof` once and, on Disk, `git worktree list` and `du -sk` per worktree (kept 5 minutes).
@@ -146,12 +145,15 @@ Not ⌘⇧J (Homerow's scroll mode); not ⌘⇧B (Blueprint).
 
 ## Update or remove
 
-**Update**: click **Update** in the tab bar, or rerun the install. Both relink, move old copies aside and reload.
+**Update**: when `main` has new commits, an **Update** chip appears in the tab bar (it checks at start and then
+hourly). Click it: it pulls, relinks new mods and keys, and reloads the layout. It only appears for a clone on `main`
+with no commits of its own; otherwise pull yourself and rerun the install command above.
 
 **Remove**: `herdr-app do layout.switch --name main`, delete the links
-(`find ~/.config/herdr-app/mods ~/.config/herdr-app/layouts -maxdepth 1 -lname "$HOME/code/emergence/*" -delete`),
-then remove the `tabs-plus.*`, `mod.open:jump`, `mod.open:emergence-keys`, `mod:spaces-plus`, `mod:inbox` and `mod:ports` entries
-from `~/.config/herdr-app/keys.json` and `omp` from `programs.json`, and delete `~/code/emergence`.
+(`find ~/.config/herdr-app/mods ~/.config/herdr-app/layouts -maxdepth 1 -lname "$HOME/code/emergence/*" -delete`, with
+your `EMERGENCE_DIR` if you moved it), then remove the `tabs-plus.*`, `mod.open:jump`, `mod.open:emergence-keys`,
+`mod:spaces-plus`, `mod:inbox` and `mod:ports` entries from `~/.config/herdr-app/keys.json` and `omp` from
+`programs.json`, and delete the clone.
 
 ## Optional: ctrl-h/j/k/l between panes
 
@@ -195,8 +197,8 @@ herdr-app check ~/.config/herdr-app/mods/<name>   # load and render once
 bash install.test.sh                              # the installer and updater, in throwaway homes
 ```
 
-Every push to `main` is what the Update chip pulls: CI (`.github/workflows/check.yml`) runs the tests on each push,
-and `main` must never be force-pushed (clones could no longer fast-forward).
+Every push to `main` reaches people through the Update chip, so CI (`.github/workflows/check.yml`) runs all of the
+above but `herdr-app check` on each push, and `main` is never force-pushed (clones could no longer fast-forward).
 
 Edits need a reload: switch to `main`, then back to `emergence`. Read [`docs/platform-notes.md`](docs/platform-notes.md)
 first.
