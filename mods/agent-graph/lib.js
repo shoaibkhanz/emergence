@@ -64,7 +64,7 @@ export function buildTree(items, git, prs, { activeOnly = false } = {}) {
     const rid = g ? `${n.machine ?? ""}|${g.common}` : `${n.machine ?? ""}|none`;
     const repo = repos.get(rid) ?? repos.set(rid, g
       ? { id: rid, kind: "repo", name: repoName(g.common), machine: n.machine, worktrees: new Map() }
-      : { id: rid, kind: "none", name: "No repo", machine: n.machine, worktrees: new Map() }).get(rid);
+      : { id: rid, kind: "none", name: "Not in git", machine: n.machine, worktrees: new Map() }).get(rid);
     const wid = `${n.machine ?? ""}|${g ? g.top : n.cwd ?? "?"}`;
     if (!repo.worktrees.has(wid)) {
       const list = g && prs(n.machine, g.common);

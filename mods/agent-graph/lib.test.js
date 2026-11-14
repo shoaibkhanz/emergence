@@ -15,9 +15,9 @@ const PRS = prsByBranch([
 const prs = (_m, common) => (common === "/r/app/.git" ? PRS : undefined);
 const item = (id, cwd, status, parent = null) => ({ id, cwd, status, parent, machine: null, name: id });
 
-test("worktrees sharing a common dir group under one repo; non-git under No repo", () => {
+test("worktrees sharing a common dir group under one repo; non-git under Not in git", () => {
   const tree = buildTree([item("t1", "/r/app", "idle"), item("t2", "/r/app/.wt/feat", "working"), item("t3", "/r/app/src", "idle"), item("t4", "/tmp", "idle")], git, prs);
-  expect(tree.map((r) => r.name)).toEqual(["app", "No repo"]);
+  expect(tree.map((r) => r.name)).toEqual(["app", "Not in git"]);
   const app = tree[0];
   expect(app.worktrees.map((w) => w.branch)).toEqual(["feat/x", "main"]);
   expect(app.worktrees[1].agents.map((a) => a.id)).toEqual(["t1", "t3"]);
