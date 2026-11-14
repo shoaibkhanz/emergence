@@ -140,7 +140,7 @@ Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
   - The wheel zooms, a trackpad scroll pans, ⌘-scroll zooms. The − / % / + control sits bottom-right, and the % fits.
   - A narrow panel shows the same tree as a list.
   - Behind the graph, a fine film grain gives the canvas depth (`mods/agent-graph/grain.png`, 512px, light and dark
-    specks, tiled at 256px at 8% (`GRAIN_OPACITY`), fixed to the viewport); working and blocked cards are an opaque
+    specks, tiled at 256px at 10% (`GRAIN_OPACITY`), fixed to the viewport); working and blocked cards are an opaque
     blend (`lib.js` `mix`), so nothing shows through them. Header icon buttons have no box, as in every panel.
 - **PRs panel.**
   - GitHub or GitLab: the likelier by the origin remote first (`forgeOrder`: a `github` host → GitHub), else the other

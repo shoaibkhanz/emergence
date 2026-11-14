@@ -58,7 +58,7 @@ async function pulls(on, cwd) {
   }
 }
 
-const GRAIN = 256, GRAIN_OPACITY = 0.08; // grain.png's tile (logical px at zoom 1) and how strong: felt more than seen
+const GRAIN = 256, GRAIN_OPACITY = 0.1; // grain.png's tile (logical px at zoom 1) and how strong: felt more than seen
 
 export default class AgentGraph extends View {
   init(_props, cx) {
