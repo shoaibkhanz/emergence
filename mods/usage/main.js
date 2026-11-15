@@ -585,23 +585,28 @@ export default class Usage extends View {
       .child(hcell("n", "Sessions", W.n, "n")).child(hcell("commits", "Commits", W.v, "commits"))
       .child(hcell("perCommit", "Cost per commit", W.v, "perCommit"))
       .child(hcell("cost", "Median cost", W.v, "cost")).child(hcell("clean", "Clean runs", W.clean, "clean"));
+    // An open skill is one block: its row and this breakdown share a tinted, outlined box; the breakdown sits inset in a
+    // slightly deeper shade of that tint, each harness with its colour, so it never reads as the next skill.
     const breakdown = (x) => {
-      const table = (title, list, label) => v_flex().flex_1().min_w(0).gap(4)
-        .child(div().text_size(11.5).font_medium().text_color(t.dim).child(title))
+      const table = (title, list, label, color) => v_flex().flex_1().min_w(0).gap(4)
+        .child(div().text_size(11.5).font_medium().text_color(t.muted).child(title))
         .children(list.map((g) => h_flex().h(22).gap(8).items_center().text_size(12)
+          .child(div().size(8).flex_none().rounded(2).bg(color(g.key)))
           .child(div().flex_1().min_w(0).truncate().child(label(g.key)))
           .child(div().w(70).flex_none().text_right().text_color(t.muted).child(`${g.n} run${g.n === 1 ? "" : "s"}`))
           .child(div().w(90).flex_none().text_right().text_color(t.muted).child(`${num(g.commitsMed)} commits`))
           .child(div().w(110).flex_none().text_right().text_color(t.muted).child(g.perCommit == null ? "–" : `${usd(g.perCommit)} / commit`))
           .child(div().w(70).flex_none().text_right().text_color(t.muted).child(usd(g.costMed)))));
-      return h_flex().px(10).py(10).gap(24).items_start().bg(t.surface).rounded(8)
-        .child(table("By harness", x.harnesses, (h) => HARNESS[h]?.name ?? h)).child(table("By model", x.models, (m) => m));
+      return v_flex().mx(8).px(12).py(10).gap(12).bg(alpha(t.background, 0.35)).rounded(6)
+        .child(table("By harness", x.harnesses, (h) => HARNESS[h]?.name ?? h, (h) => HARNESS[h]?.color ?? t.dim))
+        .child(table("By model", x.models, (m) => m, () => t.dim));
     };
     const row = (x) => {
       const on = this.skillSel === x.key;
-      return v_flex().gap(6)
+      return v_flex().rounded(8).border(1).border_color(on ? alpha(t.accent, 0.5) : alpha(t.border, 0))
+        .when(on, (el) => el.bg(t.selected).pb(8).my(4))
         .child(h_flex().id(`sk-${x.key}`).min_h(44).px(10).gap(8).items_center().rounded(8).cursor_pointer()
-          .when(on, (el) => el.bg(t.selected)).when(!on, (el) => el.hover((s) => s.bg(t.hover))).when(x.few, (el) => el.opacity(0.6))
+          .when(!on, (el) => el.hover((s) => s.bg(t.hover))).when(x.few, (el) => el.opacity(0.6))
           .when(x.few, (el) => el.tooltip(`Only ${x.n} session${x.n === 1 ? "" : "s"}: too few to tell`))
           .on_click((_e, cx) => { this.skillSel = on ? null : x.key; cx.notify(); })
           .child(v_flex().flex_1().min_w(0).gap(2).child(div().truncate().text_size(13).child(x.key))
