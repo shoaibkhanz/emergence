@@ -7,7 +7,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { exec, home, agents, terminals, panes, spaces, layout, run, theme, shared, setShared, nextCommand, focused, openOverlay } from "herdr";
+import { exec, home, agents, terminals, panes, spaces, layout, run, theme, settings, shared, setShared, nextCommand, focused, openOverlay } from "herdr";
 import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago, basename, byLine, ownerLines, stopFact, folderLabel, blockHeight, subAgents, cardHeight, isLocal, rootOf, CARD, ROW_H, HEADER_H, EMPTY_H, FOOT_H } from "./lib.js";
 
 const POLL_MS = 5000;
@@ -124,6 +124,12 @@ export default class Ports extends View {
 
   // What the block needs (lib's blockHeight, from the row count alone), for the inbox to size it: the inbox shares the
   // column out and gives Ports the slack under its cards. Published only when it changes (shared writes to disk).
+  // The height the layout really gave this block, for the inbox's sum of the column (shared "ports.h").
+  shown(size) {
+    const h = Math.round(size.height / (settings().zoom ?? 1));
+    if (h !== this.shownH) { this.shownH = h; setShared("ports.h", h); }
+  }
+
   want(px) {
     if (px === this.wantPx) return;
     this.wantPx = px;
@@ -272,7 +278,7 @@ export default class Ports extends View {
     this.ringed = this.fh.is_focused();
     this.openAsked(cx, rows);
     const root = v_flex().id("ports").size_full().min_h(0).bg(t.chrome).text_size(13)
-      .track_focus(this.fh).on_key_down((e, cx) => this.key(e.keystroke, cx));
+      .on_size_change((size) => this.shown(size)).track_focus(this.fh).on_key_down((e, cx) => this.key(e.keystroke, cx));
     if (collapsed) return root;
     const label = (extra) => h_flex().gap(6).items_center().text_size(11.5).text_color(t.dim)
       .child(div().font_medium().child("Ports")).child(extra);

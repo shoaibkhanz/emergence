@@ -7,7 +7,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, nextCommand, focused, notify } from "herdr";
+import { spaces, machines, panes, run, openOverlay, exec, hc, theme, settings, shared, setShared, watchFolder, window, layout, nextCommand, focused, notify } from "herdr";
 import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf } from "./lib.js";
 
 function find(node, id) {
@@ -667,6 +667,12 @@ export default class Spaces extends View {
         .child(div().size(8).rounded(2).bg(fill(w, t)).when(!w.active, (el) => el.opacity(0.55))));
   }
 
+  // The height the layout really gave this block, for the inbox's sum of the column (shared "spaces.h").
+  shown(size) {
+    const h = Math.round(size.height / (settings().zoom ?? 1));
+    if (h !== this.shownH) { this.shownH = h; setShared("spaces.h", h); }
+  }
+
   render(cx) {
     const t = theme();
     const collapsed = narrow(), dots = collapsed && dotsSize(), top = lights();
@@ -685,7 +691,7 @@ export default class Spaces extends View {
     this.comeBack(cx, this.ringed, () => this.fh.focus());
     this.ringed = this.fh.is_focused();
     this.shareCursor("spaces.cursor", this.ringed && !narrow() ? cursorOf((this.rows ?? []).find((r) => r.key === this.cur)) : null);
-    return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13)
+    return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13).on_size_change((size) => this.shown(size))
       .track_focus(this.fh).on_key_down((e, cx) => this.key(e.keystroke, cx))
       .when(!dots, (el) => el.child(h_flex().h(31 + top).pt(top).pl(16).pr(10).flex_none().items_center().justify_between().text_size(11.5).text_color(t.dim)
         .when(collapsed, el => el.pl(0).pr(0).justify_center())

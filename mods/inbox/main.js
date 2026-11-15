@@ -117,18 +117,22 @@ export default class Inbox extends View {
     if (!sp || sp.hidden) return;
     const spacesWant = shared("spaces.want") ?? 45 + (Math.max(spaces().length, 1) + (ms > 1 ? ms : 0)) * (collapsed ? 26 : 30);
     const portsMin = po ? shared("ports.want") ?? PORTS_FALLBACK : 0;
-    const { spaces: px, ports } = splitColumn({ H: this.H ?? 0, spacesWant, need, portsMin, collapsed });
-    if (px !== this.spacesPx) { this.spacesPx = px; run("layout.resize", { id: "spaces", px }); }
-    if (po && ports !== this.portsPx) { this.portsPx = ports; run("layout.resize", { id: "ports", px: ports }); }
+    // What the three share: this block's height plus Spaces' and Ports' as drawn (each shares its own), never more than
+    // asked. An asked size the column can't hold (a smaller window, a resize from elsewhere) would otherwise count as room and be handed
+    // straight back, leaving Ports over the inbox.
+    const drawn = (n, key) => Math.min(n?.size?.px ?? 0, shared(key) ?? Infinity);
+    const H = this.ownH == null ? 0 : this.ownH + drawn(sp, "spaces.h") + drawn(po, "ports.h");
+    const { spaces: px, ports } = splitColumn({ H, spacesWant, need, portsMin, collapsed });
+    // Against the layout's own sizes, not the last ones sent: a size changed from elsewhere is put back.
+    if (px !== sp.size?.px) run("layout.resize", { id: "spaces", px });
+    if (po && ports !== po.size?.px) run("layout.resize", { id: "ports", px: ports });
   }
 
-  // This block's height plus Spaces' and Ports' is what the three share; measured after every layout pass.
+  // This block's own height, measured after every layout pass (fitSpaces adds Spaces' and Ports').
   measured(el) {
     return el.on_size_change((size, cx) => {
-      const sp = find(layout(), "spaces");
-      if (!sp || sp.hidden) return;
-      const H = Math.round(size.height / (settings().zoom ?? 1)) + (sp.size?.px ?? 0) + (find(layout(), "ports")?.size?.px ?? 0);
-      if (H !== this.H) { this.H = H; cx.notify(); }
+      const h = Math.round(size.height / (settings().zoom ?? 1));
+      if (h !== this.ownH) { this.ownH = h; cx.notify(); }
     });
   }
 
