@@ -300,12 +300,27 @@ inside.
   - Rescans the logs when it shows and every minute while it shows (about 1.5 s: only changed logs are read); `output.py`
     (git, and gh, whose calls share the agents' GitHub budget) reruns with it at most every 15 min, and on ↻.
   - Tabs:
-    - **Overview:** 4 tiles, an activity calendar in 11px squares, "Where the tokens go", "What the work was".
+    - **Overview:** tiles for sessions, cost (and per day), agent commits (and cost per commit) and clean runs, each
+      against the period before only when the history covers it (`tiles.before`). "Day by day" (weeks past a month):
+      stacked areas by harness of sessions, cost or commits, straight with a dot per day up to a month, smooth beyond,
+      a day label under each point up to two weeks. The year's calendar, its cells growing to fill the card (11 to
+      18px), days outside the period grey at their level, its readout the period's totals and busiest day. "Where the
+      spend went": the top four projects (scan.py's `where`: the repo's name, a removed worktree's repo, "temporary
+      folder", "home folder") and the rest in one row, so it adds up to the Cost tile. "What the work was": all six
+      kinds, and per harness its runs, cost per run and spend. "Where the tokens go", its legend on one row.
     - **Compare:** kind-of-work chips and Same repos only; a success-vs-cost scatter (log x, dot size = runs, 95%
-      interval line); a model comparison table; the cost anatomy.
+      interval line, each price under its own point); a model comparison table; the cost anatomy. "Strengths by kind
+      of work" (`strengthsOf`): pairs with 10+ sessions, the six busiest. A grid of pairs by kind, each cell tinted by
+      its clean-run rate, the best per column outlined; then a radar per pair with each kind's numbers beside it, two
+      to a row. A kind needs 5 runs, else it's skipped (a gap in the shape, a dashed spoke), and best and weakest go by
+      the low end of the rate's interval.
     - **Output:** commits, lines, PRs/MRs, worktrees; added/removed bars; top repos; spend per commit, merged PR and
       1K lines; recent PRs.
-    - **Harnesses:** stacked tokens by harness, models, effort.
+    - **Harnesses:** tokens by harness as stacked areas, models, effort.
+  - Charts: Herdr mods get no chart elements (gpui-kit's charts are Rust-only, and there's no web view), so
+    `charts.js` draws them with `PathBuilder` and `window.paint_path`: stacked areas in a vertical gradient of each
+    harness's colour, its top line only where the layer is more than a sliver, and radars. The geometry (monotone
+    curves that can't overshoot, stacking, radar points) is pure, in `geom.js`, tested by `geom.test.js`.
     - **Skills:** which skills do well. A skill counts when Claude Code calls its Skill tool, or another harness's
       agent reads its `SKILL.md` (a listing in a prompt, a glob or a write doesn't; a plugin prefix is dropped; `scan.py`
       records `skills` per session). Tiles: sessions with a skill, skills used, median cost with and without one,

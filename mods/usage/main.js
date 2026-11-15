@@ -5,6 +5,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { exec, appHome, theme, settings, props, run, layout, shared, setShared, closeOverlay } from "herdr";
+import { areas, radar } from "./charts.js";
 import { skillsOf, FEW, summarize, outputOf, heat, levels, startOfDay, addDays, DAY, KINDS, LENGTHS, span, keepOf, tabAfter } from "./lib.js";
 
 const RANGES = [[7, "7d"], [30, "30d"], [90, "90d"], [365, "1y"], ["custom", "Custom"]];
@@ -171,7 +172,7 @@ export default class Usage extends View {
         await job.sessions;
         cx.notify(); // the sessions show now; Output fills in when git and gh are done
         await job.done;
-      } catch (e) { this.error = String(e?.message ?? e); }
+      } catch (e) { this.error = String(e?.message ?? e ?? "The scan stopped before it finished. Rescan (↻) to try again."); }
       this.busy = false;
       cx.notify();
     });
@@ -301,31 +302,38 @@ export default class Usage extends View {
   }
 
   tiles(t, r) {
-    const x = r.tiles, change = x.prev ? Math.round(((x.sessions - x.prev) / x.prev) * 100) : null, n = this.sel?.kind === "days" ? this.sel.keys.size : 0;
+    // Against the period before only when the history covers it (a young history makes +5000%; lib summarize).
+    const vsBefore = (a, b) => `${a >= b ? "+" : ""}${Math.round(((a - b) / b) * 100)}% vs before`;
+    const x = r.tiles, before = x.before && x.prev > 0, change = before ? Math.round(((x.sessions - x.prev) / x.prev) * 100) : null, n = this.sel?.kind === "days" ? this.sel.keys.size : 0;
     return this.tileRow(t, [
-      ["Sessions", String(x.sessions), n ? `on ${n} picked day${n === 1 ? "" : "s"}` : change == null ? "none in the period before" : `${change >= 0 ? "+" : ""}${change}% on the period before`],
-      ["Active days", `${x.activeDays} of ${x.days}`, x.streak ? `${x.streak}-day streak` : "no streak"],
-      ["Tokens", short(x.tokens), x.cacheHit == null ? "incl. sub-agents" : `${pct(x.cacheHit)} from cache`],
-      ["Cost", x.costKnown ? `$${x.cost.toFixed(2)}` : "–", "at API prices, as recorded"],
+      ["Sessions", String(x.sessions), n ? `on ${n} picked day${n === 1 ? "" : "s"}` : change == null ? (x.before ? "none in the period before" : "your history starts in this period") : `${change >= 0 ? "+" : ""}${change}% on the period before`],
+      ["Cost", x.costKnown ? usd(x.cost) : "–", !x.costKnown ? "no cost recorded" : `${usd(x.cost / x.days)} / day${n || !before || !x.costPrev ? "" : ` · ${vsBefore(x.cost, x.costPrev)}`}`],
+      // The `git commit`s agents ran, by session start (Output counts your git log by commit date).
+      ["Agent commits", String(x.commits), x.perCommit == null ? "made by your agents" : `${usd(x.perCommit)} per commit`],
+      ["Clean runs", pct(x.clean), n || !before || x.cleanPrev == null || x.clean == null ? "no abort, API error or compaction"
+        : `${x.clean >= x.cleanPrev ? "+" : ""}${Math.round((x.clean - x.cleanPrev) * 100)} pts on the period before`],
     ]);
   }
 
   // The calendar always shows the last weeks for context; days outside the period are grey and can't be picked.
-  heatmap(t, cells, weeks, p) {
+  heatmap(t, cells, weeks, p, x) {
+    // Cells fill the card's width (11px at least, 18 at most): the weeks shown are as many as fit at 11, up to 53.
+    const cs = Math.max(11, Math.min(18, Math.floor((this.width - 32 - 28 - 31 - 12) / weeks) - 3));
+    const active = x && !this.sel ? `${x.activeDays} of ${x.days} days active${x.streak ? ` · ${x.streak}-day streak` : ""}` : null;
     const cols = [];
     for (let i = 0; i < cells.length; i += 7) cols.push(cells.slice(i, i + 7));
     const ink = t.done;
     const grid = h_flex().gap(3).items_start().overflow_hidden()
-      .child(v_flex().w(28).flex_none().gap(3).pt(17).children(WD.map((w, i) => div().h(11).text_size(9).text_color(t.dim).child(i % 2 ? "" : w))))
+      .child(v_flex().w(28).flex_none().gap(3).pt(17).children(WD.map((w, i) => div().h(cs).flex().items_center().text_size(9).text_color(t.dim).child(i % 2 ? "" : w))))
       .children(cols.map((col, ci) => {
         const first = new Date(col[0].t), prev = ci ? new Date(cols[ci - 1][0].t) : null;
-        return v_flex().w(11).flex_none().gap(3)
-          .child(div().w(11).h(14).text_size(9).text_color(t.dim).whitespace_nowrap().child(prev && prev.getMonth() !== first.getMonth() ? MONTH[first.getMonth()] : ""))
+        return v_flex().w(cs).flex_none().gap(3)
+          .child(div().w(cs).h(14).text_size(9).text_color(t.dim).whitespace_nowrap().child(prev && prev.getMonth() !== first.getMonth() ? MONTH[first.getMonth()] : ""))
           .children(col.map((d) => {
             // Outside the period (or not picked) a day keeps its level in grey: fading it would make a quiet day look
             // empty, since colour is all a cell has.
             const inPeriod = d.t >= p.from && d.t < p.to, custom = this.range === "custom", on = inPeriod && this.lit([d.t, d.t]);
-            const cell = div().id(`heat-${d.t}`).size(11).rounded(3).bg(d.level ? alpha(on ? ink : t.muted, LEVEL[d.level]) : t.raised)
+            const cell = div().id(`heat-${d.t}`).size(cs).rounded(3).bg(d.level ? alpha(on ? ink : t.muted, LEVEL[d.level]) : t.raised)
               .when(custom || inPeriod, (el) => el.cursor_pointer())
               .when(custom && inPeriod, (el) => el.border(1).border_color(alpha(t.accent, 0.8)))
               .on_hover((on, cx) => { if (on) { this.hoverDay = d.t; this.dragTo("days", [d.t, d.t]); } else if (this.hoverDay === d.t) this.hoverDay = null; cx.notify(); });
@@ -342,16 +350,22 @@ export default class Usage extends View {
               });
           }));
       }));
-    // The day under the pointer, else the picked days added up, else today: the numbers, by harness.
+    // The day under the pointer, else the picked days added up, else the period's (with its busiest day): by harness.
+    const total = (xs) => xs.reduce((a, c) => ({ ...a, sessions: a.sessions + c.sessions, tokens: a.tokens + c.tokens, cost: a.cost + c.cost,
+      by: Object.fromEntries(ORDER.map((h) => [h, (a.by[h] ?? 0) + (c.by[h] ?? 0)])) }), { sessions: 0, tokens: 0, cost: 0, by: {} });
     const picked = this.sel?.kind === "days" ? cells.filter((c) => this.sel.keys.has(c.t)) : [];
-    const d = cells.find((c) => c.t === this.hoverDay) ?? (picked.length ? picked.reduce((a, c) => ({ sessions: a.sessions + c.sessions, tokens: a.tokens + c.tokens, cost: a.cost + c.cost,
-      by: Object.fromEntries(ORDER.map((h) => [h, (a.by[h] ?? 0) + (c.by[h] ?? 0)])) }), { sessions: 0, tokens: 0, cost: 0, by: {} }) : cells.at(-1));
+    const inPeriod = cells.filter((c) => c.t >= p.from && c.t < p.to);
+    const peak = inPeriod.reduce((a, c) => (c.sessions > (a?.sessions ?? 0) ? c : a), null);
+    const d = cells.find((c) => c.t === this.hoverDay) ?? (picked.length ? total(picked)
+      : { ...total(inPeriod), label: p.label.charAt(0).toUpperCase() + p.label.slice(1), peak });
     const readout = h_flex().h(20).gap(10).items_center().text_size(12)
-      .child(div().font_semibold().child(d.t == null ? this.selLabel() : `${WD[d.wd]} ${date(d.t)}`))
-      .child(div().text_color(t.muted).child(`${d.sessions} session${d.sessions === 1 ? "" : "s"} · ${short(d.tokens)} tokens${d.cost ? ` · $${d.cost.toFixed(2)}` : ""}`))
+      .child(div().font_semibold().child(d.t != null ? `${WD[d.wd]} ${date(d.t)}` : d.label ?? this.selLabel()))
+      .child(div().text_color(t.muted).child(!d.sessions && d.tokens ? `no session started · ${short(d.tokens)} tokens from earlier sessions' sub-agents`
+        : `${d.sessions} session${d.sessions === 1 ? "" : "s"} · ${short(d.tokens)} tokens${d.cost ? ` · ${usd(d.cost)}` : ""}${d.peak ? ` · busiest ${WD[d.peak.wd]} ${date(d.peak.t)} (${d.peak.sessions})` : ""}`))
       .children(ORDER.filter((h) => d.by[h]).map((h) => h_flex().gap(4).items_center().text_size(11).text_color(t.dim)
         .child(div().size(8).rounded(2).bg(HARNESS[h].color)).child(`${HARNESS[h].name} ${d.by[h]}`)))
       .child(div().flex_1())
+      .when(!!active, (el) => el.child(div().flex_none().mr(8).text_size(11).text_color(t.dim).child(active)))
       .child(h_flex().gap(3).items_center().text_size(11).text_color(t.dim).child(div().mr(4).child("Less"))
         .children(LEVEL.map((a, i) => div().size(11).rounded(3).bg(i ? alpha(ink, a) : t.raised))).child(div().ml(4).child("More")));
     const metrics = [["sessions", "Sessions"], ["tokens", "Tokens"], ...(cells.some((d) => d.cost) ? [["cost", "Cost"]] : [])];
@@ -360,26 +374,49 @@ export default class Usage extends View {
       v_flex().gap(10).child(grid).child(readout));
   }
 
-  over(t, r0, r, present) {
+  // Stacked bars per day (weeks past a month) by harness, of one bucket field: tokens (by) for Harnesses; sessions,
+  // cost or commits for Overview's day by day.
+  over(t, r0, r, present, { field = "by", fmt = short, title = "Tokens by harness", right = null } = {}) {
     const days = this.sel?.kind === "days", src = days ? r0 : r;
-    const max = Math.max(1, ...src.buckets.map((b) => Object.values(b.by).reduce((a, n) => a + n, 0)));
-    const H = 120, unit = src.step === DAY ? "Day" : "Week of";
-    const bars = h_flex().h(H).gap(2).items_end().children(src.buckets.map((b) => {
-      const at = [b.t, src.step === DAY ? b.t : Math.min(addDays(b.t, 6), this.last)];
-      return this.pick(v_flex().id(`bar-${b.t}`).flex_1().min_w(2).h(H).justify_end().rounded(3).overflow_hidden()
-        .when(this.hoverBar === b.t, (el) => el.bg(t.hover)).when(!this.lit(at), (el) => el.opacity(0.3)), "days", at,
-        (on) => { if (on) this.hoverBar = b.t; else if (this.hoverBar === b.t) this.hoverBar = null; })
-        .children([...present].reverse().filter((h) => b.by[h]).map((h) => div().w_full().h(Math.max(1, (b.by[h] / max) * H)).bg(HARNESS[h].color)));
-    }));
-    const axis = h_flex().justify_between().text_size(11).text_color(t.dim)
-      .child(date(src.buckets[0]?.t ?? Date.now())).child(`max ${short(max)}`).child(date(src.buckets.at(-1)?.t ?? Date.now()));
+    const max = Math.max(1e-9, ...src.buckets.map((b) => Object.values(b[field]).reduce((a, n) => a + n, 0)));
+    // Smooth stacked areas (charts.js), one point per bucket edge to edge. Over them, a hit column per bucket centred
+    // on its point: hovering draws a guide and a dot per harness, pressing or dragging picks, picked days are a band.
+    const H = 150, W = this.width - 32 - 30, unit = src.step === DAY ? "Day" : "Week of", n = src.buckets.length;
+    const X = (i) => (n > 1 ? (i / (n - 1)) * W : W / 2), half = n > 1 ? W / (n - 1) / 2 : W / 2;
+    const colors = Object.fromEntries(present.map((h) => [h, HARNESS[h].color]));
+    const hi = src.buckets.findIndex((b) => b.t === this.hoverBar);
+    let cum = 0;
+    const dots = hi < 0 ? [] : present.filter((h) => src.buckets[hi][field][h]).map((h) => {
+      cum += src.buckets[hi][field][h];
+      return div().absolute().left(X(hi) - 4).top(H - (cum / max) * (H - 2) - 4).size(8).rounded_full().bg(colors[h]).border(2).border_color(t.surface);
+    });
+    const bars = div().relative().w(W).h(H)
+      // smooth curves (the person's pick over straight segments); hovering shows each day's values
+      .children(areas(t, { w: W, h: H, buckets: src.buckets, field, order: present, colors, max }))
+      .children([1, 0.5].map((f) => div().absolute().right(0).top(H - f * (H - 2) - 15).text_size(10).text_color(t.dim).child(fmt(max * f))))
+      .when(hi >= 0, (el) => el.child(div().absolute().left(X(hi)).top(0).w(1).h(H).bg(alpha(t.foreground, 0.3))).children(dots))
+      .children(src.buckets.map((b, i) => {
+        const at = [b.t, src.step === DAY ? b.t : Math.min(addDays(b.t, 6), this.last)], x0 = Math.max(0, X(i) - half);
+        return this.pick(div().id(`bar-${b.t}`).absolute().left(x0).top(0).w(Math.min(W, X(i) + half) - x0).h(H)
+          .when(days && this.lit(at), (el) => el.bg(alpha(t.accent, 0.1))), "days", at,
+          (on) => { if (on) this.hoverBar = b.t; else if (this.hoverBar === b.t) this.hoverBar = null; });
+      }));
+    const dayName = (ms) => `${WD[(new Date(ms).getDay() + 6) % 7]} ${date(ms)}`;
+    // labels under their points: every day up to two weeks, else the first, the last and one a week between
+    const shown = (i) => n <= 14 || i === 0 || i === n - 1 || (i % 7 === 0 && n - 1 - i >= 4);
+    const axis = n > 1 && n <= 31 && src.step === DAY
+      ? div().relative().w(W).h(16).text_size(11).text_color(t.dim).children(src.buckets.map((b, i) => [b, i]).filter(([, i]) => shown(i)).map(([b, i]) =>
+        div().absolute().top(0).left(Math.max(0, Math.min(W - 60, X(i) - 30))).w(60).when(i === 0, (el) => el.text_left()).when(i === n - 1, (el) => el.text_right())
+          .when(i > 0 && i < n - 1, (el) => el.text_center()).text_color(i === hi ? t.foreground : t.dim).child(n <= 14 ? dayName(b.t) : date(b.t))))
+      : h_flex().justify_between().text_size(11).text_color(t.dim)
+        .child(date(src.buckets[0]?.t ?? Date.now())).child(date(src.buckets.at(-1)?.t ?? Date.now()));
     // The legend shows the hovered bar's split, else what's picked, else the period's.
     const hb = src.buckets.find((b) => b.t === this.hoverBar);
-    const totals = hb ? hb.by : Object.fromEntries(present.map((h) => [h, r.buckets.reduce((a, b) => a + (b.by[h] ?? 0), 0)]));
-    const legend = h_flex().h(20).gap(12).items_center().child(div().text_size(12).font_semibold().child(hb ? `${unit} ${date(hb.t)}` : this.sel ? this.selLabel() : "All"))
+    const totals = hb ? hb[field] : Object.fromEntries(present.map((h) => [h, r.buckets.reduce((a, b) => a + (b[field][h] ?? 0), 0)]));
+    const legend = h_flex().h(20).gap(12).items_center().child(div().text_size(12).font_semibold().child(hb ? (src.step === DAY ? dayName(hb.t) : `${unit} ${date(hb.t)}`) : this.sel ? this.selLabel() : "All"))
       .children(present.filter((h) => totals[h]).map((h) => h_flex().gap(6).items_center().text_size(12)
-        .child(div().size(8).rounded(2).bg(HARNESS[h].color)).child(HARNESS[h].name).child(div().text_size(11).text_color(t.dim).child(short(totals[h])))));
-    return this.card(t, "Tokens by harness", div().text_size(11).text_color(t.dim).child("hover a bar for its split · press or drag to pick"), v_flex().gap(8).child(bars).child(axis).child(legend));
+        .child(div().size(8).rounded(2).bg(HARNESS[h].color)).child(HARNESS[h].name).child(div().text_size(11).text_color(t.dim).child(fmt(totals[h])))));
+    return this.card(t, title, right ?? div().text_size(11).text_color(t.dim).child("hover a bar for its split · press or drag to pick"), v_flex().gap(8).child(bars).child(axis).child(legend));
   }
 
   models(t, r) {
@@ -461,7 +498,8 @@ export default class Usage extends View {
 
   // Two cards side by side where there's room, stacked where there isn't; `w` is one card's inner width.
   pair(a, b) {
-    return this.width >= 700 ? h_flex().gap(12).items_start().child(div().flex_1().min_w(0).child(a)).child(div().flex_1().min_w(0).child(b)) : v_flex().gap(12).child(a).child(b);
+    // side by side, both as tall as the taller, so their bottoms line up instead of one leaving a hole
+    return this.width >= 700 ? h_flex().gap(12).items_stretch().child(v_flex().flex_1().min_w(0).child(a.flex_1())).child(v_flex().flex_1().min_w(0).child(b.flex_1())) : v_flex().gap(12).child(a).child(b);
   }
   innerW() {
     return (this.width >= 700 ? (this.width - 32 - 12) / 2 : this.width - 32) - 30;
@@ -476,29 +514,52 @@ export default class Usage extends View {
 
   tokensCard(t, r) {
     const m = r.mix, tot = MIX.reduce((a, [k]) => a + m[k], 0), read = m.tin + m.tcw + m.tcr;
-    return this.card(t, "Where the tokens go", null, v_flex().gap(10)
-      .child(this.stack(t, m, this.innerW(), 16))
-      .children(MIX.map(([k, label, ink]) => h_flex().h(20).gap(8).items_center().text_size(12)
-        .child(div().size(10).rounded(2).bg(ink)).child(div().flex_1().child(label))
-        .child(div().w(56).flex_none().text_right().text_color(t.muted).child(short(m[k])))
-        .child(div().w(40).flex_none().text_right().text_size(11).text_color(t.dim).child(tot ? pct(m[k] / tot) : "–"))))
+    const share = (x) => (x > 0 && x < 0.01 ? "<1%" : pct(x));
+    return this.card(t, "Where the tokens go", div().text_size(11).text_color(t.dim).child(`${short(r.tiles.tokens)} tokens, sub-agents included`), v_flex().gap(10)
+      .child(this.stack(t, m, this.width - 32 - 30, 16)) // full width: Overview's last card
+      .child(h_flex().flex_wrap().gap_x(24).gap_y(6).children(MIX.map(([k, label, ink]) => h_flex().gap(6).items_center().text_size(12)
+        .child(div().size(10).rounded(2).bg(ink)).child(label)
+        .child(div().text_color(t.muted).child(short(m[k]))).child(div().text_size(11).text_color(t.dim).child(tot ? share(m[k] / tot) : "–")))))
       .child(div().text_size(12).text_color(t.muted).child(m.tout ? `For every token written, agents read ${Math.round(read / m.tout)} of context; ${pct(r.tiles.cacheHit)} of it came from cache.` : "No token split recorded.")));
+  }
+
+  // The period, day by day (weeks past a month), by harness: sessions, spend or agent commits.
+  dayCard(t, r0, r, shown) {
+    const field = this.dayMetric ?? "sessions";
+    const metrics = [["sessions", "Sessions"], ...(r0.tiles.costKnown ? [["cost", "Cost"]] : []), ["commits", "Commits"]];
+    return this.over(t, r0, r, shown, { field, fmt: field === "cost" ? usd : short, title: r0.step === DAY ? "Day by day" : "Week by week",
+      right: this.segmented(t, "daymetric", metrics, field, (v) => { this.dayMetric = v; }) });
+  }
+
+  // Where the spend went, by project (a removed worktree counts for its repo): sessions, spend, agent commits and
+  // cost per commit; the rest in one row, so the rows add up to the Cost tile.
+  spendCard(t, r) {
+    const top = Math.max(1e-9, ...r.spend.map((x) => x.cost)), bar = Math.max(40, this.innerW() - 120 - 56 - 64 - 24);
+    return this.card(t, "Where the spend went", div().text_size(11).text_color(t.dim).child("by project"), v_flex().gap(8)
+      .children(r.spend.map((x) => v_flex().gap(3)
+        .child(h_flex().gap(8).items_center().text_size(12)
+          .child(div().flex_1().min_w(0).truncate().text_color(x.key ? t.foreground : t.muted).child(x.key ?? "Everything else"))
+          .child(div().flex_none().text_size(11).text_color(t.dim).child(`${x.sessions} session${x.sessions === 1 ? "" : "s"}`))
+          .child(div().w(64).flex_none().text_right().child(usd(x.cost))))
+        .child(h_flex().gap(8).items_center()
+          .child(div().w(bar).h(6).rounded(3).bg(t.raised).child(div().h(6).rounded(3).w(Math.max(2, (x.cost / top) * bar)).bg(t.accent)))
+          .child(div().flex_1().text_right().text_size(11).text_color(t.dim)
+            .child(x.commits ? `${x.commits} commit${x.commits === 1 ? "" : "s"}${x.perCommit == null ? "" : ` · ${usd(x.perCommit)} each`}` : "no commits"))))));
   }
 
   workCard(t, r) {
     const w = this.innerW(), maxK = Math.max(1, ...Object.values(r.kinds)), hs = ORDER.filter((h) => r.split[h]?.runs || r.split[h]?.tok);
-    const totTok = hs.reduce((a, h) => a + r.split[h].tok, 0) || 1;
     return this.card(t, "What the work was", div().text_size(11).text_color(t.dim).child("from each run's mix of tools"), v_flex().gap(6)
-      .children(KINDS.filter(([k]) => r.kinds[k]).map(([k, label]) => h_flex().h(20).gap(8).items_center().text_size(12)
+      .children(KINDS.map(([k, label]) => h_flex().h(20).gap(8).items_center().text_size(12).when(!r.kinds[k], (el) => el.text_color(t.dim))
         .child(div().w(84).flex_none().child(label))
         .child(div().w(Math.max(40, w - 84 - 40 - 16)).h(8).rounded(3).bg(t.raised).child(div().h(8).rounded(3).w(Math.max(2, (r.kinds[k] / maxK) * Math.max(40, w - 140))).bg(t.accent)))
-        .child(div().w(40).flex_none().text_right().text_size(11).text_color(t.dim).child(String(r.kinds[k])))))
+        .child(div().w(40).flex_none().text_right().text_size(11).text_color(t.dim).child(String(r.kinds[k] ?? 0)))))
       .child(div().h(1).my(4).bg(t.border))
       .children(hs.map((h) => h_flex().h(22).gap(8).items_center().text_size(12)
         .child(div().size(8).rounded(4).bg(HARNESS[h].color)).child(this.icon(t, h, 14)).child(div().flex_1().truncate().child(HARNESS[h].name))
-        .child(div().w(72).flex_none().text_right().text_color(t.muted).child(`${r.split[h].runs} runs`))
-        .child(div().w(44).flex_none().text_right().text_size(11).text_color(t.dim).child(pct(r.split[h].tok / totTok)))
-        .child(div().w(64).flex_none().text_right().text_size(11).text_color(t.dim).child(r.split[h].cost ? `$${Math.round(r.split[h].cost)}` : "no cost")))));
+        .child(div().w(72).flex_none().text_right().text_color(t.muted).child(`${r.split[h].runs} run${r.split[h].runs === 1 ? "" : "s"}`))
+        .child(div().w(80).flex_none().text_right().text_size(11).text_color(t.dim).child(r.split[h].cost && r.split[h].runs ? `${usd(r.split[h].cost / r.split[h].runs)} / run` : ""))
+        .child(div().w(64).flex_none().text_right().text_size(11).text_color(t.dim).child(r.split[h].cost ? usd(r.split[h].cost) : "no cost")))));
   }
 
   rhythmTiles(t, r) {
@@ -630,6 +691,59 @@ export default class Usage extends View {
     return [head, table];
   }
 
+  // What each harness and model is good at, two ways. A grid first, pairs by kind of work, for "who's best at
+  // Build?": each cell's clean-run rate as its tint, the best in each column outlined. Then a radar per pair (10+
+  // sessions, the six busiest) with each kind's numbers beside it, two to a row, for each pair's shape. A kind needs 5+
+  // runs to be measured; best and weakest go by the low end of the rate's interval.
+  strengthsCard(t, r) {
+    const W = this.width - 32 - 30, list = r.strengths, name = (k) => KINDS.find(([x]) => x === k)[1];
+    const color = (x) => HARNESS[x.h]?.color ?? t.accent, rate = (v) => `${pct(v.clean)} (${v.ok}/${v.n})`;
+    // what a cell's number is, for its hover: the raw share, and the range the true rate likely sits in
+    const tip = (x, label, v) => v.clean == null
+      ? `${label}: ${v.n} run${v.n === 1 ? "" : "s"}, under the 5 needed to score it`
+      : `${label}: ${v.ok} of ${v.n} runs clean (${pct(v.clean)}). 95% range ${pct(v.lo)}–${pct(v.hi)}: with ${v.n} runs, the true rate likely sits there.`;
+    const best = Object.fromEntries(KINDS.map(([k]) => {
+      const m = list.filter((x) => x.kinds[k].clean != null).sort((a, b) => b.kinds[k].lo - a.kinds[k].lo);
+      return [k, m.length > 1 ? m[0] : null];
+    }));
+    const who = (x) => h_flex().w(Math.min(300, W * 0.3)).flex_none().gap(6).items_center().text_size(12)
+      .child(this.icon(t, x.h, 14)).child(div().flex_none().font_medium().child(HARNESS[x.h]?.name ?? x.h))
+      .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(x.model));
+    const grid = v_flex().gap(4)
+      .child(h_flex().gap(4).child(div().w(Math.min(300, W * 0.3)).flex_none())
+        .children(KINDS.map(([, label]) => div().flex_1().min_w(0).truncate().text_center().text_size(11).text_color(t.dim).child(label))))
+      .children(list.map((x) => h_flex().gap(4).items_center().child(who(x)).children(KINDS.map(([k, label]) => {
+        const v = x.kinds[k], on = best[k] === x;
+        return v_flex().id(`str-${x.h}-${x.model}-${k}`).tooltip(tip(x, label, v)).flex_1().min_w(0).h(40).items_center().justify_center().rounded(6)
+          .bg(v.clean == null ? t.raised : alpha(t.done, 0.12 + 0.55 * v.clean)).border(1).border_color(on ? t.foreground : alpha(t.border, 0))
+          .child(div().text_size(12).font_medium().text_color(v.clean == null ? t.dim : t.foreground).child(v.clean == null ? "" : pct(v.clean)))
+          .child(div().text_size(10).text_color(v.clean == null ? t.dim : t.muted).child(v.n ? `${v.n} run${v.n === 1 ? "" : "s"}` : ""));
+      }))));
+    // two to a row from 900pt; a tile from 440pt carries its table beside a 190pt radar
+    const cols = W >= 900 ? Math.min(2, list.length) : 1, tw = (W - 12 * (cols - 1)) / cols, wide = tw >= 440;
+    const size = wide ? 190 : Math.min(230, tw - 20);
+    const table = (x) => v_flex().flex_1().min_w(0).gap(6).justify_center().children(KINDS.map(([k, label]) => {
+      const v = x.kinds[k];
+      return h_flex().id(`strow-${x.h}-${x.model}-${k}`).tooltip(tip(x, label, v)).h(20).gap(8).items_center().text_size(12)
+        .child(div().w(84).flex_none().text_color(v.clean == null ? t.dim : t.foreground).child(label))
+        .child(div().flex_1().h(6).rounded(3).bg(t.raised).child(div().h(6).rounded(3).w(`${Math.round((v.clean ?? 0) * 100)}%`).bg(color(x))))
+        .child(div().w(40).flex_none().text_right().text_color(v.clean == null ? t.dim : t.foreground).child(v.clean == null ? "–" : pct(v.clean)))
+        .child(div().w(52).flex_none().text_right().text_size(11).text_color(t.dim).child(`${v.n} run${v.n === 1 ? "" : "s"}`));
+    }));
+    const tile = (x) => v_flex().flex_1().min_w(0).p(12).gap(6).rounded(8).border(1).border_color(t.border)
+      .child(h_flex().w_full().gap(8).items_center().child(who(x).flex_1()).child(div().flex_none().text_size(11).text_color(t.dim).child(`${x.n} runs`)))
+      .child(h_flex().w_full().gap(16).items_center().justify_center()
+        .child(radar(t, { size, labels: KINDS.map(([, label]) => label), values: KINDS.map(([k]) => x.kinds[k].clean), color: color(x) }))
+        .when(wide, (el) => el.child(table(x))))
+      .child(h_flex().w_full().gap(8).justify_between().text_size(11)
+        .child(div().truncate().text_color(t.done).child(x.best ? `Best: ${name(x.best)} ${rate(x.kinds[x.best])}` : "Too few runs of any one kind"))
+        .child(div().truncate().text_color(t.muted).child(x.worst ? `Weakest: ${name(x.worst)} ${rate(x.kinds[x.worst])}` : "")));
+    const rows = [];
+    for (let i = 0; i < list.length; i += cols) rows.push(h_flex().gap(12).items_stretch().children(list.slice(i, i + cols).map(tile)));
+    return this.card(t, "Strengths by kind of work", div().text_size(11).text_color(t.dim).child("clean runs per kind · a kind needs 5 runs · outlined: best in its column · hover for the range"),
+      v_flex().gap(16).children(list.length > 1 ? [grid] : []).children(rows));
+  }
+
   compare(t, r) {
     const chip = (id, label, n) => {
       const on = this.kind === id;
@@ -660,7 +774,8 @@ export default class Usage extends View {
       chart = div().relative().w(W).h(H)
         .children(ticks.map((p) => div().absolute().left(L).top(Y(p)).w(PW).h(1).bg(t.border)))
         .children(ticks.map((p) => div().absolute().left(0).top(Y(p) - 7).w(L - 8).text_size(10).text_color(t.dim).child(pct(p))))
-        .children([lo * 1.6, Math.sqrt(lo * hi), hi / 1.6].map((v, i) => div().absolute().top(H - B + 6).left(i === 0 ? L : i === 1 ? L + PW / 2 - 20 : L + PW - 48).text_size(10).text_color(t.dim).child(money(v))))
+        // each tick under its own value (the range is padded past the cheapest and dearest, so the ends aren't them)
+        .children([lo * 1.6, Math.sqrt(lo * hi), hi / 1.6].map((v) => div().absolute().top(H - B + 6).left(Math.max(L, Math.min(L + PW - 48, X(v) - 24))).w(48).text_center().text_size(10).text_color(t.dim).child(money(v))))
         .children(plotted.map((x) => {
           const key = `${x.h}|${x.model}`, s = 10 + 14 * Math.sqrt(x.n / maxN), cx_ = X(xOf(x)), on = this.hoverRow === key;
           return div().absolute().left(0).top(0).size_full()
@@ -794,7 +909,7 @@ export default class Usage extends View {
     const { r0, r, o0, o, sk, cells } = this.memo, shown = present.filter((h) => on.has(h));
     const empty = div().p(12).text_center().text_size(13).text_color(t.muted).child(`No sessions in ${p.label} for the harnesses shown.`);
     const view = this.tab === "harnesses" ? (r0.tiles.sessions ? [this.over(t, r0, r, shown), this.models(t, r), this.effort(t, r, shown)] : [empty])
-      : this.tab === "compare" ? [this.compare(t, r)]
+      : this.tab === "compare" ? [this.compare(t, r), ...(r.strengths.length ? [this.strengthsCard(t, r)] : [])]
       : this.tab === "output" ? this.outputView(t, r0, r, p, o0, o)
       : this.tab === "skills" ? this.skillsView(t, sk, p)
       : this.tab === "rhythm" ? (r0.tiles.sessions ? (() => {
@@ -808,7 +923,8 @@ export default class Usage extends View {
             .child(v_flex().flex_1().min_w(0).gap(12).child(this.parallel(t, r0, r)).child(lengths).child(days))
           : v_flex().gap(12).child(this.punch(t, r0, r)).child(this.parallel(t, r0, r)).child(lengths).child(days)];
       })() : [empty])
-      : [this.tiles(t, r), this.heatmap(t, cells, weeks, p), ...(r.tiles.sessions ? [this.pair(this.tokensCard(t, r), this.workCard(t, r))]
+      : [this.tiles(t, r), ...(r0.tiles.sessions ? [this.dayCard(t, r0, r, shown)] : []), this.heatmap(t, cells, weeks, p, r.tiles),
+        ...(r.tiles.sessions ? [this.pair(this.spendCard(t, r), this.workCard(t, r)), this.tokensCard(t, r)]
         : this.sel ? [div().p(12).text_center().text_size(13).text_color(t.muted).child(`No sessions in ${this.selLabel()}. Clear it (✕, top right) to see ${p.label}.`)] : [])];
     return root.child(v_flex().id("usage-body").flex_1().min_h(0).p(16).gap(12).overflow_y_scrollbar().children(view));
   }

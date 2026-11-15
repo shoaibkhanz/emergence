@@ -26,6 +26,14 @@ export function levels(values) {
   return (v) => (v <= 0 ? 0 : v <= q[0] ? 1 : v <= q[1] ? 2 : v <= q[2] ? 3 : 4);
 }
 
+// Cost per commit: spend over the commits of top-level sessions that recorded a cost (Codex records none). The spend
+// is theirs by default (Skills); Overview passes the spend its Cost tile shows, sub-agents included, so its tiles and
+// rows divide.
+export function perCommitOf(top, spend = null) {
+  const paid = top.filter((s) => s.cost != null && s.commits != null), made = sum(paid, (s) => s.commits);
+  return made ? (spend ?? sum(paid, (s) => s.cost)) / made : null;
+}
+
 export const topModel = (s) => Object.entries(s.models ?? {}).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "unknown";
 
 // A run that went smoothly: no abort, no API error, no compaction, under 10% failed tool calls.
@@ -40,6 +48,27 @@ export function kindOf(s) {
   if (c.edit / n >= 0.1) return "build"; // shells read too (cat, rg), so a tenth of calls being edits is a build
   if (c.web / n >= 0.3) return "research";
   return c.bash > c.read ? "debug" : "investigate";
+}
+
+// Compare's radars: each harness and main model with 10+ top-level sessions (the six busiest), its clean-run rate in
+// each kind of work it did 5+ times (null under that: not measured), and its best and weakest measured kinds, ranked
+// by the low end of the rate's 95% interval so 5 of 5 doesn't beat 27 of 30.
+export const RADAR_MIN = 10, KIND_MIN = 5;
+export function strengthsOf(top) {
+  const groups = new Map();
+  for (const s of top) { const k = `${s.h}\u0000${topModel(s)}`; (groups.get(k) ?? groups.set(k, []).get(k)).push(s); }
+  return [...groups].filter(([, g]) => g.length >= RADAR_MIN).sort((a, b) => b[1].length - a[1].length).slice(0, 6).map(([k, g]) => {
+    const [h, model] = k.split("\u0000"), kinds = {};
+    for (const [kind] of KINDS) {
+      const x = g.filter((s) => kindOf(s) === kind);
+      const ok = x.filter(clean).length;
+      const w = x.length >= KIND_MIN ? wilson(ok, x.length) : null;
+      kinds[kind] = { n: x.length, ok, clean: w ? ok / x.length : null, lo: w?.lo ?? null, hi: w?.hi ?? null };
+    }
+    const measured = KINDS.map(([kind]) => kind).filter((kind) => kinds[kind].clean != null)
+      .sort((a, b) => kinds[b].lo - kinds[a].lo || kinds[b].n - kinds[a].n);
+    return { h, model, n: g.length, kinds, best: measured[0] ?? null, worst: measured.length > 1 ? measured.at(-1) : null };
+  });
 }
 
 // The GitHub-style year: one cell per day for the last `weeks` weeks (ending this week), by metric.
@@ -76,6 +105,13 @@ export function summarize(all, { from, to, harnesses, sameRepos = false, kind = 
     activeDays: active.size, days, streak,
     tokens: sum(ss, (s) => s.tok), cacheHit: tin + tcr ? tcr / (tin + tcr) : null,
     cost: sum(ss, (s) => s.cost), costKnown: ss.some((s) => s.cost != null),
+    costPrev: sum(pick(from - (to - from), from), (s) => s.cost),
+    // The "vs before" lines need a history reaching back over the whole period before (within a day), any harness.
+    before: all.some((s) => s.start <= from - (to - from) + DAY),
+    // What the spend got: the agents' `git commit`s (a session's count includes its sub-agents', so top-level only).
+    commits: sum(top, (s) => s.commits), perCommit: perCommitOf(top, sum(ss, (s) => s.cost)),
+    clean: top.length ? top.filter(clean).length / top.length : null,
+    cleanPrev: (() => { const p = pick(from - (to - from), from).filter((s) => !s.sub); return p.length ? p.filter(clean).length / p.length : null; })(),
   };
   // Where tokens go (sub-agents included), and each harness' share of runs, tokens and recorded spend.
   const mix = mixOf(ss);
@@ -86,15 +122,34 @@ export function summarize(all, { from, to, harnesses, sameRepos = false, kind = 
     x.tok += s.tok ?? 0; x.cost += s.cost ?? 0;
   }
 
-  // Tokens over time by harness: days up to a month, weeks beyond.
+  // Over time by harness, days up to a month, weeks beyond: tokens (by) and spend with sub-agents, sessions and
+  // commits top-level.
   const step = days <= 31 ? DAY : 7 * DAY;
   const buckets = [];
-  for (let t = startOfDay(from); t < to; t = startOfDay(t + step + 3600000)) buckets.push({ t, by: {} });
+  for (let t = startOfDay(from); t < to; t = startOfDay(t + step + 3600000)) buckets.push({ t, by: {}, sessions: {}, cost: {}, commits: {} });
+  const add = (m, h, n) => { m[h] = (m[h] ?? 0) + n; };
   for (const s of ss) {
     let b = null;
     for (const x of buckets) if (x.t <= s.start) b = x; else break;
-    if (b) b.by[s.h] = (b.by[s.h] ?? 0) + (s.tok ?? 0);
+    if (!b) continue;
+    add(b.by, s.h, s.tok ?? 0);
+    if (s.cost != null) add(b.cost, s.h, s.cost);
+    if (!s.sub) { add(b.sessions, s.h, 1); if (s.commits != null) add(b.commits, s.h, s.commits); }
   }
+
+  // Where the spend went, by project (scan.py's `where`): the top four, then the rest in one row (key null), so the
+  // rows add up to the Cost tile.
+  const places = new Map();
+  for (const s of ss) {
+    const p = places.get(s.where ?? null) ?? places.set(s.where ?? null, { key: s.where ?? null, sessions: 0, cost: 0, commits: 0, top: [] }).get(s.where ?? null);
+    p.cost += s.cost ?? 0;
+    if (!s.sub) { p.sessions++; p.commits += s.commits ?? 0; p.top.push(s); }
+  }
+  const ranked = [...places.values()].filter((p) => p.key != null).sort((a, b) => b.cost - a.cost || b.sessions - a.sessions);
+  const rest = [...ranked.slice(4), ...(places.has(null) ? [places.get(null)] : [])];
+  const spend = [...ranked.slice(0, 4), ...(rest.length ? [{ key: null, sessions: sum(rest, (p) => p.sessions), cost: sum(rest, (p) => p.cost),
+    commits: sum(rest, (p) => p.commits), top: rest.flatMap((p) => p.top) }] : [])]
+    .map(({ top: g, ...p }) => ({ ...p, perCommit: perCommitOf(g, p.cost) }));
 
   // Models by tokens (each owned by the harness that spent most on it), and effort by harness.
   const models = new Map();
@@ -153,7 +208,7 @@ export function summarize(all, { from, to, harnesses, sameRepos = false, kind = 
   // A winner only when its whole interval clears the runner-up's.
   const best = score.length > 1 && score[0].clean.lo > score[1].clean.hi ? score[0] : null;
 
-  return { tiles, mix, split, step, buckets, models: modelRows, effort, punch, rhythm, kinds, score, best };
+  return { tiles, mix, split, step, buckets, spend, strengths: strengthsOf(top), models: modelRows, effort, punch, rhythm, kinds, score, best };
 }
 
 // What the work delivered in [from, to): your commits and lines, PRs, worktrees, per day or week, per repo.
@@ -244,11 +299,10 @@ export const FEW = 5; // fewer sessions than this: shown, but "too few to tell"
 // clean-run rate with its Wilson interval.
 function skillStats(g) {
   const known = g.filter((s) => s.commits != null), costed = g.filter((s) => s.cost != null);
-  const paid = known.filter((s) => s.cost != null), made = sum(paid, (s) => s.commits);
   return {
     n: g.length,
     commitsMed: median(known.map((s) => s.commits)),
-    perCommit: made ? sum(paid, (s) => s.cost) / made : null,
+    perCommit: perCommitOf(g),
     costMed: median(costed.map((s) => s.cost)),
     clean: wilson(g.filter(clean).length, g.length),
   };
