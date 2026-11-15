@@ -135,5 +135,60 @@ class ClaudeTest(unittest.TestCase):
         self.assertEqual(argv[:4], ["claude", "--resume", "s", "--fork-session"])
 
 
+OC = os.path.join(FIX, "opencode", "2.3.0")
+
+
+def oc_fixture(name):
+    with open(os.path.join(OC, name)) as f:
+        return f.read()
+
+
+OC_TREE = [side.Proc(100, ["-zsh"], "ttys004"), side.Proc(200, ["opencode"], "ttys004")]
+OC_DIR = "/Users/shoaib/hands-on-projects/generative-ai-with-fastapi"
+
+
+class OpenCodeTest(unittest.TestCase):
+    def test_locate_exact_from_args(self):
+        calls = []
+        tree = [OC_TREE[0], side.Proc(200, ["opencode", "-s", "ses_abc"], "ttys004")]
+        e = env(procs=lambda pid: tree, run=lambda argv: calls.append(argv) or (1, ""))
+        r = side.handle("locate", {"harness": "opencode", "pid": 100, "cwd": OC_DIR}, e)
+        self.assertEqual(r["session"], {"harness": "opencode", "id": "ses_abc", "cwd": OC_DIR})
+        self.assertEqual(r["confidence"], "exact")
+        self.assertEqual(calls, [])
+
+    def test_locate_guess_newest(self):
+        listed = json.loads(oc_fixture("session_list.json"))
+        listed["data"].reverse()  # newest by time, not by position
+        calls = []
+        e = env(procs=lambda pid: OC_TREE, run=lambda argv: calls.append(argv) or (0, json.dumps(listed)))
+        r = side.handle("locate", {"harness": "opencode", "pid": 100, "cwd": OC_DIR}, e)
+        self.assertEqual(r["session"]["id"], "ses_e216a49d7ffeg0NDXLBEctOR0x")
+        self.assertEqual(r["confidence"], "guess")
+        self.assertEqual(calls, [["opencode", "api", "session.list", "--param", f"directory={OC_DIR}"]])
+
+    def test_locate_no_sessions(self):
+        e = env(procs=lambda pid: OC_TREE, run=lambda argv: (0, json.dumps({"data": [], "cursor": {}})))
+        r = side.handle("locate", {"harness": "opencode", "pid": 100, "cwd": OC_DIR}, e)
+        self.assertEqual(r["error"]["code"], "not-found")
+
+    def test_copy_forks_then_opens(self):
+        calls = []
+        e = env(run=lambda argv: calls.append(argv) or (0, oc_fixture("session_fork.json")))
+        session = {"harness": "opencode", "id": "ses_4a04ddc87ffeQf2Y1N6phGn5ee", "cwd": OC_DIR}
+        r = side.handle("copy", {"session": session, "pid": 100, "answerOnly": True}, e)
+        self.assertEqual(calls, [["opencode", "api", "session.fork", "--param",
+                                  "sessionID=ses_4a04ddc87ffeQf2Y1N6phGn5ee", "-d", "{}"]])
+        self.assertEqual(r["launch"], {"argv": ["opencode", "-s", "ses_e214046b1ffe3mxz4AIx9i2lpk"], "cwd": OC_DIR})
+        self.assertEqual(r["note"], "can-edit")
+
+    def test_copy_fork_fails(self):
+        e = env(run=lambda argv: (1, "HTTP 400 Bad Request"))
+        session = {"harness": "opencode", "id": "ses_x", "cwd": OC_DIR}
+        r = side.handle("copy", {"session": session, "pid": 100, "answerOnly": True}, e)
+        self.assertEqual(r["error"]["code"], "copy-failed")
+        self.assertIn("HTTP 400", r["error"]["message"])
+
+
 if __name__ == "__main__":
     unittest.main()
