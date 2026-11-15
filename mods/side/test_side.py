@@ -192,8 +192,18 @@ class OpenCodeTest(unittest.TestCase):
         r = side.handle("copy", {"session": session, "pid": 100, "answerOnly": True}, e)
         self.assertEqual(calls, [["opencode", "api", "session.fork", "--param",
                                   "sessionID=ses_4a04ddc87ffeQf2Y1N6phGn5ee", "-d", "{}"]])
-        self.assertEqual(r["launch"], {"argv": ["opencode", "-s", "ses_e214046b1ffe3mxz4AIx9i2lpk"], "cwd": OC_DIR})
+        # answer-only: OpenCode's read-only plan agent, which only `opencode mini` can be started with
+        self.assertEqual(r["launch"], {"argv": ["opencode", "mini", "--agent", "plan", "-s", "ses_e214046b1ffe3mxz4AIx9i2lpk"],
+                                       "cwd": OC_DIR})
+        self.assertIsNone(r["note"])
+
+    def test_copy_not_answer_only_can_edit(self):
+        e = env(run=lambda argv: (0, oc_fixture("session_fork.json")))
+        session = {"harness": "opencode", "id": "ses_4a04ddc87ffeQf2Y1N6phGn5ee", "cwd": OC_DIR}
+        r = side.handle("copy", {"session": session, "pid": 100, "answerOnly": False}, e)
+        self.assertEqual(r["launch"]["argv"], ["opencode", "-s", "ses_e214046b1ffe3mxz4AIx9i2lpk"])
         self.assertEqual(r["note"], "can-edit")
+        self.assertEqual(side.handle("caps", {"harness": "opencode"}, e)["answerOnly"], "enforced")
 
     def test_locate_only_copies_left(self):
         listed = {"data": [r for r in json.loads(oc_fixture("session_list.json"))["data"] if r.get("fork")], "cursor": {}}

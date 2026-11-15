@@ -59,3 +59,10 @@ export function claim(view) {
 // The open slots in order, each with what the panel saved about it (shared "side.tabs").
 export const tabsOf = (open, saved) => SLOTS.filter((s) => open.includes(s))
   .map((slot) => ({ slot, harness: saved[slot]?.harness ?? null, label: saved[slot]?.label ?? slot }));
+
+// The Side view's banner for the shown chat: the copy keeps the agent's history (it needs it to answer), so say whose
+// conversation it is and that nothing typed here reaches that agent.
+export function bannerOf(tab) {
+  const where = tab?.from ? `on ${tab.from}` : tab?.label ? `in ${tab.label.split(" · ").pop()}` : null;
+  return `${where ? `Copied from the agent ${where}` : "A copy of an agent's conversation"} · nothing here reaches it`;
+}

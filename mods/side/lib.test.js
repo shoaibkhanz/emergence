@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { harnessOf, decide, noticeFor, tabsOf, SLOTS, slotView, claim } from "./lib.js";
+import { harnessOf, decide, noticeFor, tabsOf, SLOTS, slotView, claim, bannerOf } from "./lib.js";
 
 const installed = { claude: true, opencode: true, codex: true, pi: false, omp: true };
 const supported = ["claude", "opencode"];
@@ -63,4 +63,11 @@ test("claim: reuse an idle host first, else start one in a slot with none, else 
 
 test("noticeFor: a guess with no folder doesn't say undefined", () => {
   expect(noticeFor({ v: 1, session: { cwd: null }, confidence: "guess" }, "opencode")).toEqual({ title: "Copied the newest OpenCode session" });
+});
+
+test("bannerOf: what the Side view says about the shown chat: whose conversation it copies, and that it can't reach it", () => {
+  expect(bannerOf({ label: "Claude Code · herdr-mods", from: "feat/side-sessions" }))
+    .toBe("Copied from the agent on feat/side-sessions · nothing here reaches it");
+  expect(bannerOf({ label: "OpenCode · fastapi" })).toBe("Copied from the agent in fastapi · nothing here reaches it");
+  expect(bannerOf(undefined)).toBe("A copy of an agent's conversation · nothing here reaches it");
 });

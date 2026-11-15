@@ -13,7 +13,7 @@ import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, hc, run, theme, props, nextCommand, focused, panes, agents, terminals, spaces, knownAgents, notify,
   openOverlay, closeOverlay, appHome, home, layout, shared, setShared } from "herdr";
-import { NAMES, harnessOf, decide, noticeFor, tabsOf, slotView, claim } from "./lib.js";
+import { NAMES, harnessOf, decide, noticeFor, tabsOf, slotView, claim, bannerOf } from "./lib.js";
 
 const SUPPORTED = ["claude", "opencode"]; // harnesses with an adapter in side.py; codex, pi and omp come next
 const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(c, id)).find(Boolean));
@@ -147,7 +147,10 @@ export default class Side extends View {
       .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => show(slot))
       .child(div().truncate().max_w(220).child(label))
       .child(div().id(`end-${slot}`).px(4).rounded(4).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground))
-        .on_click((_e, cx) => { cx.stop_propagation(); this.end(slot, open); }).child("✕"))));
+        .on_click((_e, cx) => { cx.stop_propagation(); this.end(slot, open); }).child("✕"))))
+      .child(div().flex_1().min_w(4)) // the shown chat's banner, right of the tabs: whose copy it is, and that it can't reach it
+      .child(div().flex_none().max_w(320).truncate().pr(6).text_size(11.5).text_color(t.dim)
+        .child(bannerOf((shared("side.tabs") ?? {})[stack?.active])));
   }
 
   // ---- which harnesses (first use, or side.harnesses) ----

@@ -1,7 +1,8 @@
 """OpenCode: sessions live in its SQLite database behind the background service, reached with `opencode api`. The
 running process names its session only when started with -s; otherwise the folder's newest session is a guess. A
-copy is the API's session.fork (a full copy needs the empty body), opened with `opencode -s <new>`. No read-only mode:
-the copy can edit files (findings §2)."""
+copy is the API's session.fork (a full copy needs the empty body). Answer-only opens it with OpenCode's read-only plan
+agent, which only `opencode mini --agent` can choose (the main TUI has no --agent, and session.update ignores the
+agent); otherwise `opencode -s <new>`, which can edit files (findings §2)."""
 from __future__ import annotations  # stock macOS python3 is 3.9: `str | None` must not evaluate at import
 
 import json
@@ -10,7 +11,7 @@ NAME = "OpenCode"
 
 
 def caps() -> dict:
-    return {"locate": "guess", "full": True, "before": None, "answerOnly": None}
+    return {"locate": "guess", "full": True, "before": None, "answerOnly": "enforced"}
 
 
 def _session_arg(args: list[str]) -> str | None:
@@ -48,4 +49,6 @@ def copy(req: dict, env) -> dict:
     if code != 0:
         return {"error": {"code": "copy-failed", "message": out}}
     new = json.loads(out)["data"]["id"]
+    if req.get("answerOnly"):
+        return {"launch": {"argv": ["opencode", "mini", "--agent", "plan", "-s", new], "cwd": s["cwd"]}, "note": None}
     return {"launch": {"argv": ["opencode", "-s", new], "cwd": s["cwd"]}, "note": "can-edit"}
