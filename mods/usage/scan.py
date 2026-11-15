@@ -8,7 +8,6 @@ source file so warm runs only re-read files that changed, and records whose
 source file disappeared (Claude prunes history after ~30 days) stay cached.
 """
 import argparse
-import bisect
 import json
 import os
 import re
@@ -21,12 +20,14 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import datetime
 
-CACHE_VERSION = 5  # 5: skills per session
+CACHE_VERSION = 6  # 5: skills per session; 6: commits from the transcript
 EFFORTS = {"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 # Envelope timestamp. JSON escapes quotes inside strings, so this only matches structural keys.
 TS = re.compile(rb'"timestamp":"(\d{4}-[^"]+)"')
-COMMIT_GRACE_MS = 30 * 60 * 1000
-COMMIT_WINDOW_MS = 8 * 3600 * 1000
+# A session's commits are the `git commit` calls its agent ran (git's global -C/-c options allowed): read from the
+# transcript, so they survive a removed worktree and never include another session's work.
+# ponytail: counts calls, not their results; a commit whose hook failed still counts (rare: 4 in 1,245 here).
+GIT_COMMIT = re.compile(r"(?:^|[;&|(\s])git(?:\s+-[Cc]\s+\S+)*\s+commit(?![-\w])")
 TOOL_CATS = {
     **dict.fromkeys(("edit", "write", "multiedit", "notebookedit", "apply_patch", "patch", "ast_edit",
                      "create_file"), "edit"),
@@ -78,12 +79,17 @@ def add_skill(r, name):
         r["skills"][name] = r["skills"].get(name, 0) + 1
 
 
+def git_commits(cmd):
+    """How many `git commit`s a shell command runs; a Codex command comes as an argv list."""
+    return len(GIT_COMMIT.findall(" ".join(map(str, cmd)) if isinstance(cmd, list) else str(cmd or "")))
+
+
 def blank(h, sid, sub):
     return {"h": h, "id": sid, "start": None, "end": None, "cwd": None, "sub": sub,
             "models": {}, "effort": None, "tok": 0, "tin": 0, "tout": 0, "tcr": 0, "tcw": 0,
             "cost": 0.0, "req": 0, "tools": 0, "toolErr": 0,
             "tc": dict.fromkeys(("edit", "read", "bash", "web", "agent", "other"), 0),
-            "aborts": 0, "apiErr": 0, "compactions": 0, "skills": {}}
+            "aborts": 0, "apiErr": 0, "compactions": 0, "skills": {}, "commits": 0}
 
 
 def add_tool(r, name):
@@ -148,6 +154,7 @@ def parse_pi(path, h, sub):
                                 add_tool(r, c.get("name"))
                                 args = c.get("arguments") if isinstance(c.get("arguments"), dict) else {}
                                 add_skill(r, skill_read(c.get("name"), args.get("path") or args.get("file_path")))
+                                r["commits"] += git_commits(args.get("command"))
                     elif b'"role":"toolResult"' in head:
                         # isError sits after content/details, near the end of the line
                         r["toolErr"] += b'"isError":true' in line[-300:]
@@ -181,7 +188,7 @@ INTERRUPT = "[Request interrupted by user"  # fixed marker Claude writes on Esc;
 def parse_claude(path, sub):
     sid = os.path.basename(path)[:-6]
     r = blank("claude", sid, sub)
-    msgs, tools, skills, cost, lo, hi = {}, {}, {}, None, None, None
+    msgs, tools, skills, commits, cost, lo, hi = {}, {}, {}, {}, None, None, None
     # resuming copies earlier records (keeping their old sessionId) into the new session file;
     # those belong to the original session, so a top-level file only counts its own records
     own = None if sub else f'"sessionId":"{sid}"'.encode()
@@ -212,6 +219,7 @@ def parse_claude(path, sub):
                         tools[c.get("id")] = c.get("name")
                         if c.get("name") == "Skill":  # keyed by call id: a streamed repeat counts once
                             skills[c.get("id")] = skill_name((c.get("input") or {}).get("skill"))
+                        commits[c.get("id")] = git_commits((c.get("input") or {}).get("command"))
             elif t == "user":
                 content = (o.get("message") or {}).get("content")
                 content = content if isinstance(content, list) else ()
@@ -237,7 +245,7 @@ def parse_claude(path, sub):
         add_tool(r, name)
     for name in skills.values():
         add_skill(r, name)
-    r["req"], r["cost"] = len(msgs), cost or 0
+    r["req"], r["cost"], r["commits"] = len(msgs), cost or 0, sum(commits.values())
     span(r, lo, hi)
     return [finish(r, eff)]
 
@@ -265,13 +273,13 @@ def codex_record(row, path):
     sub = "subagent" in (source or "")
     r = blank("codex", tid, sub)
     r.update(start=int(start), end=int(end), cwd=cwd, tok=tokens or 0,
-             tin=None, tout=None, tcr=None, tcw=None, cost=None, effort=norm_effort(effort))
+             tin=None, tout=None, tcr=None, tcw=None, cost=None, effort=norm_effort(effort), commits=None)
     if model and tokens:
         r["models"] = {model: tokens}
     lines = rollout_lines(path) if path and os.path.exists(path) else None
     if lines is None:
         return [r]
-    usage = None
+    usage, r["commits"] = None, 0
     for line in lines:
         if not any(k in line for k in CODEX_KEYS):
             continue
@@ -292,7 +300,9 @@ def codex_record(row, path):
                 args = json.loads(p.get("arguments") or "{}")
             except (TypeError, ValueError):
                 args = {}
-            add_skill(r, skill_read(p.get("name"), isinstance(args, dict) and (args.get("path") or args.get("file_path"))))
+            args = args if isinstance(args, dict) else {}
+            add_skill(r, skill_read(p.get("name"), args.get("path") or args.get("file_path")))
+            r["commits"] += git_commits(args.get("command") or args.get("cmd") or (p.get("action") or {}).get("command"))
         elif pt == "turn_aborted":
             r["aborts"] += 1
         elif pt == "compacted":
@@ -349,12 +359,15 @@ def parse_opencode(db):
         reads = con.execute(
             "select session_id, json_extract(data,'$.tool'), json_extract(data,'$.state.input.filePath') from part"
             " where json_extract(data,'$.type') = 'tool' and data like '%SKILL.md%'").fetchall()
+        shells = con.execute(
+            "select session_id, json_extract(data,'$.state.input.command') from part"
+            " where json_extract(data,'$.type') = 'tool' and data like '%commit%'").fetchall()
     finally:
         con.close()
     recs, effs = {}, {}
     for sid, parent, cwd, t0, t1 in sessions:
         r = recs[sid] = blank("opencode", sid, parent is not None)
-        r.update(start=t0, end=t1, cwd=cwd)
+        r.update(start=t0, end=t1, cwd=cwd, parent=parent)
         effs[sid] = Counter()
     for sid, role, model, variant, err, tin, tout, reason, tcr, tcw, cost in msgs:
         r = recs.get(sid)
@@ -381,6 +394,9 @@ def parse_opencode(db):
     for sid, tool, path in reads:
         if sid in recs:
             add_skill(recs[sid], skill_read(tool, path))
+    for sid, cmd in shells:
+        if sid in recs:
+            recs[sid]["commits"] += git_commits(cmd)
     return [finish(r, effs[sid]) for sid, r in recs.items()]
 
 
@@ -501,12 +517,18 @@ def repo_of(cwd):
     return os.path.dirname(common) if os.path.basename(common) == ".git" else top
 
 
-def commit_times(repo):
-    """The user's own commits only: teammates' fetched commits are not the session's work."""
-    email = (git("-C", repo, "config", "user.email") or "").strip()
-    author = ["--fixed-strings", f"--author={email}"] if email else []
-    out = git("-C", repo, "log", "--all", *author, "--format=%ct")
-    return sorted(int(x) for x in out.split()) if out else []
+def parent_of(key, r, cache):
+    """A sub-agent's session, as (harness, id): OpenCode records it; a tree harness keeps a sub-agent's file in a
+    folder named after the session's file (<slug>/<session>/subagents/<agent>.jsonl, <slug>/<session>/<agent>.jsonl)."""
+    if r.get("parent"):
+        return r["h"], r["parent"]
+    d = os.path.dirname(key)
+    for _ in range(2):
+        e = cache.get(d + ".jsonl")
+        if e and e["r"]:
+            return e["r"][0]["h"], e["r"][0]["id"]
+        d = os.path.dirname(d)
+    return None
 
 
 # ---------- main ----------
@@ -527,27 +549,27 @@ def scan(home):
 
     # forks copy Claude sub-agent transcripts verbatim into the new session's folder: keep one per id
     uniq_recs = {}
-    for e in cache.values():
+    for key, e in cache.items():
         for r in e["r"]:
             k = (r["h"], r["id"])
             if r["start"] is not None and (r["req"] or r["tok"]) and (
-                    k not in uniq_recs or r["req"] > uniq_recs[k]["req"]):
-                uniq_recs[k] = r
-    recs = list(uniq_recs.values())
+                    k not in uniq_recs or r["req"] > uniq_recs[k][0]["req"]):
+                uniq_recs[k] = (r, key)
+    recs = [r for r, _ in uniq_recs.values()]
+    # a sub-agent's commits are its session's work too (one level: a sub-agent's own sub-agents stay with it)
+    from_subs = Counter()
+    for r, key in uniq_recs.values():
+        p = r["sub"] and r.get("commits") and parent_of(key, r, cache)
+        if p:
+            from_subs[p] += r["commits"]
     cwds = {r["cwd"] for r in recs}
     with ThreadPoolExecutor(8) as ex:
         repos = dict(zip(cwds, ex.map(repo_of, cwds)))
-        uniq = {v for v in repos.values() if v}
-        times = dict(zip(uniq, ex.map(commit_times, uniq)))
     out = []
     for r in recs:
-        repo = repos[r["cwd"]]
-        commits = None
-        if repo:
-            ts = times[repo]
-            # resumed multi-day sessions: only the first COMMIT_WINDOW_MS of a session can claim commits
-            hi = min(r["end"], r["start"] + COMMIT_WINDOW_MS) + COMMIT_GRACE_MS
-            commits = bisect.bisect_right(ts, hi / 1000) - bisect.bisect_left(ts, r["start"] / 1000)
+        repo, commits = repos[r["cwd"]], r.get("commits")
+        if commits is not None:
+            commits += from_subs[(r["h"], r["id"])]
         out.append({"h": r["h"], "id": r["id"], "start": r["start"], "end": r["end"], "repo": repo,
                     "sub": r["sub"], "models": r["models"], "effort": r["effort"], "tok": r["tok"],
                     "tin": r["tin"], "tout": r["tout"], "tcr": r["tcr"], "tcw": r["tcw"], "cost": r["cost"],

@@ -373,7 +373,9 @@ inside.
 - **`mods/skills`**: finds skills with `find` and reads `~/.claude/plugins/installed_plugins.json`.
 - **`mods/usage`**:
   - `scan.py` (python3 stdlib, `git`, optional `zstd`) turns the harness logs into one record per session (tokens by
-    kind, cost, effort, tool calls by kind, errors, aborts, commits) and caches them in `data/usage/cache.json`. New or
+    kind, cost, effort, tool calls by kind, errors, aborts, commits) and caches them in `data/usage/cache.json`. A
+    session's commits are the `git commit` calls its agent and its sub-agents ran, counted from the transcript (so a
+    removed worktree keeps them, and another session's commits never count). New or
     changed logs are parsed across processes once there are 32 or more (a first scan: about 8 s for 8 GB of logs, was
     27 s on one).
   - `output.py` lists your commits (`git log`, no diffs), diffs only commits it hasn't counted before (`git show
