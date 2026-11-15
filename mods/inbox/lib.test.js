@@ -20,15 +20,28 @@ import { splitColumn } from "./lib.js";
 
 test("splitColumn: Spaces as before; the inbox gets its cards (at least 90px); Ports gets the rest, at least what it needs", () => {
   // 800px column, Spaces wants 100, the inbox's cards need 150, Ports needs 94: Ports takes the slack under the cards.
-  expect(splitColumn({ H: 800, spacesWant: 100, need: 150, portsMin: 94, collapsed: false })).toEqual({ spaces: 100, ports: 550 });
+  expect(splitColumn({ H: 800, spacesWant: 100, need: 150, portsMin: 94, collapsed: false })).toEqual({ spaces: 100, side: 0, ports: 550 });
   // A long inbox: Ports keeps only what it needs; the inbox scrolls in the rest.
-  expect(splitColumn({ H: 800, spacesWant: 100, need: 900, portsMin: 94, collapsed: false })).toEqual({ spaces: 100, ports: 94 });
+  expect(splitColumn({ H: 800, spacesWant: 100, need: 900, portsMin: 94, collapsed: false })).toEqual({ spaces: 100, side: 0, ports: 94 });
   // A near-empty inbox still keeps its 90px.
-  expect(splitColumn({ H: 800, spacesWant: 100, need: 41, portsMin: 94, collapsed: false })).toEqual({ spaces: 100, ports: 610 });
+  expect(splitColumn({ H: 800, spacesWant: 100, need: 41, portsMin: 94, collapsed: false })).toEqual({ spaces: 100, side: 0, ports: 610 });
   // Folded: no Ports.
   expect(splitColumn({ H: 800, spacesWant: 100, need: 40, portsMin: 0, collapsed: true }).ports).toBe(0);
   // Before the first measure: Spaces at most 285, Ports what it needs.
-  expect(splitColumn({ H: 0, spacesWant: 400, need: 150, portsMin: 94, collapsed: false })).toEqual({ spaces: 285, ports: 94 });
+  expect(splitColumn({ H: 0, spacesWant: 400, need: 150, portsMin: 94, collapsed: false })).toEqual({ spaces: 285, side: 0, ports: 94 });
   // Spaces still gives way to the inbox (never under half of what the two share) once Ports has its share.
-  expect(splitColumn({ H: 600, spacesWant: 500, need: 300, portsMin: 100, collapsed: false })).toEqual({ spaces: 250, ports: 100 });
+  expect(splitColumn({ H: 600, spacesWant: 500, need: 300, portsMin: 100, collapsed: false })).toEqual({ spaces: 250, side: 0, ports: 100 });
+});
+
+test("splitColumn: Side chats takes its height first; a long inbox never squeezes it; a short column floors it", () => {
+  expect(splitColumn({ H: 800, spacesWant: 100, need: 150, portsMin: 94, sideWant: 101, collapsed: false }))
+    .toEqual({ spaces: 100, side: 101, ports: 449 });
+  expect(splitColumn({ H: 800, spacesWant: 100, need: 900, portsMin: 94, sideWant: 101, collapsed: false }))
+    .toEqual({ spaces: 100, side: 101, ports: 94 }); // long inbox: Side chats keeps 101
+  expect(splitColumn({ H: 300, spacesWant: 100, need: 150, portsMin: 94, sideWant: 161, collapsed: false }))
+    .toEqual({ spaces: 60, side: 71, ports: 94 }); // short column: floored at header + 1 row
+  expect(splitColumn({ H: 800, spacesWant: 100, need: 40, portsMin: 0, sideWant: 101, collapsed: true }))
+    .toEqual(expect.objectContaining({ side: 0, ports: 0 }));
+  expect(splitColumn({ H: 0, spacesWant: 400, need: 150, portsMin: 94, sideWant: 101, collapsed: false }))
+    .toEqual({ spaces: 285, side: 101, ports: 94 }); // before the first measure
 });

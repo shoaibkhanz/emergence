@@ -109,23 +109,25 @@ export default class Inbox extends View {
     });
   }
 
-  // The column is shared by Spaces, this inbox and Ports (lib.js splitColumn): Spaces the height its rows ask for
-  // (spaces.want) while the inbox's content still fits; Ports what its rows need (ports.want) plus the slack under the
-  // inbox's cards, so it sits right below them and Working stays last.
+  // The column is shared by Spaces, this inbox, Side chats and Ports (lib.js splitColumn): Side chats exactly what its
+  // rows need (side-chats.want); Spaces the height its rows ask for (spaces.want) while the inbox's content still fits;
+  // Ports what its rows need (ports.want) plus the slack under the inbox's cards, so Working stays last.
   fitSpaces(collapsed, need) {
-    const ms = machines().length, sp = find(layout(), "spaces"), po = find(layout(), "ports");
+    const ms = machines().length, sp = find(layout(), "spaces"), po = find(layout(), "ports"), sc = find(layout(), "side-chats");
     if (!sp || sp.hidden) return;
     const spacesWant = shared("spaces.want") ?? 45 + (Math.max(spaces().length, 1) + (ms > 1 ? ms : 0)) * (collapsed ? 26 : 30);
     const portsMin = po ? shared("ports.want") ?? PORTS_FALLBACK : 0;
-    // What the three share: this block's height plus Spaces' and Ports' as drawn (each shares its own), never more than
+    const sideWant = sc ? shared("side-chats.want") ?? 0 : 0;
+    // What they share: this block's height plus Spaces', Side chats' and Ports' as drawn (each shares its own), never more than
     // asked. An asked size the column can't hold (a smaller window, a resize from elsewhere) would otherwise count as room and be handed
     // straight back, leaving Ports over the inbox.
     const drawn = (n, key) => Math.min(n?.size?.px ?? 0, shared(key) ?? Infinity);
-    const H = this.ownH == null ? 0 : this.ownH + drawn(sp, "spaces.h") + drawn(po, "ports.h");
-    const { spaces: px, ports } = splitColumn({ H, spacesWant, need, portsMin, collapsed });
+    const H = this.ownH == null ? 0 : this.ownH + drawn(sp, "spaces.h") + drawn(sc, "side-chats.h") + drawn(po, "ports.h");
+    const { spaces: px, side, ports } = splitColumn({ H, spacesWant, need, portsMin, sideWant, collapsed });
     // Against the layout's own sizes, not the last ones sent: a size changed from elsewhere is put back.
     if (px !== sp.size?.px) run("layout.resize", { id: "spaces", px });
     if (po && ports !== po.size?.px) run("layout.resize", { id: "ports", px: ports });
+    if (sc && side !== sc.size?.px) run("layout.resize", { id: "side-chats", px: side });
   }
 
   // This block's own height, measured after every layout pass (fitSpaces adds Spaces' and Ports').
