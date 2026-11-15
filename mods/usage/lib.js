@@ -239,14 +239,16 @@ export const SKILL_CATEGORIES = [
 export const categoryOf = (name) => (SKILL_CATEGORIES.find(([, re]) => re.test(name)) ?? ["Other"])[0];
 export const FEW = 5; // fewer sessions than this: shown, but "too few to tell"
 
-// How a group of sessions did: the share that led to a commit (where the repo is known: a share, not a count, since a
-// session is credited with every commit in its repo within 8 h, parallel agents' too), the median cost per session (one
-// runaway session can't swing it), and the clean-run rate. Shares carry their Wilson interval.
+// How a group of sessions did: median commits per session (the `git commit`s its agents ran), cost per commit (spend
+// over commits, where both are recorded), the median cost per session (one runaway session can't swing it), and the
+// clean-run rate with its Wilson interval.
 function skillStats(g) {
   const known = g.filter((s) => s.commits != null), costed = g.filter((s) => s.cost != null);
+  const paid = known.filter((s) => s.cost != null), made = sum(paid, (s) => s.commits);
   return {
     n: g.length,
-    commit: wilson(known.filter((s) => s.commits > 0).length, known.length),
+    commitsMed: median(known.map((s) => s.commits)),
+    perCommit: made ? sum(paid, (s) => s.cost) / made : null,
     costMed: median(costed.map((s) => s.cost)),
     clean: wilson(g.filter(clean).length, g.length),
   };

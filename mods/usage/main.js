@@ -38,6 +38,7 @@ const LEVEL = [0, 0.3, 0.5, 0.75, 1];
 // Token kinds (ColorBrewer Set2: apart from the harness hues): what an agent's spend is made of.
 const MIX = [["tin", "Fresh input", "#8da0cb"], ["tcw", "Cache write", "#fc8d62"], ["tcr", "Cache read", "#66c2a5"], ["tout", "Output", "#e78ac3"]];
 const usd = (x) => (x == null ? "–" : x >= 100 ? `$${Math.round(x)}` : `$${x.toFixed(2)}`);
+const num = (x) => (x == null ? "–" : x >= 10 || Number.isInteger(x) ? String(Math.round(x)) : x.toFixed(1));
 const mins = (m) => (m < 1 ? "<1m" : m < 60 ? `${Math.round(m)}m` : `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, "0")}m`);
 const hh = (h) => `${String(h % 24).padStart(2, "0")}:00`;
 
@@ -551,8 +552,8 @@ export default class Usage extends View {
   // across (log), one dot per harness x main model sized by runs, its 95% interval as a line.
   // ---- Skills: which do well ----
 
-  // Each skill (or category) against the same harnesses' sessions without it: sessions, commits per session, cost per
-  // session, clean runs. Sortable; a row opens its harnesses and models. Correlation, not cause.
+  // Each skill (or category) against the same harnesses' sessions without it: sessions, median commits, cost per
+  // commit, median cost per session, clean runs. Sortable; a row opens its harnesses and models. Correlation, not cause.
   skillsView(t, sk, p) {
     const { rows, tiles } = sk ?? { rows: [], tiles: {} };
     if (!tiles.sessions) return [div().p(12).text_center().text_size(13).text_color(t.muted).child(`No sessions in ${p.label} for the harnesses shown.`)];
@@ -564,9 +565,9 @@ export default class Usage extends View {
       ["Categories", String(new Set(rows.map((x) => x.category)).size), by === "category" ? "grouped by category" : "switch to Categories to group"],
     ]);
     if (!rows.length) return [head, div().p(12).text_center().text_size(13).text_color(t.muted).child(`No skills used in ${p.label}. A skill counts when Claude Code calls it, or another harness's agent reads its SKILL.md.`)];
-    const key = { n: (x) => x.n, commits: (x) => x.commit?.lo ?? -1, cost: (x) => -(x.costMed ?? Infinity), clean: (x) => x.clean?.lo ?? -1 }[sort];
+    const key = { n: (x) => x.n, commits: (x) => x.commitsMed ?? -1, perCommit: (x) => -(x.perCommit ?? Infinity), cost: (x) => -(x.costMed ?? Infinity), clean: (x) => x.clean?.lo ?? -1 }[sort];
     const sorted = [...rows].sort((a, b) => key(b) - key(a) || b.n - a.n || a.key.localeCompare(b.key));
-    const W = { n: 72, v: 120, clean: 96 };
+    const W = { n: 64, v: 104, clean: 88 };
     // A value against its baseline: ▲ / ▼ only when the difference is real (20%+) and the sample isn't tiny.
     const vs = (x, base, fmt, higherIsBetter, few) => {
       const d = x != null && base ? (x - base) / Math.abs(base) : null, big = !few && d != null && Math.abs(d) >= 0.2;
@@ -581,7 +582,8 @@ export default class Usage extends View {
       .on_click((_e, cx) => { this.skillSort = sortKey; cx.notify(); }).child(label + (sort === sortKey ? " ↓" : ""));
     const header = h_flex().h(28).px(10).gap(8).items_center().text_size(11.5).font_medium().border_b(1).border_color(t.border)
       .child(div().flex_1().min_w(0).text_color(t.dim).child(by === "category" ? "Category" : "Skill"))
-      .child(hcell("n", "Sessions", W.n, "n")).child(hcell("commits", "Led to a commit", W.v, "commits"))
+      .child(hcell("n", "Sessions", W.n, "n")).child(hcell("commits", "Commits", W.v, "commits"))
+      .child(hcell("perCommit", "Cost per commit", W.v, "perCommit"))
       .child(hcell("cost", "Median cost", W.v, "cost")).child(hcell("clean", "Clean runs", W.clean, "clean"));
     const breakdown = (x) => {
       const table = (title, list, label) => v_flex().flex_1().min_w(0).gap(4)
@@ -589,7 +591,8 @@ export default class Usage extends View {
         .children(list.map((g) => h_flex().h(22).gap(8).items_center().text_size(12)
           .child(div().flex_1().min_w(0).truncate().child(label(g.key)))
           .child(div().w(70).flex_none().text_right().text_color(t.muted).child(`${g.n} run${g.n === 1 ? "" : "s"}`))
-          .child(div().w(112).flex_none().text_right().text_color(t.muted).child(`${pct(g.commit?.p)} committed`))
+          .child(div().w(90).flex_none().text_right().text_color(t.muted).child(`${num(g.commitsMed)} commits`))
+          .child(div().w(110).flex_none().text_right().text_color(t.muted).child(g.perCommit == null ? "–" : `${usd(g.perCommit)} / commit`))
           .child(div().w(70).flex_none().text_right().text_color(t.muted).child(usd(g.costMed)))));
       return h_flex().px(10).py(10).gap(24).items_start().bg(t.surface).rounded(8)
         .child(table("By harness", x.harnesses, (h) => HARNESS[h]?.name ?? h)).child(table("By model", x.models, (m) => m));
@@ -604,7 +607,8 @@ export default class Usage extends View {
           .child(v_flex().flex_1().min_w(0).gap(2).child(div().truncate().text_size(13).child(x.key))
             .child(div().truncate().text_size(11).text_color(t.dim).child(by === "skill" ? x.category : `${x.base.n} sessions without it`)))
           .child(div().w(W.n).flex_none().text_right().text_size(12.5).child(String(x.n)))
-          .child(vs(x.commit?.p, x.base.commit?.p, pct, true, x.few))
+          .child(vs(x.commitsMed, x.base.commitsMed, num, true, x.few))
+          .child(vs(x.perCommit, x.base.perCommit, usd, false, x.few))
           .child(vs(x.costMed, x.base.costMed, usd, false, x.few))
           .child(v_flex().w(W.clean).flex_none().items_end().gap(2).child(div().text_size(12.5).child(pct(x.clean?.p)))
             .child(div().text_size(11).text_color(t.dim).child(x.clean ? `${pct(x.clean.lo)}–${pct(x.clean.hi)}` : ""))))
@@ -615,7 +619,7 @@ export default class Usage extends View {
         .text_color(v === by ? t.foreground : t.muted).when(v === by, (el) => el.bg(t.background))
         .hover((x) => x.text_color(t.foreground)).on_click((_e, cx) => { this.skillBy = v; this.skillSel = null; cx.notify(); }).child(label)));
     const table = this.card(t, "Which skills do well", switcher, v_flex().gap(2).child(header).children(sorted.map(row))
-      .child(div().pt(8).text_size(11).text_color(t.dim).child(`Each against the same harnesses' sessions without it. Fewer than ${FEW} sessions: dimmed, too few to tell. Correlation, not cause; a session that used several skills counts for each.`)));
+      .child(div().pt(8).text_size(11).text_color(t.dim).child(`Each against the same harnesses' sessions without it. Fewer than ${FEW} sessions: dimmed, too few to tell. Commits: the median per session, made by its agent or its sub-agents. Cost per commit: spend over those commits (Codex records no cost). Correlation, not cause; a session that used several skills counts for each.`)));
     return [head, table];
   }
 

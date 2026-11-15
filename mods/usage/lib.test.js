@@ -168,10 +168,12 @@ test("skillsOf: per skill, its sessions against the same harnesses' sessions wit
   const { rows, tiles } = skillsOf(sessions, { from: 0, to: 5000 });
   const b = rows.find((r) => r.key === "brainstorming");
   expect(b.n).toBe(2);
-  expect(b.commit.p).toBe(1);             // both led to a commit (a share, not a count: counts overlap across sessions)
+  expect(b.commitsMed).toBe(2);           // median of 3 and 1
+  expect(b.perCommit).toBe(1.5);          // $6 over 4 commits
   expect(b.costMed).toBe(3);              // median of 2 and 4
   expect(b.base.n).toBe(2);               // the two claude sessions without it (omp isn't its harness)
-  expect(b.base.commit.p).toBe(0.5);      // one of the two led to a commit
+  expect(b.base.commitsMed).toBe(1);      // median of 0 and 2
+  expect(b.base.perCommit).toBe(2);       // $4 over 2 commits
   expect(b.base.costMed).toBe(2);         // median of 1 and 3
   expect(b.clean.p).toBe(0.5);
   expect(b.few).toBe(true);               // under 5 sessions: too few to tell
@@ -182,6 +184,13 @@ test("skillsOf: per skill, its sessions against the same harnesses' sessions wit
   expect(tiles).toMatchObject({ sessions: 6, skilled: 3, distinct: 2, top: "brainstorming" });
   expect(tiles.costSkilled).toBe(4);      // median of 2, 4, 10
   expect(tiles.costUnskilled).toBe(2);    // median of 1, 3, 2
+});
+
+test("skillsOf: no commits, or no recorded cost (Codex), leaves cost per commit empty; unknown commits are left out", () => {
+  const one = (o) => skillsOf([sk("claude", { tdd: 1 }, o)], { from: 0, to: 5000 }).rows[0];
+  expect(one({ commits: 0 }).perCommit).toBe(null);
+  expect(one({ commits: 2, cost: null }).perCommit).toBe(null);
+  expect(one({ commits: null }).commitsMed).toBe(null);
 });
 
 test("skillsOf: by category merges a session's skills in one category once; harnesses filter", () => {

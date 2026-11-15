@@ -30,12 +30,6 @@ def git_repo(path):
     os.makedirs(path)
     g = ["git", "-C", path, "-c", "commit.gpgsign=false"]
     subprocess.run(g + ["init", "-q"], check=True)
-    subprocess.run(g + ["config", "user.email", "t@t"], check=True)
-    commits = [(sec, "t@t") for sec in (T - 60, T + 10, T + 3600 + 20 * 60, T + 3600 + 40 * 60, T + 10 * 3600)]
-    for sec, email in commits + [(T + 20, "mate@t")]:  # a teammate's commit never counts
-        env = dict(os.environ, GIT_AUTHOR_DATE=f"@{sec} +0000", GIT_COMMITTER_DATE=f"@{sec} +0000",
-                   GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL=email, GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL=email)
-        subprocess.run(g + ["commit", "-q", "--allow-empty", "-m", "c"], check=True, env=env)
 
 
 def omp_entries(cwd, sid):
@@ -47,7 +41,8 @@ def omp_entries(cwd, sid):
         {"type": "session", "version": 3, "id": sid, "timestamp": iso(T), "cwd": cwd},
         {"type": "thinking_level_change", "id": "x", "timestamp": iso(T), "thinkingLevel": "high"},
         msg(T + 60, {"role": "assistant", "model": "m1", "usage": usage, "stopReason": "toolUse",
-                     "content": [{"type": "toolCall", "name": "bash"}, {"type": "toolCall", "name": "Edit"}]}),
+                     "content": [{"type": "toolCall", "name": "bash", "arguments": {"command": "git add . && git commit -qm x"}},
+                                 {"type": "toolCall", "name": "Edit"}]}),
         msg(T + 61, {"role": "toolResult", "toolName": "bash", "content": [{"type": "text", "text": "\"isError\":true"}],
                      "isError": False}),
         msg(T + 62, {"role": "toolResult", "toolName": "bash", "content": [], "isError": True}),
@@ -87,7 +82,7 @@ class ScanTest(unittest.TestCase):
         claude = [
             {"type": "last-prompt", "lastPrompt": "secret"},
             {"type": "user", "timestamp": iso(T), "message": {"role": "user", "content": "hi"}},
-            a(T + 1, "m1", 3, content=[{"type": "tool_use", "id": "t1", "name": "Bash"}]),
+            a(T + 1, "m1", 3, content=[{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "git commit -m a"}}]),
             a(T + 2, "m1", 7, content=[{"type": "tool_use", "id": "t2", "name": "MultiEdit"}]),
             {"type": "user", "timestamp": iso(T + 3), "toolUseResult": {"interrupted": True},
              "message": {"content": [{"type": "tool_result", "is_error": True}, {"type": "tool_result", "is_error": False}]}},
@@ -113,7 +108,8 @@ class ScanTest(unittest.TestCase):
             "input_tokens": i, "cached_input_tokens": 50, "cache_write_input_tokens": 5, "output_tokens": o,
             "total_tokens": i + o}}}}
         jsonl(rollout, [tc(80, 10), tc(80, 10), tc(100, 20),
-                        {"type": "response_item", "payload": {"type": "function_call", "name": "shell"}},
+                        {"type": "response_item", "payload": {"type": "function_call", "name": "shell",
+                                                              "arguments": json.dumps({"command": ["bash", "-lc", "git commit -m x"]})}},
                         {"type": "response_item", "payload": {"type": "function_call_output", "output": "x"}},
                         {"type": "event_msg", "payload": {"type": "turn_aborted"}},
                         {"type": "compacted", "payload": {"message": ""}}])
@@ -147,6 +143,8 @@ class ScanTest(unittest.TestCase):
         parts = [{"type": "tool", "state": {"status": "completed"}}, {"type": "tool", "state": {"status": "error"}},
                  {"type": "compaction", "auto": True}, {"type": "text", "text": "secret"}]
         con.executemany("insert into part values (?,?,?)", [(str(i), "s1", json.dumps(d)) for i, d in enumerate(parts)])
+        con.execute("insert into part values ('9', 's2', ?)", (json.dumps(
+            {"type": "tool", "tool": "bash", "state": {"status": "completed", "input": {"command": "git commit -m x"}}}),))
         con.commit()
         con.close()
 
@@ -165,7 +163,7 @@ class ScanTest(unittest.TestCase):
         self.assertEqual((m["h"], m["sub"], r["omp-sub"]["sub"]), ("omp", False, True))
         self.assertEqual((m["start"], m["end"]), (T * 1000, (T + 3600) * 1000))
         self.assertEqual(m["repo"], self.repo)
-        self.assertEqual(m["commits"], 2)  # T+10 and end+20min; not T-60 nor end+40min
+        self.assertEqual((m["commits"], r["omp-sub"]["commits"]), (2, 1))  # its own, plus its sub-agent's
         self.assertEqual((m["req"], m["tools"], m["toolErr"], m["aborts"], m["apiErr"], m["compactions"]),
                          (3, 6, 1, 1, 1, 1))
         self.assertEqual(m["tc"], {"edit": 1, "read": 1, "bash": 1, "web": 1, "agent": 1, "other": 1})
@@ -176,7 +174,7 @@ class ScanTest(unittest.TestCase):
 
     def test_pi_missing_cwd(self):
         p = self.by_id()["pi-1"]
-        self.assertEqual((p["h"], p["repo"], p["commits"], p["sub"]), ("pi", None, None, False))
+        self.assertEqual((p["h"], p["repo"], p["commits"], p["sub"]), ("pi", None, 1, False))  # the transcript knows, even with the folder gone
 
     def test_claude(self):
         r = self.by_id()
@@ -188,6 +186,7 @@ class ScanTest(unittest.TestCase):
         self.assertEqual(c["tc"], {"edit": 2, "read": 1, "bash": 1, "web": 1, "agent": 1, "other": 1})
         self.assertEqual(s["tc"], {"edit": 1, "read": 0, "bash": 1, "web": 0, "agent": 0, "other": 0})
         self.assertEqual((c["effort"], c["cost"], s["cost"]), ("xhigh", 1.25, None))
+        self.assertEqual((c["commits"], s["commits"]), (2, 1))  # the sub-agent's commit is the session's too
 
     def test_codex(self):
         r = self.by_id()
@@ -196,8 +195,8 @@ class ScanTest(unittest.TestCase):
         self.assertEqual((c["tin"], c["tcr"], c["tcw"], c["tout"], c["tok"]), (45, 50, 5, 20, 120))
         self.assertEqual((c["req"], c["tools"], c["aborts"], c["compactions"]), (2, 1, 1, 1))
         self.assertEqual(c["tc"]["bash"], 1)  # function_call "shell"
-        self.assertEqual((c["effort"], c["models"], c["cost"], c["commits"]), ("xhigh", {"gpt": 120}, None, 2))
-        self.assertEqual(r["c3"]["commits"], 3)  # window capped at start+8h+30min: T+10h is out
+        self.assertEqual((c["effort"], c["models"], c["cost"], c["commits"]), ("xhigh", {"gpt": 120}, None, 1))
+        self.assertEqual(r["c3"]["commits"], None)  # no rollout: no transcript to read
         self.assertEqual((sub["tok"], sub["tin"], sub["effort"], sub["repo"]), (7, None, "off", None))
 
     def test_opencode(self):
@@ -207,6 +206,7 @@ class ScanTest(unittest.TestCase):
         self.assertEqual((s1["req"], s1["tok"], s1["tout"], s1["models"]), (2, 30, 10, {"glm": 30}))
         self.assertEqual((s1["tools"], s1["toolErr"], s1["compactions"], s1["aborts"]), (2, 1, 1, 1))
         self.assertEqual((s1["effort"], s1["cost"], s2["apiErr"]), ("max", None, 1))
+        self.assertEqual((s1["commits"], s2["commits"]), (1, 1))  # s2 is s1's sub-agent
 
     def test_cache_keeps_vanished_and_reparses_changed(self):
         self.by_id()
@@ -318,6 +318,18 @@ class SkillsTest(unittest.TestCase):
         con.commit()
         con.close()
         self.assertEqual(scan.parse_opencode(db)[0]["skills"], {"today-note": 1})
+
+
+class GitCommitsTest(unittest.TestCase):
+    """A session's commits are the `git commit` calls its agent ran, read from the transcript."""
+
+    def test_counts_commit_commands(self):
+        n = scan.git_commits
+        self.assertEqual(n("git commit -qm x"), 1)
+        self.assertEqual(n("git -C /r -c commit.gpgsign=false commit -m a && git commit --amend --no-edit"), 2)
+        self.assertEqual(n(["bash", "-lc", "cd r; git commit -m x"]), 1)
+        for none in ("git log --format=commit", "git commit-tree abc", "echo hi", "", None, "git show HEAD~1"):
+            self.assertEqual(n(none), 0, none)
 
 
 import output  # noqa: E402
