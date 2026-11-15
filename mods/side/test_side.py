@@ -158,6 +158,21 @@ class ClaudeTest(unittest.TestCase):
         with open(conv) as f:
             self.assertIn("FIRST QUESTION about margo", f.read())
 
+    def test_background_mid_work_keeps_the_question(self):
+        # pressed mid-work: the last entry is a tool marker and no user-start tail fits; keep as much as fits instead
+        es = [("user", "the question"), ("agent", "x" * 100), ("agent", "[used Bash]")]
+        r = claude.recent(es, cap=50)
+        self.assertEqual(r[-1], ("agent", "[used Bash]"))
+        self.assertEqual(sum(len(t) for _, t in r), 50)
+        self.assertGreater(len(r), 1)
+
+    def test_chat_files_private(self):
+        argv = self.copy(True)["launch"]["argv"]
+        d = os.path.dirname(argv[4])
+        self.assertEqual(os.stat(d).st_mode & 0o777, 0o700)
+        for f in ("background.md", "conversation.md"):
+            self.assertEqual(os.stat(os.path.join(d, f)).st_mode & 0o777, 0o600)
+
     def test_copy_fresh_not_answer_only(self):
         r = self.copy(False)
         self.assertEqual(r["launch"]["argv"][1], "--append-system-prompt-file")
@@ -312,6 +327,17 @@ class HostTest(unittest.TestCase):
         # an idle slot is only ever seen at a key press, before its chat starts
         self.assertIn("Opening a side chat", host.OPENING)
         self.assertFalse(hasattr(host, "ENDED"))
+
+    def test_broken_code_is_not_ready(self):
+        # a half-saved host.py must never replace a running host (it would exit, and Herdr would delete its block)
+        good, bad = os.path.join(self.dir, "good.py"), os.path.join(self.dir, "bad.py")
+        with open(good, "w") as f:
+            f.write("x = 1\n")
+        with open(bad, "w") as f:
+            f.write("def (:\n")
+        self.assertTrue(host.ready(good))
+        self.assertFalse(host.ready(bad))
+        self.assertFalse(host.ready(os.path.join(self.dir, "gone.py")))
 
     def test_changed_code_is_noticed(self):
         # an updated host.py restarts the host in place (exec: same terminal, never finished)

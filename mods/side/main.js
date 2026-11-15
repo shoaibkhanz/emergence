@@ -15,7 +15,7 @@ import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, hc, run, theme, props, nextCommand, focused, panes, agents, terminals, spaces, knownAgents, notify,
   openOverlay, closeOverlay, appHome, home, layout, shared, setShared } from "herdr";
-import { NAMES, harnessOf, decide, noticeFor, tabsOf, slotView, claim, bannerOf, withoutTab, INTRO } from "./lib.js";
+import { NAMES, harnessOf, decide, noticeFor, tabsOf, slotView, claim, bannerOf, withoutTab, INTRO, withoutStarting } from "./lib.js";
 
 const SUPPORTED = ["claude", "opencode"]; // harnesses with an adapter in side.py; codex, pi and omp come next
 const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(c, id)).find(Boolean));
@@ -28,6 +28,7 @@ const py = (file, args, timeout = 30000) => exec("python3", ["-B", `${appHome()}
 const SLOT_DIR = () => `${appHome()}/data/side/slots`;
 const layoutSlots = () => (find(layout(), "side-slots")?.children ?? []).map((c) => c.id);
 const view = () => slotView(terminals(), layoutSlots(), shared("side.tabs") ?? {}, Date.now());
+const starting = {}; // slot -> when its host's start began (lib withoutStarting); one resident copy starts hosts
 
 async function helper(op, req) {
   try {
@@ -88,10 +89,11 @@ export default class Side extends View {
       if (d.action !== "open") return say(d.notice ?? { title: "Choose harnesses first" });
       const slotted = !!find(layout(), "side-slots");
       await this.warming; // a host being started for a slot must not be started twice
-      const spot = slotted ? claim(view()) : null; // before any copy: a copy with nowhere to go would be left behind
+      const spot = slotted ? claim(withoutStarting(view(), starting, Date.now())) : null; // before any copy: a copy with nowhere to go would be left behind
       if (slotted && !spot) return say({ title: "Close a side chat first" });
       const label = `${NAMES[h]} · ${(pane.cwd ?? "").split("/").filter(Boolean).pop()}`; // folders tell chats apart; tab names repeat
       const from = pane.branch || agent?.tab_name || null; // as the inbox names an agent
+      if (spot && !spot.create) { this.tab(spot.slot, h, label, from); show(spot.slot); shown = spot.slot; } // at once: its host is warm
       const pid = terminals().find((t) => t.address === pane.terminal)?.foreground?.pid;
       const found = await helper("locate", { harness: h, pid, cwd: pane.cwd });
       if (found.error) return warn(noticeFor(found, h));
@@ -105,6 +107,7 @@ export default class Side extends View {
     } finally {
       if (shown && !ok) setShared("side.tabs", withoutTab(shared("side.tabs") ?? {}, shown)); // the panel moves off it
       this.busy = false;
+      this.warm(); // the next press's slot
     }
   }
 
@@ -115,6 +118,7 @@ export default class Side extends View {
 
   // A slot's host: its terminal runs host.py, which never ends (the slot's layout block depends on it).
   async host(slot) {
+    starting[slot] = Date.now();
     const r = await hc(["run", "--bg", "--name", slot, "--cwd", home(), "--no-parent", "--no-notify", "--",
       "python3", "-B", `${appHome()}/mods/side/host.py`, "serve", slot, SLOT_DIR()]);
     if (r.code !== 0) warn({ title: "Side chat couldn't start", body: (r.stderr || r.stdout).trim().split("\n").pop() });
@@ -123,13 +127,13 @@ export default class Side extends View {
 
   // Keep one idle host ready, so the next key press shows its slot at once (its terminal exists before it's shown).
   warm() {
-    if (this.warming || !find(layout(), "side-slots")) return;
-    const v = view();
+    if (this.warming || this.busy || !find(layout(), "side-slots")) return; // a press claims its own slot
+    const v = withoutStarting(view(), starting, Date.now());
     if (v.idle.length || !v.missing.length) return;
     this.warming = this.host(v.missing[0]).catch(() => false).finally(() => { this.warming = null; });
   }
 
-  // Hand the chat to its slot's host (starting the host first when none was warm), then warm the next one.
+  // Hand the chat to its slot's host (starting the host first when none was warm).
   async start({ slot, create }, launch, harness, label, from) {
     if (create && !(await this.host(slot))) return false;
     const r = await py("host.py", ["send", slot, SLOT_DIR(), JSON.stringify({ argv: launch.argv, cwd: launch.cwd, intro: INTRO })]);
@@ -141,7 +145,6 @@ export default class Side extends View {
       await exec("sleep", ["0.3"]);
       show(slot);
     }
-    this.warm();
     return true;
   }
 

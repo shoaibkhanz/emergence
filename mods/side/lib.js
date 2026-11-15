@@ -56,6 +56,12 @@ export function claim(view) {
   return view.missing.length ? { slot: view.missing[0], create: true } : null;
 }
 
+// A host just started (hc run) may not be live in terminals() yet: leave its slot out of `missing` for a while, so
+// it's never started twice. starting: {slot: when its start began}.
+const STARTING_MS = 10000;
+export const withoutStarting = (view, starting, now) =>
+  ({ ...view, missing: view.missing.filter((s) => !(now - (starting[s] ?? -Infinity) < STARTING_MS)) });
+
 // The open slots in order, each with what the panel saved about it (shared "side.tabs").
 export const tabsOf = (open, saved) => SLOTS.filter((s) => open.includes(s))
   .map((slot) => ({ slot, harness: saved[slot]?.harness ?? null, label: saved[slot]?.label ?? slot }));

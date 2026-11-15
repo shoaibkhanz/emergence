@@ -78,6 +78,16 @@ def changed(path: str, since: float) -> bool:
         return False
 
 
+def ready(path: str) -> bool:
+    """Whether the file is a whole Python program (a half-saved edit isn't: running it would end the host)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            compile(f.read(), path, "exec")
+        return True
+    except (OSError, SyntaxError, ValueError):
+        return False
+
+
 def idle() -> None:
     print(CLEAR + OPENING, end="", flush=True)
 
@@ -92,7 +102,9 @@ def serve(slot: str, d: str) -> None:
     while True:
         try:
             if changed(me, since):  # an updated host: restart in place, never ending (the slot's block needs it)
-                os.execv(sys.executable, [sys.executable, "-B", me, "serve", slot, d])
+                if ready(me):
+                    os.execv(sys.executable, [sys.executable, "-B", me, "serve", slot, d])
+                since = os.path.getmtime(me)  # broken: keep running this version, look again at the next save
             req = take(req_path)
             if req:
                 if os.path.exists(stop_path):

@@ -98,36 +98,44 @@ def digest(es: list) -> str:
 
 
 def recent(es: list, cap: int = CAP) -> list:
-    """The longest tail of entries that starts at something the person said and fits in cap characters; if none fits,
-    the last entry alone, trimmed to its end."""
-    best, size = None, 0
+    """The longest tail of entries that starts at something the person said and fits in cap characters. If none
+    does (pressed mid-work, or one huge exchange), the longest tail that fits, topped up with the end of the entry
+    before it, so the background is never just "[used Bash]"."""
+    best, size, j = None, 0, len(es)
     for i in range(len(es) - 1, -1, -1):
-        size += len(es[i][1])
-        if size > cap:
+        if size + len(es[i][1]) > cap:
             break
+        size += len(es[i][1])
+        j = i
         if es[i][0] == "user":
             best = i
     if best is not None:
         return es[best:]
-    return [(es[-1][0], es[-1][1][-cap:])] if es else []
+    rest = cap - size
+    head = [(es[j - 1][0], es[j - 1][1][-rest:])] if j > 0 and rest > 0 else []
+    return head + es[j:]
+
+
+def _write(path: str, text: str) -> None:
+    """A private file (0600): the conversation is as private as Claude's own transcripts."""
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8") as f:
+        f.write(text)
 
 
 def _write_chat(sid: str, transcript: str, data_dir: str) -> str:
-    with open(transcript) as f:
+    with open(transcript, encoding="utf-8") as f:
         es, summary = entries(f)
     chats = os.path.join(data_dir, "chats")
     d = os.path.join(chats, f"{int(time.time() * 1000)}-{sid[:8]}")
-    os.makedirs(d)
+    os.makedirs(d, mode=0o700)
     conv = os.path.join(d, "conversation.md")
-    with open(conv, "w") as f:
-        f.write(digest(es))
+    _write(conv, digest(es))
     bg = [INSTR, f"You're a side chat beside an agent. Its whole conversation so far is in {conv}; read it in parts "
                  "when asked about something not below.",
           f"## Earlier, summarised\n\n{summary}" if summary else "",
           "## Most recent exchanges\n" + digest(recent(es))]
     path = os.path.join(d, "background.md")
-    with open(path, "w") as f:
-        f.write("\n\n".join(b for b in bg if b))
+    _write(path, "\n\n".join(b for b in bg if b))
     for old in sorted(os.listdir(chats))[:-KEEP]:
         shutil.rmtree(os.path.join(chats, old), ignore_errors=True)
     return path

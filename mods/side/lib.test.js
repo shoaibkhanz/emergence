@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { harnessOf, decide, noticeFor, tabsOf, SLOTS, slotView, claim, bannerOf, withoutTab, INTRO } from "./lib.js";
+import { harnessOf, decide, noticeFor, tabsOf, SLOTS, slotView, claim, bannerOf, withoutTab, INTRO, withoutStarting } from "./lib.js";
 
 const installed = { claude: true, opencode: true, codex: true, pi: false, omp: true };
 const supported = ["claude", "opencode"];
@@ -81,4 +81,12 @@ test("withoutTab: a failed press leaves no pending tab behind (so the panel move
 test("INTRO: the slot's first line says the history is kept and the chat can carry on here", () => {
   expect(INTRO).toContain("conversation as background");
   expect(INTRO).toContain("Nothing you type here reaches the agent");
+});
+
+test("withoutStarting: a slot whose host was just started isn't offered again until it's live (or 10s pass)", () => {
+  const v = { open: [], idle: [], missing: ["side-1", "side-2"] };
+  expect(withoutStarting(v, { "side-1": 1000 }, 5000).missing).toEqual(["side-2"]);
+  expect(withoutStarting(v, { "side-1": 1000 }, 12000).missing).toEqual(["side-1", "side-2"]);
+  expect(claim(withoutStarting(v, { "side-1": 1000, "side-2": 1000 }, 2000))).toBe(null);
+  expect(v.missing).toEqual(["side-1", "side-2"]); // not mutated
 });
