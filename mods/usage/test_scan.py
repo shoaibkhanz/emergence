@@ -335,6 +335,10 @@ class GitCommitsTest(unittest.TestCase):
 import output  # noqa: E402
 
 
+# git reads a small @-number (like @0) as a date near now, not the epoch: a real timestamp keeps both commits listed.
+SINCE = 1_000_000_000_000  # Sep 2001, in ms
+
+
 class OutputTest(unittest.TestCase):
     """Commit line counts: listed cheaply, diffed once per commit (a commit's diff never changes), lockfiles skipped."""
 
@@ -349,11 +353,11 @@ class OutputTest(unittest.TestCase):
         g("add", "."); g("commit", "-qm", "two")
 
     def test_counts_commits_once_and_skips_lockfiles(self):
-        commits, kept = output.commit_counts(self.repo, "me@example.com", 0, {"stale": [9, 9]})
+        commits, kept = output.commit_counts(self.repo, "me@example.com", SINCE, {"stale": [9, 9]})
         self.assertEqual(sorted((c["add"], c["del"]) for c in commits), [(2, 0), (3, 0)])  # the lockfile's 50 lines don't count
         self.assertEqual(sorted(kept.values()), [[2, 0], [3, 0]])  # only the commits listed: "stale" is dropped
         with mock.patch.object(output, "run", wraps=output.run) as run:
-            again, kept2 = output.commit_counts(self.repo, "me@example.com", 0, kept)
+            again, kept2 = output.commit_counts(self.repo, "me@example.com", SINCE, kept)
         self.assertEqual(sorted((c["add"], c["del"]) for c in again), [(2, 0), (3, 0)])
         self.assertEqual(kept2, kept)
         self.assertFalse(any("show" in call.args[0] for call in run.call_args_list))  # nothing diffed the second time
