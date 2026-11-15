@@ -1,0 +1,134 @@
+{
+ "data": [
+  {
+   "id": "ses_e216a49d7ffeg0NDXLBEctOR0x",
+   "fork": {
+    "sessionID": "ses_4a04ddc87ffeQf2Y1N6phGn5ee",
+    "boundary": {
+     "type": "through",
+     "messageID": "msg_b5fb9db48002Nt9ukwD05ZcEz2"
+    }
+   },
+   "projectID": "4049bd882c5ac17f576502b52e8b84d71873160a",
+   "agent": "plan",
+   "model": {
+    "id": "claude-sonnet-4-5",
+    "providerID": "anthropic",
+    "variant": "default"
+   },
+   "cost": 0,
+   "tokens": {
+    "input": 0,
+    "output": 0,
+    "reasoning": 0,
+    "cache": {
+     "read": 0,
+     "write": 0
+    }
+   },
+   "time": {
+    "created": 1794735715881,
+    "updated": 1794735715890
+   },
+   "title": "\u2026",
+   "location": {
+    "directory": "/Users/shoaib/hands-on-projects/generative-ai-with-fastapi"
+   }
+  },
+  {
+   "id": "ses_e216b2c09ffeB15yk26lxIYbjp",
+   "fork": {
+    "sessionID": "ses_4a04ddc87ffeQf2Y1N6phGn5ee",
+    "boundary": {
+     "type": "before",
+     "messageID": "msg_b5fb647f1001v1Q3splleugB7X"
+    }
+   },
+   "projectID": "4049bd882c5ac17f576502b52e8b84d71873160a",
+   "agent": "plan",
+   "model": {
+    "id": "claude-sonnet-4-5",
+    "providerID": "anthropic",
+    "variant": "default"
+   },
+   "cost": 0,
+   "tokens": {
+    "input": 0,
+    "output": 0,
+    "reasoning": 0,
+    "cache": {
+     "read": 0,
+     "write": 0
+    }
+   },
+   "time": {
+    "created": 1794735658030,
+    "updated": 1794735658435
+   },
+   "title": "\u2026",
+   "location": {
+    "directory": "/Users/shoaib/hands-on-projects/generative-ai-with-fastapi"
+   }
+  },
+  {
+   "id": "ses_4984b977affeYyauIS5ge2WHJ8",
+   "projectID": "4049bd882c5ac17f576502b52e8b84d71873160a",
+   "agent": "plan",
+   "model": {
+    "id": "claude-opus-4-1",
+    "providerID": "anthropic",
+    "variant": "default"
+   },
+   "cost": 0,
+   "tokens": {
+    "input": 16,
+    "output": 9784,
+    "reasoning": 0,
+    "cache": {
+     "read": 96709,
+     "write": 77684
+    }
+   },
+   "time": {
+    "created": 1766971435141,
+    "updated": 1767022567090
+   },
+   "title": "\u2026",
+   "location": {
+    "directory": "/Users/shoaib/hands-on-projects/generative-ai-with-fastapi"
+   }
+  },
+  {
+   "id": "ses_4996f0928ffeAOQ7sDBdurM1vE",
+   "projectID": "4049bd882c5ac17f576502b52e8b84d71873160a",
+   "agent": "plan",
+   "model": {
+    "id": "claude-sonnet-4-5",
+    "providerID": "anthropic",
+    "variant": "default"
+   },
+   "cost": 0.06548925,
+   "tokens": {
+    "input": 1,
+    "output": 629,
+    "reasoning": 0,
+    "cache": {
+     "read": 0,
+     "write": 14947
+    }
+   },
+   "time": {
+    "created": 1766952335063,
+    "updated": 1766952349460
+   },
+   "title": "\u2026",
+   "location": {
+    "directory": "/Users/shoaib/hands-on-projects/generative-ai-with-fastapi"
+   }
+  }
+ ],
+ "cursor": {
+  "previous": "eyJkaXJlY3RvcnkiOiIvVXNlcnMvc2hvYWliL2hhbmRzLW9uLXByb2plY3RzL2dlbmVyYXRpdmUtYWktd2l0aC1mYXN0YXBpIiwiYW5jaG9yIjp7ImlkIjoic2VzX2UyMTZhNDlkN2ZmZWcwTkRYTEJFY3RPUjB4IiwidGltZSI6MTc5NDczNTcxNTg5MCwiZGlyZWN0aW9uIjoicHJldmlvdXMifX0",
+  "next": "eyJkaXJlY3RvcnkiOiIvVXNlcnMvc2hvYWliL2hhbmRzLW9uLXByb2plY3RzL2dlbmVyYXRpdmUtYWktd2l0aC1mYXN0YXBpIiwiYW5jaG9yIjp7ImlkIjoic2VzXzRhYTkwM2EwZWZmZWh3SkN3Ym9FOG1yMzZmIiwidGltZSI6MTc2NjY2NDk1NjA4OCwiZGlyZWN0aW9uIjoibmV4dCJ9fQ"
+ }
+}

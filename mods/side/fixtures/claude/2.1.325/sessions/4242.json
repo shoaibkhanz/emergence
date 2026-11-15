@@ -1,0 +1,9 @@
+{
+ "pid": 4242,
+ "sessionId": "11111111-2222-3333-4444-555555555555",
+ "cwd": "/w/margo",
+ "startedAt": 1794677430419,
+ "version": "2.1.325",
+ "kind": "interactive",
+ "entrypoint": "cli"
+}

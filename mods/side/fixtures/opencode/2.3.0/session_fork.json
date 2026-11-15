@@ -1,0 +1,37 @@
+{
+ "data": {
+  "id": "ses_e214046b1ffe3mxz4AIx9i2lpk",
+  "fork": {
+   "sessionID": "ses_4a04ddc87ffeQf2Y1N6phGn5ee",
+   "boundary": {
+    "type": "through",
+    "messageID": "msg_b5fb9db48002Nt9ukwD05ZcEz2"
+   }
+  },
+  "projectID": "4049bd882c5ac17f576502b52e8b84d71873160a",
+  "agent": "plan",
+  "model": {
+   "id": "claude-sonnet-4-5",
+   "providerID": "anthropic",
+   "variant": "default"
+  },
+  "cost": 0,
+  "tokens": {
+   "input": 0,
+   "output": 0,
+   "reasoning": 0,
+   "cache": {
+    "read": 0,
+    "write": 0
+   }
+  },
+  "time": {
+   "created": 1794738469199,
+   "updated": 1794738469199
+  },
+  "title": "\u2026",
+  "location": {
+   "directory": "/Users/shoaib/hands-on-projects/generative-ai-with-fastapi"
+  }
+ }
+}
