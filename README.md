@@ -64,8 +64,8 @@ leaves your machine.
 <tr>
 <td width="50%"><img src="docs/images/usage-overview.png" alt="Usage overview"><br><b>Overview.</b> Sessions, cost, agent
 commits and clean runs against the period before; the period day by day; where the spend went, by project.</td>
-<td width="50%"><img src="docs/images/usage-compare.png" alt="Usage compare"><br><b>Compare.</b> Clean-run rate (95%
-range), cost per clean run and commits, per harness and model; what each is best at, by kind of work.</td>
+<td width="50%"><img src="docs/images/usage-compare.png" alt="Usage compare"><br><b>Compare.</b> What each harness and
+model is best at, by kind of work; above it, clean-run rate, cost per clean run and commits per pair.</td>
 </tr>
 <tr>
 <td><img src="docs/images/usage-harnesses.png" alt="Usage harnesses"><br><b>Harnesses.</b> Tokens, models and effort
@@ -76,10 +76,13 @@ their cost.</td>
 <tr>
 <td><img src="docs/images/usage-rhythm.png" alt="Usage rhythm"><br><b>Rhythm.</b> When you work, agents at once, run
 lengths.</td>
-<td valign="top">Only this machine's logs count. Claude Code prunes transcripts after 30 days (<code>cleanupPeriodDays</code>);
-Usage keeps every session it has read.</td>
+<td><img src="docs/images/usage-skills.png" alt="Usage skills"><br><b>Skills.</b> Each skill against the same
+harnesses' sessions without it: commits, cost per commit, median cost, clean runs; by harness and model.</td>
 </tr>
 </table>
+
+Only this machine's logs count. Claude Code prunes transcripts after 30 days (`cleanupPeriodDays`); Usage keeps every
+session it has read.
 
 ### Sidebar
 
