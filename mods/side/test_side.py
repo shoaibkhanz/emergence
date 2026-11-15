@@ -6,6 +6,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import host  # noqa: E402
 import side  # noqa: E402
 from adapters import ADAPTERS  # noqa: E402
 
@@ -66,14 +67,19 @@ INSTR = "Answer and explain; don't edit files. Files may have changed since this
 FIX = os.path.join(HERE, "fixtures")
 
 
-def claude_home(tmp, pid):
-    """A home whose ~/.claude/sessions/<pid>.json is the 2.1.325 fixture."""
+def claude_home(tmp, pid, transcript=True):
+    """A home whose ~/.claude/sessions/<pid>.json is the 2.1.325 fixture, and (unless a fresh claude that hasn't been
+    asked anything yet) its transcript under ~/.claude/projects/."""
     d = os.path.join(tmp, ".claude", "sessions")
     os.makedirs(d)
     with open(os.path.join(FIX, "claude", "2.1.325", "sessions", "4242.json")) as f:
         data = json.load(f)
     with open(os.path.join(d, f"{pid}.json"), "w") as f:
         json.dump({**data, "pid": pid}, f)
+    if transcript:
+        proj = os.path.join(tmp, ".claude", "projects", "-w-margo")
+        os.makedirs(proj)
+        open(os.path.join(proj, f"{data['sessionId']}.jsonl"), "w").close()
     return tmp
 
 
@@ -93,6 +99,12 @@ class ClaudeTest(unittest.TestCase):
         self.assertEqual(r["session"], {"harness": "claude", "id": "11111111-2222-3333-4444-555555555555",
                                         "cwd": "/w/margo"})
         self.assertEqual(r["confidence"], "exact")
+
+    def test_locate_fresh_claude_without_transcript(self):
+        # a claude writes sessions/<pid>.json at start but its transcript only at the first prompt: nothing to copy yet
+        e = env(home=claude_home(self.tmp, 300, transcript=False), procs=lambda pid: TREE)
+        r = side.handle("locate", {"harness": "claude", "pid": 100, "cwd": "/w/margo"}, e)
+        self.assertEqual(r["error"]["code"], "not-found")
 
     def test_locate_no_session_file(self):
         e = env(home=self.tmp, procs=lambda pid: TREE)
@@ -144,7 +156,7 @@ def oc_fixture(name):
 
 
 OC_TREE = [side.Proc(100, ["-zsh"], "ttys004"), side.Proc(200, ["opencode"], "ttys004")]
-OC_DIR = "/Users/shoaib/hands-on-projects/generative-ai-with-fastapi"
+OC_DIR = "/w/fastapi"
 
 
 class OpenCodeTest(unittest.TestCase):
@@ -163,7 +175,8 @@ class OpenCodeTest(unittest.TestCase):
         calls = []
         e = env(procs=lambda pid: OC_TREE, run=lambda argv: calls.append(argv) or (0, json.dumps(listed)))
         r = side.handle("locate", {"harness": "opencode", "pid": 100, "cwd": OC_DIR}, e)
-        self.assertEqual(r["session"]["id"], "ses_e216a49d7ffeg0NDXLBEctOR0x")
+        # the two newest rows are copies (their "fork" is set; a side chat makes those): the newest original wins
+        self.assertEqual(r["session"]["id"], "ses_4984b977affeYyauIS5ge2WHJ8")
         self.assertEqual(r["confidence"], "guess")
         self.assertEqual(calls, [["opencode", "api", "session.list", "--param", f"directory={OC_DIR}"]])
 
@@ -182,12 +195,61 @@ class OpenCodeTest(unittest.TestCase):
         self.assertEqual(r["launch"], {"argv": ["opencode", "-s", "ses_e214046b1ffe3mxz4AIx9i2lpk"], "cwd": OC_DIR})
         self.assertEqual(r["note"], "can-edit")
 
+    def test_locate_only_copies_left(self):
+        listed = {"data": [r for r in json.loads(oc_fixture("session_list.json"))["data"] if r.get("fork")], "cursor": {}}
+        e = env(procs=lambda pid: OC_TREE, run=lambda argv: (0, json.dumps(listed)))
+        r = side.handle("locate", {"harness": "opencode", "pid": 100, "cwd": OC_DIR}, e)
+        self.assertEqual(r["session"]["id"], "ses_e216a49d7ffeg0NDXLBEctOR0x")  # better a copy than nothing
+
     def test_copy_fork_fails(self):
-        e = env(run=lambda argv: (1, "HTTP 400 Bad Request"))
+        body = json.loads(oc_fixture("session_fork_400.json"))  # what the API answers without a body
+        e = env(run=lambda argv: (1, f"HTTP 400 Bad Request {body['message']}"))
         session = {"harness": "opencode", "id": "ses_x", "cwd": OC_DIR}
         r = side.handle("copy", {"session": session, "pid": 100, "answerOnly": True}, e)
         self.assertEqual(r["error"]["code"], "copy-failed")
         self.assertIn("HTTP 400", r["error"]["message"])
+
+
+class HostTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.mkdtemp()
+
+    def test_send_then_take(self):
+        host.send("side-2", self.dir, {"argv": ["claude", "--resume", "x"], "cwd": "/w"})
+        req_path, _ = host.paths("side-2", self.dir)
+        self.assertEqual(host.take(req_path), {"argv": ["claude", "--resume", "x"], "cwd": "/w"})
+        self.assertIsNone(host.take(req_path))  # taken once
+        self.assertEqual([f for f in os.listdir(self.dir) if f.endswith(".tmp")], [])
+
+    def test_stale_request_is_dropped(self):
+        # a request no host picked up (a host that wasn't running): never start an old chat later
+        host.send("side-1", self.dir, {"argv": ["claude"], "cwd": "/w"})
+        req_path, _ = host.paths("side-1", self.dir)
+        old = os.path.getmtime(req_path) - host.STALE_S - 1
+        os.utime(req_path, (old, old))
+        self.assertIsNone(host.take(req_path))
+        self.assertFalse(os.path.exists(req_path))
+
+    def test_corrupt_request_is_dropped(self):
+        req_path, _ = host.paths("side-1", self.dir)
+        with open(req_path, "w") as f:
+            f.write("{nope")
+        self.assertIsNone(host.take(req_path))
+        self.assertFalse(os.path.exists(req_path))
+
+    def test_run_finishes(self):
+        _, stop_path = host.paths("side-1", self.dir)
+        self.assertEqual(host.run({"argv": ["true"], "cwd": self.dir}, stop_path, poll=0.05), 0)
+
+    def test_stop_ends_the_chat_not_the_host(self):
+        import time
+        _, stop_path = host.paths("side-1", self.dir)
+        host.stop("side-1", self.dir)
+        t = time.time()
+        host.run({"argv": ["sleep", "30"], "cwd": self.dir}, stop_path, poll=0.05)
+        self.assertLess(time.time() - t, 5)
+        self.assertFalse(os.path.exists(stop_path))
 
 
 if __name__ == "__main__":

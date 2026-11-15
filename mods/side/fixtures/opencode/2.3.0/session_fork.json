@@ -8,7 +8,7 @@
     "messageID": "msg_b5fb9db48002Nt9ukwD05ZcEz2"
    }
   },
-  "projectID": "4049bd882c5ac17f576502b52e8b84d71873160a",
+  "projectID": "proj",
   "agent": "plan",
   "model": {
    "id": "claude-sonnet-4-5",
@@ -31,7 +31,7 @@
   },
   "title": "\u2026",
   "location": {
-   "directory": "/Users/shoaib/hands-on-projects/generative-ai-with-fastapi"
+   "directory": "/w/fastapi"
   }
  }
 }

@@ -31,14 +31,31 @@ export function noticeFor(answer, harness) {
       : { title: "Side chat couldn't start", body: answer.error.message };
   }
   if (answer?.confidence === "guess") {
-    return { title: `Copied the newest ${name} session in ${(answer.session?.cwd ?? "").split("/").filter(Boolean).pop()}` };
+    const folder = (answer.session?.cwd ?? "").split("/").filter(Boolean).pop();
+    return { title: `Copied the newest ${name} session${folder ? ` in ${folder}` : ""}` };
   }
   if (answer?.note === "can-edit") return { title: "This copy can edit files" };
   return null;
 }
 
-export const freeSlot = (live) => SLOTS.find((s) => !live.includes(s)) ?? null;
+// The live side-N terminals are slot hosts (host.py) that never end: Herdr deletes a layout block whose terminal is
+// finished, and emergence.json is the repo's. A slot is open while an agent runs in it, or for a moment after a chat
+// was handed to it (tabs[slot].at, before the host has started it); idle while its host waits; missing with no host.
+// Only slots the layout still has count.
+const PENDING_MS = 15000;
+export function slotView(terminals, layoutSlots, tabs, now) {
+  const live = new Map(terminals.filter((t) => t.state === "live" && layoutSlots.includes(t.name)).map((t) => [t.name, t]));
+  const ordered = SLOTS.filter((s) => layoutSlots.includes(s));
+  const open = ordered.filter((s) => live.has(s) && (live.get(s).program?.agent || now - (tabs[s]?.at ?? -Infinity) < PENDING_MS));
+  return { open, idle: ordered.filter((s) => live.has(s) && !open.includes(s)), missing: ordered.filter((s) => !live.has(s)) };
+}
 
-// The live slots in order, each with what the panel saved about it (localStorage "tabs").
-export const tabsOf = (live, saved) => SLOTS.filter((s) => live.includes(s))
+// Where a new side chat goes: an idle host first, else a slot that needs one started; null when all six are open.
+export function claim(view) {
+  if (view.idle.length) return { slot: view.idle[0], create: false };
+  return view.missing.length ? { slot: view.missing[0], create: true } : null;
+}
+
+// The open slots in order, each with what the panel saved about it (shared "side.tabs").
+export const tabsOf = (open, saved) => SLOTS.filter((s) => open.includes(s))
   .map((slot) => ({ slot, harness: saved[slot]?.harness ?? null, label: saved[slot]?.label ?? slot }));

@@ -9,7 +9,7 @@
      "messageID": "msg_b5fb9db48002Nt9ukwD05ZcEz2"
     }
    },
-   "projectID": "4049bd882c5ac17f576502b52e8b84d71873160a",
+   "projectID": "proj",
    "agent": "plan",
    "model": {
     "id": "claude-sonnet-4-5",
@@ -32,7 +32,7 @@
    },
    "title": "\u2026",
    "location": {
-    "directory": "/Users/shoaib/hands-on-projects/generative-ai-with-fastapi"
+    "directory": "/w/fastapi"
    }
   },
   {
@@ -44,7 +44,7 @@
      "messageID": "msg_b5fb647f1001v1Q3splleugB7X"
     }
    },
-   "projectID": "4049bd882c5ac17f576502b52e8b84d71873160a",
+   "projectID": "proj",
    "agent": "plan",
    "model": {
     "id": "claude-sonnet-4-5",
@@ -67,12 +67,12 @@
    },
    "title": "\u2026",
    "location": {
-    "directory": "/Users/shoaib/hands-on-projects/generative-ai-with-fastapi"
+    "directory": "/w/fastapi"
    }
   },
   {
    "id": "ses_4984b977affeYyauIS5ge2WHJ8",
-   "projectID": "4049bd882c5ac17f576502b52e8b84d71873160a",
+   "projectID": "proj",
    "agent": "plan",
    "model": {
     "id": "claude-opus-4-1",
@@ -95,12 +95,12 @@
    },
    "title": "\u2026",
    "location": {
-    "directory": "/Users/shoaib/hands-on-projects/generative-ai-with-fastapi"
+    "directory": "/w/fastapi"
    }
   },
   {
    "id": "ses_4996f0928ffeAOQ7sDBdurM1vE",
-   "projectID": "4049bd882c5ac17f576502b52e8b84d71873160a",
+   "projectID": "proj",
    "agent": "plan",
    "model": {
     "id": "claude-sonnet-4-5",
@@ -123,12 +123,12 @@
    },
    "title": "\u2026",
    "location": {
-    "directory": "/Users/shoaib/hands-on-projects/generative-ai-with-fastapi"
+    "directory": "/w/fastapi"
    }
   }
  ],
  "cursor": {
-  "previous": "eyJkaXJlY3RvcnkiOiIvVXNlcnMvc2hvYWliL2hhbmRzLW9uLXByb2plY3RzL2dlbmVyYXRpdmUtYWktd2l0aC1mYXN0YXBpIiwiYW5jaG9yIjp7ImlkIjoic2VzX2UyMTZhNDlkN2ZmZWcwTkRYTEJFY3RPUjB4IiwidGltZSI6MTc5NDczNTcxNTg5MCwiZGlyZWN0aW9uIjoicHJldmlvdXMifX0",
-  "next": "eyJkaXJlY3RvcnkiOiIvVXNlcnMvc2hvYWliL2hhbmRzLW9uLXByb2plY3RzL2dlbmVyYXRpdmUtYWktd2l0aC1mYXN0YXBpIiwiYW5jaG9yIjp7ImlkIjoic2VzXzRhYTkwM2EwZWZmZWh3SkN3Ym9FOG1yMzZmIiwidGltZSI6MTc2NjY2NDk1NjA4OCwiZGlyZWN0aW9uIjoibmV4dCJ9fQ"
+  "previous": "\u2026",
+  "next": "\u2026"
  }
 }

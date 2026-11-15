@@ -2,26 +2,34 @@
 // Side view, one tab per side chat (findings and design: docs/superpowers/specs/2026-11-15-side-sessions-*.md, local).
 // One mod, three copies:
 //   props {resident: true}  a 0px layout block that gets the key commands (a mod hears them only while shown);
-//   props {panel: true}     the Side view's header: a tab per live side chat, ✕ to end one;
+//   props {panel: true}     the Side view's header: a tab per open side chat, ✕ to end one;
 //   props {view: "harnesses"} the popup choosing which harnesses side sessions work for.
-// The copy itself is the harness's own (side.py's adapters); it runs as a named terminal side-N that the layout's
-// fixed slot side-N shows, so switching tabs is layout.select (click state), never a layout-file write.
+// The copy itself is the harness's own (side.py's adapters). It runs in a slot: a terminal side-N that the layout's
+// fixed block side-N shows, hosting one chat after another (host.py) and never ending, because Herdr deletes a block
+// whose terminal is finished from the layout file, and emergence.json is the repo's. Switching tabs is layout.select
+// (click state), never a layout-file write.
 
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { exec, hc, run, theme, props, nextCommand, focused, panes, agents, knownAgents, notify, openOverlay, closeOverlay,
-  appHome, layout, shared, setShared } from "herdr";
-import { NAMES, SLOTS, harnessOf, decide, noticeFor, freeSlot, tabsOf } from "./lib.js";
+import { exec, hc, run, theme, props, nextCommand, focused, panes, agents, terminals, spaces, knownAgents, notify,
+  openOverlay, closeOverlay, appHome, home, layout, shared, setShared } from "herdr";
+import { NAMES, harnessOf, decide, noticeFor, tabsOf, slotView, claim } from "./lib.js";
 
 const SUPPORTED = ["claude", "opencode"]; // harnesses with an adapter in side.py; codex, pi and omp come next
 const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(c, id)).find(Boolean));
-// The person's harness switches. Shared, not localStorage: each copy of a mod (key listener, popup) has its own store.
+// The person's harness switches: only the ones they flipped (never switched = on). Shared, not localStorage: each copy
+// of a mod (key listener, popup) has its own store.
 const choices = () => shared("side.harnesses") ?? null;
-const say = (n) => n && notify({ ...n, level: "info" });
+const say = (n, level = "info") => n && notify({ ...n, level });
+const warn = (n) => say(n, "warning");
+const py = (file, args, timeout = 30000) => exec("python3", ["-B", `${appHome()}/mods/side/${file}`, ...args], { timeout });
+const SLOT_DIR = () => `${appHome()}/data/side/slots`;
+const layoutSlots = () => (find(layout(), "side-slots")?.children ?? []).map((c) => c.id);
+const view = () => slotView(terminals(), layoutSlots(), shared("side.tabs") ?? {}, Date.now());
 
 async function helper(op, req) {
   try {
-    const r = await exec("python3", [`${appHome()}/mods/side/side.py`, op, "--json", JSON.stringify(req)], { timeout: 30000 });
+    const r = await py("side.py", [op, "--json", JSON.stringify(req)]);
     if (r.code !== 0) return { v: 1, error: { code: "helper", message: r.stderr.trim().split("\n").pop() || `side.py exited ${r.code}` } };
     return JSON.parse(r.stdout);
   } catch (e) {
@@ -29,46 +37,46 @@ async function helper(op, req) {
   }
 }
 
-// Names of the live side-N terminals.
-async function liveSlots() {
-  const r = await hc(["ls", "--json"]);
-  if (r.code !== 0) return [];
-  return (JSON.parse(r.stdout).terminals ?? []).filter((t) => t.state === "live" && SLOTS.includes(t.name)).map((t) => t.name);
-}
-
-function show(slot) {
+// Show a slot in the panel; `focus` gives it the keyboard (a person's choice, not an automatic move).
+function show(slot, focus = true) {
   run("layout.show", { id: "panel" });
   run("layout.select", { stack: "panel-body", child: "side" });
-  run("layout.show", { id: "side-slots" });
   run("layout.select", { stack: "side-slots", child: slot });
-  run("pane.focus", { terminal: slot });
+  run("layout.show", { id: "side-slots" });
+  if (focus) run("pane.focus", { terminal: slot });
 }
 
 export default class Side extends View {
   init(_props, cx) {
     const p = props() ?? {};
     if (p.view === "harnesses") return this.initChooser(cx);
-    if (p.panel) return this.initPanel(cx);
+    if (p.panel) return cx.timer.every(5000, (cx) => cx.notify()); // a handed-over chat that never started drops out
     if (!p.resident) return;
     this.retryAt = shared("side.retry")?.at; // a retry from before this load isn't for us
     cx.spawn(async () => {
       for (;;) {
         const c = await nextCommand();
-        if (c === "chat") await this.chat();
+        if (c === "chat") this.press(false);
         else if (c === "harnesses") openOverlay({ mod: "side", props: { view: "harnesses" }, kind: "dialog", width: 440 });
       }
     });
   }
 
+  // Not awaited by the command loop, so a second press during a copy finds busy set; a throw never kills the loop.
+  press(retry) {
+    this.chat(retry).catch((e) => warn({ title: "Side chat couldn't start", body: String(e?.message ?? e) }));
+  }
+
   // ---- the key: copy the focused agent into a new side chat ----
-  async chat(retry = false) {
-    if (this.busy) return; // a second press while one copy is in flight
+  async chat(retry) {
+    if (this.busy) return;
     this.busy = true;
     try {
       const f = focused();
       const pane = f?.pane ? panes().find((x) => x.pane === f.pane) : null;
       const agent = pane && agents().find((a) => a.pane === pane.pane);
       const h = harnessOf(pane, agent);
+      if (h && spaces().find((s) => s.id === f.space)?.machine) return say({ title: "Side chat works on this computer's agents" });
       const installed = Object.fromEntries((await knownAgents().catch(() => [])).map((a) => [a.key, a.installed]));
       const d = decide(h, choices(), installed, SUPPORTED);
       if (d.action === "choose" && !retry) {
@@ -76,13 +84,17 @@ export default class Side extends View {
         return;
       }
       if (d.action !== "open") return say(d.notice ?? { title: "Choose harnesses first" });
-      const pid = JSON.parse((await hc(["get", pane.terminal, "--json"])).stdout || "{}").foreground?.pid;
+      const slotted = !!find(layout(), "side-slots");
+      const spot = slotted ? claim(view()) : null; // before any copy: a copy with nowhere to go would be left behind
+      if (slotted && !spot) return say({ title: "Close a side chat first" });
+      const pid = terminals().find((t) => t.address === pane.terminal)?.foreground?.pid;
       const found = await helper("locate", { harness: h, pid, cwd: pane.cwd });
-      if (found.error) return say(noticeFor(found, h));
+      if (found.error) return warn(noticeFor(found, h));
       const made = await helper("copy", { session: found.session, pid, answerOnly: true });
-      if (made.error) return say(noticeFor(made, h));
-      const label = `${NAMES[h]} · ${(found.session.cwd ?? pane.cwd ?? "").split("/").filter(Boolean).pop()}`; // the folder tells side chats apart; tab names repeat
-      if (!(await this.open(made.launch, pane.terminal, h, label))) return;
+      if (made.error) return warn(noticeFor(made, h));
+      const label = `${NAMES[h]} · ${(found.session.cwd ?? pane.cwd ?? "").split("/").filter(Boolean).pop()}`; // folders tell chats apart; tab names repeat
+      if (!slotted) run("terminal.open", { argv: made.launch.argv, folder: made.launch.cwd, place: "right", name: `${NAMES[h]} · side` });
+      else if (!(await this.start(spot, made.launch, h, label))) return;
       say(noticeFor(found, h));
       say(noticeFor(made, h));
     } finally {
@@ -90,57 +102,52 @@ export default class Side extends View {
     }
   }
 
-  async open(launch, parent, harness, label) {
-    if (!find(layout(), "side-slots")) { // a layout without the Side view: a pane on the right
-      run("terminal.open", { argv: launch.argv, folder: launch.cwd, place: "right", name: label });
-      return true;
+  // Hand the chat to its slot's host (starting the host first if the slot has none), then show the slot.
+  async start({ slot, create }, launch, harness, label) {
+    if (create) {
+      const r = await hc(["run", "--bg", "--name", slot, "--cwd", home(), "--no-parent", "--no-notify", "--",
+        "python3", "-B", `${appHome()}/mods/side/host.py`, "serve", slot, SLOT_DIR()]);
+      if (r.code !== 0) { warn({ title: "Side chat couldn't start", body: (r.stderr || r.stdout).trim().split("\n").pop() }); return false; }
     }
-    const slot = freeSlot(await liveSlots());
-    if (!slot) { say({ title: "Close a side chat first" }); return false; }
-    const r = await hc(["run", "--bg", "--json", "--name", slot, "--cwd", launch.cwd, "--parent", parent, "--no-notify",
-      "--outlive-parent", "--", ...launch.argv]);
-    if (r.code !== 0) { say({ title: "Side chat couldn't start", body: (r.stderr || r.stdout).trim().split("\n").pop() }); return false; }
-    setShared("side.tabs", { ...(shared("side.tabs") ?? {}), [slot]: { harness, label } });
-    show(slot); // the terminal exists first, then its slot is shown: a slot shown empty doesn't attach later
+    const r = await py("host.py", ["send", slot, SLOT_DIR(), JSON.stringify({ argv: launch.argv, cwd: launch.cwd })]);
+    if (r.code !== 0) { warn({ title: "Side chat couldn't start", body: r.stderr.trim().split("\n").pop() }); return false; }
+    setShared("side.tabs", { ...(shared("side.tabs") ?? {}), [slot]: { harness, label, at: Date.now() } });
+    show(slot);
+    if (create) { // a block shown before its terminal existed stays blank until shown again (findings §3)
+      run("layout.hide", { id: "side-slots" });
+      await exec("sleep", ["0.3"]);
+      show(slot);
+    }
     return true;
   }
 
   // ---- the Side view's header ----
-  initPanel(cx) {
-    this.live = [];
-    const refresh = async (cx) => {
-      const live = await liveSlots();
-      const slots = find(layout(), "side-slots");
-      if (!live.length && slots && !slots.hidden) run("layout.hide", { id: "side-slots" }); // never show an empty slot
-      else if (live.length && slots && !live.includes(slots.active) && find(layout(), "panel-body")?.active === "side") show(live[0]);
-      if (live.join() !== this.live.join()) { this.live = live; cx.notify(); }
-    };
-    refresh(cx);
-    cx.timer.every(2000, (cx) => refresh(cx));
-  }
-
-  async end(slot, cx) {
-    await hc(["kill", slot]);
-    await hc(["rm", slot]);
+  // ✕ ends the chat, never the slot's terminal (host.py). The last one closes the panel.
+  async end(slot, open) {
     const { [slot]: _gone, ...rest } = shared("side.tabs") ?? {};
     setShared("side.tabs", rest);
-    this.live = this.live.filter((s) => s !== slot);
-    if (this.live.length) show(this.live[0]);
-    else { run("layout.hide", { id: "side-slots" }); run("layout.hide", { id: "panel" }); } // the last one: close the panel
-    cx.notify();
+    const others = open.filter((s) => s !== slot);
+    if (others.length) show(others[0]);
+    else { run("layout.hide", { id: "side-slots" }); run("layout.hide", { id: "panel" }); }
+    await py("host.py", ["stop", slot, SLOT_DIR()]);
   }
 
   renderPanel(t) {
-    const tabs = tabsOf(this.live, shared("side.tabs") ?? {});
-    const active = find(layout(), "side-slots")?.active;
+    const { open } = view(), stack = find(layout(), "side-slots");
+    // A chat that ended by itself leaves its slot: move to another open one, or hide the slots (never show an idle one).
+    if (stack && !stack.hidden && find(layout(), "panel-body")?.active === "side" && !open.includes(stack.active)) {
+      if (open.length) show(open[0], false);
+      else run("layout.hide", { id: "side-slots" });
+    }
+    const tabs = tabsOf(open, shared("side.tabs") ?? {});
     const bar = h_flex().id("side-header").size_full().px(8).gap(4).items_center().bg(t.chrome).border_b_1().border_color(t.border).text_size(12);
     if (!tabs.length) return bar.child(div().px(8).text_color(t.dim).truncate().child("Press ⌘⌥/ on an agent to ask it something on the side"));
     return bar.children(tabs.map(({ slot, label }) => h_flex().id(`tab-${slot}`).h(26).pl(10).pr(4).gap(6).items_center().rounded(6)
-      .cursor_pointer().map((el) => slot === active ? el.bg(t.selected).text_color(t.foreground) : el.text_color(t.muted))
+      .cursor_pointer().map((el) => slot === stack?.active ? el.bg(t.selected).text_color(t.foreground) : el.text_color(t.muted))
       .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => show(slot))
       .child(div().truncate().max_w(220).child(label))
       .child(div().id(`end-${slot}`).px(4).rounded(4).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground))
-        .on_click((_e, cx) => { cx.stop_propagation(); this.end(slot, cx); }).child("✕"))));
+        .on_click((_e, cx) => { cx.stop_propagation(); this.end(slot, open); }).child("✕"))));
   }
 
   // ---- which harnesses (first use, or side.harnesses) ----
@@ -158,8 +165,7 @@ export default class Side extends View {
   done(save) {
     const p = props();
     if (save) {
-      const known = this.known ?? {};
-      setShared("side.harnesses", Object.fromEntries(Object.keys(NAMES).map((h) => [h, !!known[h] && this.picked[h] !== false])));
+      setShared("side.harnesses", { ...this.picked }); // only what was flipped: a harness never switched stays on
       if (p.then === "chat") setShared("side.retry", { at: Date.now() });
     }
     closeOverlay(p.overlay);
@@ -194,7 +200,7 @@ export default class Side extends View {
     if (p.view === "harnesses") return this.renderChooser(t);
     if (p.panel) return this.renderPanel(t);
     const retry = shared("side.retry"); // Done in the chooser opened by a key press: run that press again
-    if (p.resident && retry && retry.at !== this.retryAt) { this.retryAt = retry.at; cx.spawn(async () => this.chat(true)); }
+    if (p.resident && retry && retry.at !== this.retryAt) { this.retryAt = retry.at; this.press(true); }
     return div();
   }
 }

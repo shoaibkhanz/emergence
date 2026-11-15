@@ -4,6 +4,8 @@ One call per invocation, JSON in and out, no state: `python3 side.py <op> --json
 "v": 1, or {"v": 1, "error": {code, message}}; it always exits 0 so the mod reads one shape. Per-harness knowledge
 lives only in adapters/<harness>.py; see docs/superpowers/specs/2026-11-15-side-sessions-design.md (local).
 """
+from __future__ import annotations  # stock macOS python3 is 3.9: `str | None` must not evaluate at import
+
 import json
 import os
 import subprocess

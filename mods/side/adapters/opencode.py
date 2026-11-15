@@ -2,6 +2,8 @@
 running process names its session only when started with -s; otherwise the folder's newest session is a guess. A
 copy is the API's session.fork (a full copy needs the empty body), opened with `opencode -s <new>`. No read-only mode:
 the copy can edit files (findings §2)."""
+from __future__ import annotations  # stock macOS python3 is 3.9: `str | None` must not evaluate at import
+
 import json
 
 NAME = "OpenCode"
@@ -33,7 +35,9 @@ def locate(req: dict, env) -> dict:
     rows = json.loads(out).get("data") or []
     if not rows:
         return {"error": {"code": "not-found", "message": f"no OpenCode session in {cwd}"}}
-    newest = max(rows, key=lambda r: (r.get("time") or {}).get("updated") or 0)
+    # A copy (its "fork" set, which every side chat makes) is newest right after it's made: prefer an original.
+    pool = [r for r in rows if not r.get("fork")] or rows
+    newest = max(pool, key=lambda r: (r.get("time") or {}).get("updated") or 0)
     return {"session": {"harness": "opencode", "id": newest["id"], "cwd": cwd}, "confidence": "guess",
             "why": "newest in folder"}
 

@@ -1,6 +1,9 @@
 """Claude Code: a running claude writes ~/.claude/sessions/<pid>.json (sessionId, cwd); Herdr's foreground pid may
 be a shell above it, so the process tree is walked. A copy is `--resume <id> --fork-session` (new id, original
 untouched); answer-only is plan mode plus a one-line instruction (about 1% extra cache write, findings §6)."""
+from __future__ import annotations  # stock macOS python3 is 3.9: `str | None` must not evaluate at import
+
+import glob
 import json
 import os
 
@@ -27,6 +30,9 @@ def locate(req: dict, env) -> dict:
     p, s = _owner(req, env)
     if not s or not s.get("sessionId"):
         return {"error": {"code": "not-found", "message": "no ~/.claude/sessions/<pid>.json under this pane"}}
+    # The pid file exists from start, the transcript only from the first prompt: before that there is nothing to copy.
+    if not glob.glob(os.path.join(env.home, ".claude", "projects", "*", f"{s['sessionId']}.jsonl")):
+        return {"error": {"code": "not-found", "message": "this Claude session has no conversation yet"}}
     return {"session": {"harness": "claude", "id": s["sessionId"], "cwd": s.get("cwd") or req.get("cwd")},
             "confidence": "exact", "why": f"~/.claude/sessions/{p.pid}.json"}
 
