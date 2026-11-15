@@ -31,8 +31,8 @@ test("rowsOf: no tabs entry gives the slot as label and no from; slots the layou
   expect(rowsOf([T("side-4", true, "working")], ["side-1", "side-2"], {}, 0)).toEqual([]);
 });
 
-test("wantOf: nothing when empty or folded; header plus rows, at most four", () => {
-  expect([wantOf(0, false), wantOf(2, false), wantOf(9, false), wantOf(3, true)]).toEqual([0, 101, 161, 0]);
+test("wantOf: one line when empty (the section always shows); header plus rows, at most four; nothing folded", () => {
+  expect([wantOf(0, false), wantOf(2, false), wantOf(9, false), wantOf(3, true), wantOf(0, true)]).toEqual([32, 101, 161, 0, 0]);
 });
 
 test("holdsKeys: only a section with rows and an open sidebar can hold the keyboard", () => {

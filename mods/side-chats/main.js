@@ -8,7 +8,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { run, theme, settings, layout, terminals, shared, setShared, nextCommand, focused } from "herdr";
-import { rowsOf, wantOf, holdsKeys, HEADER_H, ROW_H } from "./lib.js";
+import { rowsOf, wantOf, holdsKeys, HEADER_H, ROW_H, EMPTY_H } from "./lib.js";
 
 const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(c, id)).find(Boolean));
 const RAIL_W = 160; // the sidebar folds to a rail below this width (as the inbox and Ports read it)
@@ -113,12 +113,16 @@ export default class SideChats extends View {
     const root = v_flex().id("side-chats").size_full().min_h(0).bg(t.chrome).text_size(13)
       .on_size_change((size) => this.publish("side-chats.h", Math.round(size.height / (settings().zoom ?? 1))))
       .track_focus(this.fh).on_key_down((e, cx) => this.key(e.keystroke, cx));
-    if (hidden || !rows.length) return root;
+    if (hidden) return root;
+    const label = (extra) => h_flex().gap(6).items_center().text_size(11.5).text_color(t.dim)
+      .child(div().font_medium().child("Side chats")).child(extra);
+    if (!rows.length) { // one line, as Ports' "none": where side chats will appear, and the key that makes one
+      return root.border_t(1).border_color(t.border)
+        .child(h_flex().h(EMPTY_H).flex_none().pl(16).pr(12).items_center().child(label("none · ⌘⌥/")));
+    }
     const stack = find(layout(), "side-slots"), shownOnSide = !find(layout(), "panel")?.hidden && find(layout(), "panel-body")?.active === "side";
     return root.border_t(1).border_color(t.border)
-      .child(h_flex().h(HEADER_H).pt(10).pl(16).pr(12).flex_none().items_center()
-        .child(h_flex().gap(6).items_center().text_size(11.5).text_color(t.dim)
-          .child(div().font_medium().child("Side chats")).child(String(rows.length))))
+      .child(h_flex().h(HEADER_H).pt(10).pl(16).pr(12).flex_none().items_center().child(label(String(rows.length))))
       .child(v_flex().id("side-chats-list").flex_1().min_h(0).px(6).overflow_y_scrollbar().track_scroll(this.list)
         .children(rows.map((r) => this.row(t, r, shownOnSide && stack?.active === r.slot, (find(layout(), "sidebar")?.size?.px ?? 0) >= ROOMY_W))));
   }
