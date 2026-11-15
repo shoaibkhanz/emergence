@@ -62,5 +62,78 @@ class ProtocolTest(unittest.TestCase):
         self.assertIn("kaboom", r["error"]["message"])
 
 
+INSTR = "Answer and explain; don't edit files. Files may have changed since this point."
+FIX = os.path.join(HERE, "fixtures")
+
+
+def claude_home(tmp, pid):
+    """A home whose ~/.claude/sessions/<pid>.json is the 2.1.325 fixture."""
+    d = os.path.join(tmp, ".claude", "sessions")
+    os.makedirs(d)
+    with open(os.path.join(FIX, "claude", "2.1.325", "sessions", "4242.json")) as f:
+        data = json.load(f)
+    with open(os.path.join(d, f"{pid}.json"), "w") as f:
+        json.dump({**data, "pid": pid}, f)
+    return tmp
+
+
+BIN = sys.executable  # an absolute program path that exists, standing in for claude
+TREE = [side.Proc(100, ["-zsh"], "ttys003"), side.Proc(200, ["sh", "-c", "claude"], "ttys003"),
+        side.Proc(300, [BIN, "--model", "opus", "--dangerously-skip-permissions", "-c"], "ttys003")]
+
+
+class ClaudeTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+
+    def test_locate_walks_children(self):
+        e = env(home=claude_home(self.tmp, 300), procs=lambda pid: TREE)
+        r = side.handle("locate", {"harness": "claude", "pid": 100, "cwd": "/w/margo"}, e)
+        self.assertEqual(r["session"], {"harness": "claude", "id": "11111111-2222-3333-4444-555555555555",
+                                        "cwd": "/w/margo"})
+        self.assertEqual(r["confidence"], "exact")
+
+    def test_locate_no_session_file(self):
+        e = env(home=self.tmp, procs=lambda pid: TREE)
+        r = side.handle("locate", {"harness": "claude", "pid": 100, "cwd": "/w/margo"}, e)
+        self.assertEqual(r["error"]["code"], "not-found")
+
+    def copy(self, answer_only):
+        e = env(home=claude_home(self.tmp, 300), procs=lambda pid: TREE)
+        session = {"harness": "claude", "id": "11111111-2222-3333-4444-555555555555", "cwd": "/w/margo"}
+        return side.handle("copy", {"session": session, "pid": 100, "answerOnly": answer_only}, e)
+
+    def test_copy_full_answer_only(self):
+        r = self.copy(True)
+        self.assertEqual(r["launch"]["argv"], [BIN, "--resume", "11111111-2222-3333-4444-555555555555",
+                                               "--fork-session", "--model", "opus", "--permission-mode", "plan",
+                                               "--append-system-prompt", INSTR])
+        self.assertEqual(r["launch"]["cwd"], "/w/margo")
+
+    def test_copy_full_not_answer_only(self):
+        argv = self.copy(False)["launch"]["argv"]
+        self.assertNotIn("--permission-mode", argv)
+        self.assertNotIn("--dangerously-skip-permissions", argv)
+        self.assertNotIn("-c", argv)
+        self.assertEqual(argv, [BIN, "--resume", "11111111-2222-3333-4444-555555555555", "--fork-session",
+                                "--model", "opus"])
+
+    def test_copy_carries_equals_form(self):
+        tree = TREE[:2] + [side.Proc(300, ["claude", "--effort=high", "--settings", "x.json"], "ttys003")]
+        e = env(home=claude_home(self.tmp, 300), procs=lambda pid: tree)
+        session = {"harness": "claude", "id": "s", "cwd": "/w"}
+        argv = side.handle("copy", {"session": session, "pid": 100, "answerOnly": False}, e)["launch"]["argv"]
+        self.assertEqual(argv, ["claude", "--resume", "s", "--fork-session", "--effort=high"])
+
+    def test_copy_spaced_path_falls_back(self):
+        # ps splits "/Users/x/Library/Application Support/Claude/claude" on its space: not a program to run
+        tree = TREE[:2] + [side.Proc(300, ["/no/such/Application", "Support/Claude/claude", "--model", "opus"])]
+        e = env(home=claude_home(self.tmp, 300), procs=lambda pid: tree)
+        session = {"harness": "claude", "id": "s", "cwd": "/w"}
+        argv = side.handle("copy", {"session": session, "pid": 100, "answerOnly": False}, e)["launch"]["argv"]
+        self.assertEqual(argv[:4], ["claude", "--resume", "s", "--fork-session"])
+
+
 if __name__ == "__main__":
     unittest.main()
