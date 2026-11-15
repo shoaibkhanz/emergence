@@ -11,12 +11,12 @@ export const subAgents = (terminals, known) => terminals
 // inbox's cards, so it sits right below them. Folded, Ports gets nothing. Before the first measure (H 0): Spaces at
 // most 285px.
 // Side chats (mods/side-chats, between the inbox and Ports) is taken out first, all of what it wants (sideWant); a long
-// inbox never squeezes it (the cards scroll). Only a column that can't hold Spaces' 60, the inbox's 90 and Ports'
-// minimum besides shrinks it, and never under its header and one row (SIDE_FLOOR), so an open side chat stays seen.
-export const INBOX_MIN = 90, SPACES_MIN = 60, SPACES_FIRST = 285, SIDE_FLOOR = 71;
+// inbox never squeezes it (the cards scroll). A column that can't hold Spaces' 60, the inbox's 90 and Ports' minimum
+// besides shrinks it to what's left, down to nothing (its list scrolls): it never pushes a section past its floor.
+export const INBOX_MIN = 90, SPACES_MIN = 60, SPACES_FIRST = 285;
 export function splitColumn({ H, spacesWant, need, portsMin, sideWant = 0, collapsed }) {
   const side = collapsed || !sideWant ? 0
-    : H ? Math.max(Math.min(sideWant, H - SPACES_MIN - INBOX_MIN - portsMin), Math.min(sideWant, SIDE_FLOOR)) : sideWant;
+    : H ? Math.max(0, Math.min(sideWant, H - SPACES_MIN - INBOX_MIN - portsMin)) : sideWant;
   const rest = H ? H - side : 0;
   const min = collapsed ? 0 : portsMin, pool = rest - min;
   const spaces = Math.round(rest ? Math.max(SPACES_MIN, Math.min(spacesWant, pool - INBOX_MIN, Math.max(pool - need, pool / 2))) : Math.min(spacesWant, SPACES_FIRST));

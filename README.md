@@ -130,7 +130,7 @@ or menu to Spaces, the Inbox or the panel you opened it from; a panel's window o
 | ⌘B · ⌘⌥B | layout | sidebar open/fold · one size thinner |
 | ↑ ↓ · ↵ | sidebar | move · open |
 | ← → | Spaces | repo: fold · worktree: delete / archive |
-| ctrl-j · ctrl-k · ctrl-l | sidebar | down (Spaces → Inbox → Ports) · up · back to the terminal (also Esc) |
+| ctrl-j · ctrl-k · ctrl-l | sidebar | down (Spaces → Inbox → Side chats → Ports) · up · back to the terminal (also Esc) |
 | ↵ · ← | Ports | the port's card · stop it (asks first) |
 | ↑ ↓ · ← → · ↵ · Esc | panels | list · tabs · open · step back, then back to the terminal |
 | ⌘F · [ ] | PRs | find · previous / next commit |

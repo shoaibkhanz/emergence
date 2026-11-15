@@ -38,10 +38,19 @@ test("splitColumn: Side chats takes its height first; a long inbox never squeeze
     .toEqual({ spaces: 100, side: 101, ports: 449 });
   expect(splitColumn({ H: 800, spacesWant: 100, need: 900, portsMin: 94, sideWant: 101, collapsed: false }))
     .toEqual({ spaces: 100, side: 101, ports: 94 }); // long inbox: Side chats keeps 101
+  expect(splitColumn({ H: 350, spacesWant: 100, need: 150, portsMin: 94, sideWant: 161, collapsed: false }))
+    .toEqual({ spaces: 60, side: 106, ports: 94 }); // short column: Side chats shrinks, the inbox keeps its 90
   expect(splitColumn({ H: 300, spacesWant: 100, need: 150, portsMin: 94, sideWant: 161, collapsed: false }))
-    .toEqual({ spaces: 60, side: 71, ports: 94 }); // short column: floored at header + 1 row
+    .toEqual({ spaces: 60, side: 56, ports: 94 }); // shorter: less than a row, the list scrolls; never over the inbox
   expect(splitColumn({ H: 800, spacesWant: 100, need: 40, portsMin: 0, sideWant: 101, collapsed: true }))
     .toEqual(expect.objectContaining({ side: 0, ports: 0 }));
   expect(splitColumn({ H: 0, spacesWant: 400, need: 150, portsMin: 94, sideWant: 101, collapsed: false }))
     .toEqual({ spaces: 285, side: 101, ports: 94 }); // before the first measure
+});
+
+test("splitColumn: a side chat never over-fills a column that fitted without it", () => {
+  for (const portsMin of [94, 223]) for (let H = 150 + portsMin; H <= 700; H += 7) {
+    const { spaces, side, ports } = splitColumn({ H, spacesWant: 100, need: 150, portsMin, sideWant: 161, collapsed: false });
+    expect(spaces + side + ports + 90).toBeLessThanOrEqual(H); // the inbox keeps at least its 90
+  }
 });

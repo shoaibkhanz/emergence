@@ -29,3 +29,6 @@ export function rowsOf(terminals, layoutSlots, tabs, now) {
 }
 
 export const wantOf = (n, folded) => (folded || !n ? 0 : HEADER_H + Math.min(n, MAX_ROWS) * ROW_H);
+
+// Whether the section can hold the keyboard: with no rows or a folded sidebar it's 0px, and keys would go nowhere seen.
+export const holdsKeys = (n, folded) => n > 0 && !folded;

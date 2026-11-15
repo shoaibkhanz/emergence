@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { statusOf, rowsOf, wantOf } from "./lib.js";
+import { statusOf, rowsOf, wantOf, holdsKeys } from "./lib.js";
 
 const ALL = ["side-1", "side-2", "side-3", "side-4", "side-5", "side-6"];
 const T = (name, agent, status = null, extra = {}) => ({ name, state: "live", status, program: { agent, key: agent ? "claude" : "program" }, ...extra });
@@ -33,4 +33,8 @@ test("rowsOf: no tabs entry gives the slot as label and no from; slots the layou
 
 test("wantOf: nothing when empty or folded; header plus rows, at most four", () => {
   expect([wantOf(0, false), wantOf(2, false), wantOf(9, false), wantOf(3, true)]).toEqual([0, 101, 161, 0]);
+});
+
+test("holdsKeys: only a section with rows and an open sidebar can hold the keyboard", () => {
+  expect([holdsKeys(2, false), holdsKeys(0, false), holdsKeys(2, true), holdsKeys(0, true)]).toEqual([true, false, false, false]);
 });

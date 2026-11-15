@@ -8,7 +8,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { run, theme, settings, layout, terminals, shared, setShared, nextCommand, focused } from "herdr";
-import { rowsOf, wantOf, HEADER_H, ROW_H } from "./lib.js";
+import { rowsOf, wantOf, holdsKeys, HEADER_H, ROW_H } from "./lib.js";
 
 const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(c, id)).find(Boolean));
 const RAIL_W = 160; // the sidebar folds to a rail below this width (as the inbox and Ports read it)
@@ -44,7 +44,7 @@ export default class SideChats extends View {
       for (;;) {
         const c = await nextCommand();
         if (c === "focus" || c === "down" || c === "up") {
-          if (this.rows.length) { this.cur ??= this.rows[0].slot; this.fh.focus(); }
+          if (holdsKeys(this.rows.length, folded())) { this.cur ??= this.rows[0].slot; this.fh.focus(); }
           else if (c === "down") run("ports.focus"); // nothing here: on to the next section
           else if (c === "up") run("inbox.focus");
         } else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "ports.toggle");
@@ -108,6 +108,7 @@ export default class SideChats extends View {
     if (!rows.some((r) => r.slot === this.cur)) this.cur = rows[0]?.slot ?? null;
     this.ringed = this.fh.is_focused();
     const hidden = folded();
+    if (this.ringed && !holdsKeys(rows.length, hidden)) back(); // its last chat ended, or the sidebar folded, while it had the keys
     this.publish("side-chats.want", wantOf(rows.length, hidden));
     const root = v_flex().id("side-chats").size_full().min_h(0).bg(t.chrome).text_size(13)
       .on_size_change((size) => this.publish("side-chats.h", Math.round(size.height / (settings().zoom ?? 1))))
