@@ -34,6 +34,8 @@ jobs:
         run: bun test mods
       - name: Usage scanner tests
         run: python3 mods/usage/test_scan.py
+      - name: Side sessions helper tests
+        run: python3 mods/side/test_side.py
       - name: Installer and updater against throwaway homes
         run: bash install.test.sh
       - name: shellcheck
