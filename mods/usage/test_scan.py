@@ -320,6 +320,19 @@ class SkillsTest(unittest.TestCase):
         self.assertEqual(scan.parse_opencode(db)[0]["skills"], {"today-note": 1})
 
 
+class PlaceTest(unittest.TestCase):
+    """A session's project, for display: its repo's name, else the folder it ran in (a removed worktree's repo)."""
+
+    def test_place(self):
+        self.assertEqual(scan.place_of("/u/code/app", "/u/code/app/src"), "app")
+        self.assertEqual(scan.place_of(None, "/u/code/rembr/.claude/worktrees/notes-nav-9b5e93"), "rembr")
+        self.assertEqual(scan.place_of(None, "/u/code/rembr/spikes"), "spikes")
+        self.assertEqual(scan.place_of(None, None), None)
+        for tmp in ("/tmp", "/private/tmp/x", "/var/folders/ab/T/y"):
+            self.assertEqual(scan.place_of(None, tmp), "temporary folder")
+        self.assertEqual(scan.place_of(None, os.path.expanduser("~")), "home folder")
+
+
 class GitCommitsTest(unittest.TestCase):
     """A session's commits are the `git commit` calls its agent ran, read from the transcript."""
 
@@ -330,6 +343,11 @@ class GitCommitsTest(unittest.TestCase):
         self.assertEqual(n(["bash", "-lc", "cd r; git commit -m x"]), 1)
         for none in ("git log --format=commit", "git commit-tree abc", "echo hi", "", None, "git show HEAD~1"):
             self.assertEqual(n(none), 0, none)
+        # text that only mentions a commit isn't one: heredoc bodies and quoted strings are ignored
+        self.assertEqual(n("python3 - <<'EOF'\nrun('git commit -qm x')\nEOF"), 0)
+        self.assertEqual(n('echo "then git commit"; grep -n "git commit" f'), 0)
+        self.assertEqual(n('git add . && git commit -m "fix: git commit counting"'), 1)
+        self.assertEqual(n("git commit -q -F - <<'EOF'\nfeat: x\n\ngit commit in the body\nEOF"), 1)
 
 
 import output  # noqa: E402

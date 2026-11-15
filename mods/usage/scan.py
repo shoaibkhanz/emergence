@@ -2,7 +2,7 @@
 """Scan local coding-agent session data (omp, Claude Code, Codex, OpenCode, pi)
 and print one JSON document of per-session usage records to stdout.
 
-Only counters, model ids, timestamps and repo paths leave this script: never
+Only counters, model ids, timestamps, repo paths and folder names leave this script: never
 prompt text, titles, tool arguments or outputs. Parsed records are cached per
 source file so warm runs only re-read files that changed, and records whose
 source file disappeared (Claude prunes history after ~30 days) stay cached.
@@ -20,7 +20,7 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import datetime
 
-CACHE_VERSION = 6  # 5: skills per session; 6: commits from the transcript
+CACHE_VERSION = 7  # 5: skills per session; 6: commits from the transcript; 7: not mentions of one
 EFFORTS = {"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 # Envelope timestamp. JSON escapes quotes inside strings, so this only matches structural keys.
 TS = re.compile(rb'"timestamp":"(\d{4}-[^"]+)"')
@@ -79,9 +79,15 @@ def add_skill(r, name):
         r["skills"][name] = r["skills"].get(name, 0) + 1
 
 
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2\s*(?:\n|$)", re.S)
+QUOTED = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
+
+
 def git_commits(cmd):
-    """How many `git commit`s a shell command runs; a Codex command comes as an argv list."""
-    return len(GIT_COMMIT.findall(" ".join(map(str, cmd)) if isinstance(cmd, list) else str(cmd or "")))
+    """How many `git commit`s a shell command runs; a Codex command comes as an argv list. Heredoc bodies and quoted
+    strings are dropped first: a script or message that mentions `git commit` doesn't run one."""
+    text = " ".join(map(str, cmd)) if isinstance(cmd, list) else str(cmd or "")
+    return len(GIT_COMMIT.findall(QUOTED.sub("''", HEREDOC.sub("\n", text))))
 
 
 def blank(h, sid, sub):
@@ -517,6 +523,19 @@ def repo_of(cwd):
     return os.path.dirname(common) if os.path.basename(common) == ".git" else top
 
 
+def place_of(repo, cwd):
+    """A session's project, for display only: its repo's name, else the name of the folder it ran in, a removed
+    worktree's repo (<repo>/.claude/worktrees/<name>) when that's where it was."""
+    path = repo or (str(cwd).split("/.claude/worktrees/")[0] if cwd else None)
+    if not path:
+        return None
+    if path.rstrip("/") == os.path.expanduser("~"):
+        return "home folder"
+    if re.match(r"^(/private)?(/tmp|/var/folders)(/|$)", path):
+        return "temporary folder"  # scratch work, not a project
+    return os.path.basename(path.rstrip("/")) or None
+
+
 def parent_of(key, r, cache):
     """A sub-agent's session, as (harness, id): OpenCode records it; a tree harness keeps a sub-agent's file in a
     folder named after the session's file (<slug>/<session>/subagents/<agent>.jsonl, <slug>/<session>/<agent>.jsonl)."""
@@ -571,6 +590,7 @@ def scan(home):
         if commits is not None:
             commits += from_subs[(r["h"], r["id"])]
         out.append({"h": r["h"], "id": r["id"], "start": r["start"], "end": r["end"], "repo": repo,
+                    "where": place_of(repo, r["cwd"]),
                     "sub": r["sub"], "models": r["models"], "effort": r["effort"], "tok": r["tok"],
                     "tin": r["tin"], "tout": r["tout"], "tcr": r["tcr"], "tcw": r["tcw"], "cost": r["cost"],
                     "req": r["req"], "tools": r["tools"], "toolErr": r["toolErr"], "tc": r["tc"], "aborts": r["aborts"],
