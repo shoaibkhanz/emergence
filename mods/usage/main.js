@@ -310,7 +310,7 @@ export default class Usage extends View {
     ]);
   }
 
-  // The calendar always shows the last weeks for context; days outside the period are dimmed and can't be picked.
+  // The calendar always shows the last weeks for context; days outside the period are grey and can't be picked.
   heatmap(t, cells, weeks, p) {
     const cols = [];
     for (let i = 0; i < cells.length; i += 7) cols.push(cells.slice(i, i + 7));
@@ -322,11 +322,12 @@ export default class Usage extends View {
         return v_flex().w(11).flex_none().gap(3)
           .child(div().w(11).h(14).text_size(9).text_color(t.dim).whitespace_nowrap().child(prev && prev.getMonth() !== first.getMonth() ? MONTH[first.getMonth()] : ""))
           .children(col.map((d) => {
-            const inPeriod = d.t >= p.from && d.t < p.to, custom = this.range === "custom";
-            const cell = div().id(`heat-${d.t}`).size(11).rounded(3).bg(d.level ? alpha(ink, LEVEL[d.level]) : t.raised)
+            // Outside the period (or not picked) a day keeps its level in grey: fading it would make a quiet day look
+            // empty, since colour is all a cell has.
+            const inPeriod = d.t >= p.from && d.t < p.to, custom = this.range === "custom", on = inPeriod && this.lit([d.t, d.t]);
+            const cell = div().id(`heat-${d.t}`).size(11).rounded(3).bg(d.level ? alpha(on ? ink : t.muted, LEVEL[d.level]) : t.raised)
               .when(custom || inPeriod, (el) => el.cursor_pointer())
               .when(custom && inPeriod, (el) => el.border(1).border_color(alpha(t.accent, 0.8)))
-              .when(!inPeriod || !this.lit([d.t, d.t]), (el) => el.opacity(0.3))
               .on_hover((on, cx) => { if (on) { this.hoverDay = d.t; this.dragTo("days", [d.t, d.t]); } else if (this.hoverDay === d.t) this.hoverDay = null; cx.notify(); });
             // Custom period: the first click starts it, the second ends it (either order). Otherwise days are picked.
             if (!custom && !inPeriod) return cell;
@@ -424,8 +425,9 @@ export default class Usage extends View {
       .child(h_flex().gap(3).pl(37).children(WD.map((w, d) => pick(div().id(`punch-d-${d}`).w(11).flex_none().text_size(9).text_color(t.dim).hover((s) => s.text_color(t.foreground)).child(w[0]), [[d, d], [0, 23]]))))
       .children(Array.from({ length: 24 }, (_, h) => h_flex().gap(3).items_center()
         .child(pick(div().id(`punch-h-${h}`).w(34).flex_none().text_size(9).text_color(t.dim).hover((s) => s.text_color(t.foreground)).child(h % 3 ? "" : hh(h)), [[0, 6], [h, h]]))
-        .children(grid.map((row, d) => pick(div().id(`punch-${d}-${h}`).size(11).flex_none().rounded(3).bg(row[h] ? alpha(t.done, LEVEL[lvl(row[h])]) : t.raised)
-          .when(slots && !this.sel.keys.has(d * 24 + h), (el) => el.opacity(0.3))
+        // Hours not picked keep their level in grey (as the calendar's days): faded, a quiet hour would look empty.
+        .children(grid.map((row, d) => pick(div().id(`punch-${d}-${h}`).size(11).flex_none().rounded(3)
+          .bg(row[h] ? alpha(slots && !this.sel.keys.has(d * 24 + h) ? t.muted : t.done, LEVEL[lvl(row[h])]) : t.raised)
           .when(x?.d === d && x?.h === h, (el) => el.border(1).border_color(t.foreground)), [[d, d], [h, h]],
           (on) => { if (on) this.hoverPunch = { d, h, n: row[h] }; else if (this.hoverPunch?.d === d && this.hoverPunch?.h === h) this.hoverPunch = null; })))))
       .child(div().h(20).pt(4).truncate().text_size(11).text_color(t.muted)
