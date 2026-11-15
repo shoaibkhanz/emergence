@@ -299,6 +299,20 @@ class HostTest(unittest.TestCase):
         self.assertLess(time.time() - t, 5)
         self.assertFalse(os.path.exists(stop_path))
 
+    def test_run_prints_intro_first(self):
+        import contextlib
+        import io
+        _, stop_path = host.paths("side-1", self.dir)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            host.run({"argv": ["true"], "cwd": self.dir, "intro": "INTRO LINE"}, stop_path, poll=0.05)
+        self.assertIn("INTRO LINE", out.getvalue())
+
+    def test_idle_screen_says_opening(self):
+        # an idle slot is only ever seen at a key press, before its chat starts
+        self.assertIn("Opening a side chat", host.OPENING)
+        self.assertFalse(hasattr(host, "ENDED"))
+
 
 if __name__ == "__main__":
     unittest.main()

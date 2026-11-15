@@ -5,7 +5,7 @@ so a slot's terminal must outlive every side chat in it. The mod hands this host
 ends one by writing a stop file; the host runs the agent in this terminal and goes back to waiting.
 
   python3 -B host.py serve <slot> <dir>           the slot terminal's program
-  python3 -B host.py send <slot> <dir> '<json>'   {"argv": [...], "cwd": "..."}: start that chat in the slot
+  python3 -B host.py send <slot> <dir> '<json>'   {"argv": [...], "cwd": "...", "intro": "..."}: start that chat
   python3 -B host.py stop <slot> <dir>            end the slot's chat (not the slot)
 """
 from __future__ import annotations
@@ -18,7 +18,8 @@ import sys
 import time
 
 STALE_S = 30  # a request older than this was never picked up: dropped, never started late
-ENDED = "\n  Side chat ended. Close its tab, or start another with ⌘⌥/ on an agent.\n"
+OPENING = "\n  Opening a side chat…\n"  # an idle slot is only seen at a key press, before its chat starts
+CLEAR = "\033[2J\033[H"
 
 
 def paths(slot: str, d: str) -> tuple[str, str]:
@@ -52,7 +53,9 @@ def take(path: str) -> dict | None:
 
 
 def run(req: dict, stop_path: str, poll: float = 0.2) -> int:
-    """Run the chat in this terminal until it exits, or until a stop file appears."""
+    """Run the chat in this terminal until it exits, or until a stop file appears. Its intro line goes first."""
+    if req.get("intro"):
+        print(f"{req['intro']}\n", flush=True)
     child = subprocess.Popen(req["argv"], cwd=req.get("cwd") or None,
                              preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
     while child.poll() is None:
@@ -67,19 +70,24 @@ def run(req: dict, stop_path: str, poll: float = 0.2) -> int:
     return child.returncode
 
 
+def idle() -> None:
+    print(CLEAR + OPENING, end="", flush=True)
+
+
 def serve(slot: str, d: str) -> None:
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # ctrl-c belongs to the chat, never to the slot
     os.makedirs(d, exist_ok=True)
     req_path, stop_path = paths(slot, d)
+    idle()
     while True:
         try:
             req = take(req_path)
             if req:
                 if os.path.exists(stop_path):
                     os.remove(stop_path)  # a stop from before this chat
-                print("\033[2J\033[H", end="", flush=True)
+                print(CLEAR, end="", flush=True)
                 run(req, stop_path)
-                print(ENDED, flush=True)
+                idle()
             time.sleep(0.25)
         except Exception as e:  # never end: the slot's layout block depends on this terminal
             print(f"side host: {e}", flush=True)
