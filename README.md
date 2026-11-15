@@ -30,7 +30,7 @@ Screenshots use made-up data.
 ![Agents panel](docs/images/agents.png)
 
 Every agent as repo → worktree (with its PR) → agent → sub-agents. Blocked in red, working in amber, done in green;
-**Active | All** at the top right (← / →): it opens on Active while an agent works or needs you, else on All. Click an agent
+**Active | All** at the top right (← / →): it opens on Active while an agent works or needs you, else on All. On All, a dot by Active's count says something has started working or needs you. Click an agent
 to jump to it, a PR to review it.
 
 ### PRs (⌘⇧R)

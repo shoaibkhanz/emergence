@@ -5,7 +5,7 @@
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout } from "herdr";
-import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, ringed, sidebarCursor, openOnActive, filterCounts } from "./lib.js";
+import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, ringed, sidebarCursor, openOnActive, filterCounts, activeNudge } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000;
 const ZMIN = 0.3, ZMAX = 2, ZFIT = 1, PAD = 48;
@@ -227,6 +227,7 @@ export default class AgentGraph extends View {
     this.wasShown = shown;
     const items = this.items();
     if (opening || this.activeOnly === null) this.activeOnly = openOnActive(items); // however it was opened: the same rule
+    if (opening || !openOnActive(items)) this.nudge = true; // the Active count may light again (lib activeNudge)
     if (shown && !this.busy && items.some((i) => i.cwd && !this.git.has(key(i.machine, i.cwd)))) this.refresh(cx);
     const tree = buildTree(items, (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined, { activeOnly: this.activeOnly });
     const L = graphLayout(tree), M = this.moved(L); // M: with the person's dragged offsets
@@ -252,7 +253,7 @@ export default class AgentGraph extends View {
         if (k === "f") this.view = null;
         else if ((k === "-" || k === "=" || k === "+") && this.fitted && this.size) this.zoomAt(k === "-" ? 0.8 : 1.25, this.size.width / 2, this.size.height / 2);
         else if (k === "r") { this.offsets.clear(); localStorage.removeItem("offsets"); this.view = null; }
-        else if ((k === "left" || k === "right") && this.activeOnly !== (k === "left")) { this.activeOnly = k === "left"; this.view = null; }
+        else if ((k === "left" || k === "right") && this.activeOnly !== (k === "left")) { this.activeOnly = k === "left"; this.view = null; this.nudge = false; }
         else if ((k === "down" || k === "up") && picks.length) this.sel = picks[(i + (k === "down" ? 1 : picks.length - 1)) % picks.length].data.id;
         else if (k === "enter" && i >= 0) return this.focusAgent(picks[i].data);
         else return;
@@ -285,11 +286,14 @@ export default class AgentGraph extends View {
     const hint = !this.panel ? "↑↓ select · ←→ active · all · ↵ focus · F fit · R reset · Esc close"
       : W >= 1000 ? "↑↓ select · ←→ active · all · ↵ focus · F fit · R reset" : null;
     // Active | All (← / →), each with what it shows: decided each time the panel opens (lib openOnActive), then yours.
-    const pick = (active) => { if (this.activeOnly !== active) { this.activeOnly = active; this.view = null; } };
+    const pick = (active) => { if (this.activeOnly !== active) { this.activeOnly = active; this.view = null; this.nudge = false; } };
+    // On All, a dot by the Active count says Active has something for you: amber when an agent needs you, else blue.
+    const lit = activeNudge(items, { onAll: !this.activeOnly, armed: this.nudge }), tone = lit === "blocked" ? t.blocked : t.working;
     const seg = (id, active, label, count, tip) => h_flex().id(id).h(20).px(8).gap(5).items_center().rounded(5).text_size(12).cursor_pointer()
       .tooltip(tip).text_color(this.activeOnly === active ? t.foreground : t.muted).when(this.activeOnly === active, (el) => el.bg(t.background))
       .hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => { pick(active); cx.notify(); })
-      .child(label).child(div().text_size(11).text_color(t.dim).child(String(count)));
+      .child(label).when(active && !!lit, (el) => el.child(div().size(6).rounded_full().bg(tone)))
+      .child(div().text_size(11).text_color(active && lit ? tone : t.dim).child(String(count)));
     return h_flex().flex_none().items_center().border_b(1).border_color(t.border)
       .map((el) => this.panel ? el.h(42).px(14).gap(8) : el.h(40).px(16).gap(12))
       .child(div().flex_none().text_size(this.panel ? 13 : 15).font_semibold().child("Agents"))
@@ -297,7 +301,8 @@ export default class AgentGraph extends View {
       .when(!!hint, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(hint)))
       // The view's controls sit on the right, the filter first, by refresh and expand.
       .child(h_flex().id("ag-filter").h(24).p(2).gap(2).flex_none().items_center().rounded(7).bg(t.raised)
-        .child(seg("ag-active", true, "Active", n.active, "Agents working, needing you or finished (←)"))
+        .child(seg("ag-active", true, "Active", n.active, lit === "blocked" ? "An agent needs you: Active shows only what's going on (←)"
+          : lit ? "Agents are working: Active shows only what's going on (←)" : "Agents working, needing you or finished (←)"))
         .child(seg("ag-all", false, "All", n.all, "Every agent and terminal (→)")))
       .child(icon(button("ag-refresh", "Refresh git and PRs", (cx) => this.refresh(cx, true)))
         .child(svg(ICON("refresh")).size(13).when(this.busy, (el) => el.spin(900))))

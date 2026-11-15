@@ -123,7 +123,9 @@ inside.
   - "Working N" (drawn by `ports`, so it stays the last row) is always there (N may be 0) and opens the Agents panel.
     The panel's header has an Active | All switch with each view's count (Active: every agent but the idle; All: every
     agent), ← / → while it has the keyboard. However it's opened (Working N, ⌘⇧A, the tab bar) it opens on Active when
-    an agent works or needs you, else on All (`agent-graph/lib.js` `openOnActive`), and nothing is remembered. The graph draws working agents in `t.working` (border and tint)
+    an agent works or needs you, else on All (`agent-graph/lib.js` `openOnActive`), and nothing is remembered. On All, a
+    6px dot by the Active count, with the count, takes `t.blocked` when an agent needs you, else `t.working` while one
+    works (`activeNudge`); not once the person has switched themselves while agents were active, until all is quiet. The graph draws working agents in `t.working` (border and tint)
     as it draws blocked ones in `t.blocked`; a working agent's dot breathes (`.loop("opacity", { from: 0.4, to: 1,
     period: 1600 })`) and Working's spinner turns (`svg(spinner).spin(900)`), the only motion. Both are Herdr's native
     motion, never a timer (AGENTS.md: a timer redraws the whole window); they run only while drawn and something works.
