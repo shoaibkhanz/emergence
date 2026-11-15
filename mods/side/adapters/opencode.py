@@ -2,7 +2,7 @@
 running process names its session only when started with -s; otherwise the folder's newest session is a guess. A
 copy is the API's session.fork (a full copy needs the empty body). Answer-only opens it with OpenCode's read-only plan
 agent, which only `opencode mini --agent` can choose (the main TUI has no --agent, and session.update ignores the
-agent); otherwise `opencode -s <new>`, which can edit files (findings §2)."""
+agent), with --no-replay so its screen starts empty (the history stays in the session); otherwise `opencode -s <new>`, which can edit files (findings §2)."""
 from __future__ import annotations  # stock macOS python3 is 3.9: `str | None` must not evaluate at import
 
 import json
@@ -50,5 +50,5 @@ def copy(req: dict, env) -> dict:
         return {"error": {"code": "copy-failed", "message": out}}
     new = json.loads(out)["data"]["id"]
     if req.get("answerOnly"):
-        return {"launch": {"argv": ["opencode", "mini", "--agent", "plan", "-s", new], "cwd": s["cwd"]}, "note": None}
+        return {"launch": {"argv": ["opencode", "mini", "--agent", "plan", "-s", new, "--no-replay"], "cwd": s["cwd"]}, "note": None}
     return {"launch": {"argv": ["opencode", "-s", new], "cwd": s["cwd"]}, "note": "can-edit"}

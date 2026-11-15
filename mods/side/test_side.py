@@ -231,7 +231,7 @@ class OpenCodeTest(unittest.TestCase):
         self.assertEqual(calls, [["opencode", "api", "session.fork", "--param",
                                   "sessionID=ses_4a04ddc87ffeQf2Y1N6phGn5ee", "-d", "{}"]])
         # answer-only: OpenCode's read-only plan agent, which only `opencode mini` can be started with
-        self.assertEqual(r["launch"], {"argv": ["opencode", "mini", "--agent", "plan", "-s", "ses_e214046b1ffe3mxz4AIx9i2lpk"],
+        self.assertEqual(r["launch"], {"argv": ["opencode", "mini", "--agent", "plan", "-s", "ses_e214046b1ffe3mxz4AIx9i2lpk", "--no-replay"],
                                        "cwd": OC_DIR})
         self.assertIsNone(r["note"])
 
