@@ -126,7 +126,7 @@ export default class Side extends View {
     setShared("side.tabs", rest);
     this.live = this.live.filter((s) => s !== slot);
     if (this.live.length) show(this.live[0]);
-    else run("layout.hide", { id: "side-slots" });
+    else { run("layout.hide", { id: "side-slots" }); run("layout.hide", { id: "panel" }); } // the last one: close the panel
     cx.notify();
   }
 

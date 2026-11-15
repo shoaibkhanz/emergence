@@ -11,6 +11,7 @@ const PANELS = [
   ["prs", "PRs", "mods/tabs-plus/pr.svg", 860],
   ["skills", "Library", "mods/tabs-plus/skills.svg", 440],
   ["usage", "Usage", "mods/tabs-plus/usage.svg", 760],
+  ["side", "Side", "mods/tabs-plus/side.svg", 620], // side chats (mods/side): a tab per copy of an agent's conversation
 ];
 const OURS = PANELS.slice(2).map(([id]) => id);
 
