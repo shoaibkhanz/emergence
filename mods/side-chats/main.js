@@ -14,6 +14,7 @@ const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(
 const RAIL_W = 160; // the sidebar folds to a rail below this width (as the inbox and Ports read it)
 const folded = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < RAIL_W || !!find(layout(), "sidebar")?.hidden;
 const FOCUS_CHECK_MS = 250; // no blur event: the cursor ring follows the keyboard by polling is_focused
+const ROOMY_W = 340; // narrower than this, a row drops "from …" (its tooltip still has it): the label comes first
 const STATUS = { working: "Working", blocked: "Needs you", done: "Done", idle: "Idle" };
 
 // Back to the pane the keyboard came from (as Ports' back).
@@ -87,14 +88,15 @@ export default class SideChats extends View {
       .child(STATUS[s]);
   }
 
-  row(t, r, selected) {
-    return h_flex().id(`side-chat-${r.slot}`).h(ROW_H).px(10).gap(8).flex_none().items_center().rounded(8).cursor_pointer()
+  row(t, r, selected, roomy) {
+    return h_flex().id(`side-chat-${r.slot}`).tooltip(r.from ? `${r.label}, from ${r.from}` : r.label).h(ROW_H).px(10).gap(8).flex_none().items_center().rounded(8).cursor_pointer()
       .when(selected, (el) => el.bg(t.selected)).hover((st) => st.bg(t.hover))
       .when(this.ringed && this.cur === r.slot, (el) => el.border_1().border_color(t.accent))
       .on_click(() => { this.cur = r.slot; show(r.slot); })
       .child(this.mark(t, r.program, 14))
-      .child(div().flex_none().max_w(150).truncate().text_size(12.5).text_color(t.foreground).child(r.label))
-      .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(r.from ? `from ${r.from}` : ""))
+      .child(div().when(!roomy, (el) => el.flex_1()).when(roomy, (el) => el.flex_none().max_w(180)).min_w(0).truncate()
+        .text_size(12.5).text_color(t.foreground).child(r.label))
+      .when(roomy, (el) => el.child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(r.from ? `from ${r.from}` : "")))
       .child(this.status(t, r.status));
   }
 
@@ -117,6 +119,6 @@ export default class SideChats extends View {
         .child(h_flex().gap(6).items_center().text_size(11.5).text_color(t.dim)
           .child(div().font_medium().child("Side chats")).child(String(rows.length))))
       .child(v_flex().id("side-chats-list").flex_1().min_h(0).px(6).overflow_y_scrollbar().track_scroll(this.list)
-        .children(rows.map((r) => this.row(t, r, shownOnSide && stack?.active === r.slot))));
+        .children(rows.map((r) => this.row(t, r, shownOnSide && stack?.active === r.slot, (find(layout(), "sidebar")?.size?.px ?? 0) >= ROOMY_W))));
   }
 }
