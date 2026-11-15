@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { harnessOf, decide, noticeFor, tabsOf, SLOTS, slotView, claim, bannerOf } from "./lib.js";
+import { harnessOf, decide, noticeFor, tabsOf, SLOTS, slotView, claim, bannerOf, withoutTab, INTRO } from "./lib.js";
 
 const installed = { claude: true, opencode: true, codex: true, pi: false, omp: true };
 const supported = ["claude", "opencode"];
@@ -65,9 +65,20 @@ test("noticeFor: a guess with no folder doesn't say undefined", () => {
   expect(noticeFor({ v: 1, session: { cwd: null }, confidence: "guess" }, "opencode")).toEqual({ title: "Copied the newest OpenCode session" });
 });
 
-test("bannerOf: what the Side view says about the shown chat: whose conversation it copies, and that it can't reach it", () => {
-  expect(bannerOf({ label: "Claude Code · herdr-mods", from: "feat/side-sessions" }))
-    .toBe("Copied from the agent on feat/side-sessions · nothing here reaches it");
-  expect(bannerOf({ label: "OpenCode · fastapi" })).toBe("Copied from the agent in fastapi · nothing here reaches it");
-  expect(bannerOf(undefined)).toBe("A copy of an agent's conversation · nothing here reaches it");
+test("bannerOf: one short line, key words first, so a narrow panel never cuts 'nothing here reaches it'", () => {
+  expect(bannerOf({ from: "feat/a-very-long-branch-name", label: "Claude Code · x" })).toBe("Has the agent's conversation · nothing here reaches it");
+  expect(bannerOf(undefined)).toBe("Has the agent's conversation · nothing here reaches it");
+});
+
+test("withoutTab: a failed press leaves no pending tab behind (so the panel moves off the idle slot)", () => {
+  const tabs = { "side-1": { at: 5 }, "side-2": { at: 6 } };
+  expect(withoutTab(tabs, "side-1")).toEqual({ "side-2": { at: 6 } });
+  expect(tabs["side-1"]).toEqual({ at: 5 }); // not mutated
+  const v = slotView([{ name: "side-1", state: "live", program: null }], ["side-1"], withoutTab(tabs, "side-1"), 10);
+  expect(v.open).toEqual([]);
+});
+
+test("INTRO: the slot's first line says the history is kept and the chat can carry on here", () => {
+  expect(INTRO).toContain("conversation as background");
+  expect(INTRO).toContain("Nothing you type here reaches the agent");
 });

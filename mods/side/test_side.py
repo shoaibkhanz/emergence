@@ -313,6 +313,16 @@ class HostTest(unittest.TestCase):
         self.assertIn("Opening a side chat", host.OPENING)
         self.assertFalse(hasattr(host, "ENDED"))
 
+    def test_changed_code_is_noticed(self):
+        # an updated host.py restarts the host in place (exec: same terminal, never finished)
+        f = os.path.join(self.dir, "host.py")
+        open(f, "w").close()
+        since = os.path.getmtime(f)
+        self.assertFalse(host.changed(f, since))
+        os.utime(f, (since + 5, since + 5))
+        self.assertTrue(host.changed(f, since))
+        self.assertFalse(host.changed(os.path.join(self.dir, "gone.py"), since))
+
 
 if __name__ == "__main__":
     unittest.main()

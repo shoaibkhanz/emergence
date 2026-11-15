@@ -60,9 +60,12 @@ export function claim(view) {
 export const tabsOf = (open, saved) => SLOTS.filter((s) => open.includes(s))
   .map((slot) => ({ slot, harness: saved[slot]?.harness ?? null, label: saved[slot]?.label ?? slot }));
 
-// The Side view's banner for the shown chat: the copy keeps the agent's history (it needs it to answer), so say whose
-// conversation it is and that nothing typed here reaches that agent.
-export function bannerOf(tab) {
-  const where = tab?.from ? `on ${tab.from}` : tab?.label ? `in ${tab.label.split(" · ").pop()}` : null;
-  return `${where ? `Copied from the agent ${where}` : "A copy of an agent's conversation"} · nothing here reaches it`;
-}
+// A tabs object without one slot (a press that failed after its slot was shown, or a tab's ✕).
+export const withoutTab = (tabs, slot) => Object.fromEntries(Object.entries(tabs).filter(([s]) => s !== slot));
+
+// A side chat starts empty (the agent's history isn't replayed), so its slot's first line and the Side view's banner
+// say it has that conversation as background and that nothing typed here reaches the agent.
+export const INTRO = "  Side chat · it has this agent's conversation as background, so carry on here. Nothing you type here reaches the agent.";
+// Claude clears the slot's intro line on its first draw, so the banner is the line that stays: short, key words first
+// (which agent is in the tab's label and the sidebar's row; a long branch here would cut "nothing here reaches it").
+export const bannerOf = () => "Has the agent's conversation · nothing here reaches it";

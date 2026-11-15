@@ -70,6 +70,14 @@ def run(req: dict, stop_path: str, poll: float = 0.2) -> int:
     return child.returncode
 
 
+def changed(path: str, since: float) -> bool:
+    """Whether the file was saved since `since` (a missing file isn't a change: keep running)."""
+    try:
+        return os.path.getmtime(path) != since
+    except OSError:
+        return False
+
+
 def idle() -> None:
     print(CLEAR + OPENING, end="", flush=True)
 
@@ -78,9 +86,13 @@ def serve(slot: str, d: str) -> None:
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # ctrl-c belongs to the chat, never to the slot
     os.makedirs(d, exist_ok=True)
     req_path, stop_path = paths(slot, d)
+    me = os.path.abspath(__file__)
+    since = os.path.getmtime(me)
     idle()
     while True:
         try:
+            if changed(me, since):  # an updated host: restart in place, never ending (the slot's block needs it)
+                os.execv(sys.executable, [sys.executable, "-B", me, "serve", slot, d])
             req = take(req_path)
             if req:
                 if os.path.exists(stop_path):
