@@ -212,6 +212,75 @@
                           "panel": true
                         }
                       }
+                    },
+                    {
+                      "id": "side",
+                      "type": "column",
+                      "children": [
+                        {
+                          "id": "side-header",
+                          "type": "block",
+                          "size": {
+                            "px": 36
+                          },
+                          "content": {
+                            "mod": "side",
+                            "props": {
+                              "panel": true
+                            }
+                          }
+                        },
+                        {
+                          "id": "side-slots",
+                          "type": "stack",
+                          "active": "side-1",
+                          "hidden": true,
+                          "children": [
+                            {
+                              "id": "side-1",
+                              "type": "block",
+                              "content": {
+                                "terminal": "side-1"
+                              }
+                            },
+                            {
+                              "id": "side-2",
+                              "type": "block",
+                              "content": {
+                                "terminal": "side-2"
+                              }
+                            },
+                            {
+                              "id": "side-3",
+                              "type": "block",
+                              "content": {
+                                "terminal": "side-3"
+                              }
+                            },
+                            {
+                              "id": "side-4",
+                              "type": "block",
+                              "content": {
+                                "terminal": "side-4"
+                              }
+                            },
+                            {
+                              "id": "side-5",
+                              "type": "block",
+                              "content": {
+                                "terminal": "side-5"
+                              }
+                            },
+                            {
+                              "id": "side-6",
+                              "type": "block",
+                              "content": {
+                                "terminal": "side-6"
+                              }
+                            }
+                          ]
+                        }
+                      ]
                     }
                   ]
                 }
@@ -237,6 +306,19 @@
           },
           "content": {
             "mod": "nav-keys",
+            "props": {
+              "resident": true
+            }
+          }
+        },
+        {
+          "id": "side-keys",
+          "type": "block",
+          "size": {
+            "px": 0
+          },
+          "content": {
+            "mod": "side",
             "props": {
               "resident": true
             }
