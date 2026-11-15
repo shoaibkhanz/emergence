@@ -5,7 +5,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { exec, appHome, theme, settings, props, run, layout, shared, setShared, closeOverlay } from "herdr";
-import { areas, radar } from "./charts.js";
+import { areas, radar, alpha } from "./charts.js";
 import { skillsOf, FEW, summarize, outputOf, heat, levels, startOfDay, addDays, DAY, KINDS, LENGTHS, span, keepOf, tabAfter } from "./lib.js";
 
 const RANGES = [[7, "7d"], [30, "30d"], [90, "90d"], [365, "1y"], ["custom", "Custom"]];
@@ -27,7 +27,6 @@ const EFFORT = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "defa
 const EFFORT_INK = { off: "#9ca3af", minimal: "#93c5fd", low: "#3b82f6", medium: "#10b981", high: "#eab308", xhigh: "#f97316", max: "#dc2626", default: "#4b5563" };
 const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WD = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const alpha = (c, a) => c.slice(0, 7) + Math.round(a * 255).toString(16).padStart(2, "0");
 const short = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n ?? 0)));
 const pct = (x) => (x == null ? "–" : x > 0.99 && x < 1 ? ">99%" : `${Math.round(x * 100)}%`);
 const date = (ms) => { const d = new Date(ms); return `${d.getDate()} ${MONTH[d.getMonth()]}`; };
@@ -304,9 +303,9 @@ export default class Usage extends View {
   tiles(t, r) {
     // Against the period before only when the history covers it (a young history makes +5000%; lib summarize).
     const vsBefore = (a, b) => `${a >= b ? "+" : ""}${Math.round(((a - b) / b) * 100)}% vs before`;
-    const x = r.tiles, before = x.before && x.prev > 0, change = before ? Math.round(((x.sessions - x.prev) / x.prev) * 100) : null, n = this.sel?.kind === "days" ? this.sel.keys.size : 0;
+    const x = r.tiles, before = x.before && x.prev > 0, n = this.sel?.kind === "days" ? this.sel.keys.size : 0;
     return this.tileRow(t, [
-      ["Sessions", String(x.sessions), n ? `on ${n} picked day${n === 1 ? "" : "s"}` : change == null ? (x.before ? "none in the period before" : "your history starts in this period") : `${change >= 0 ? "+" : ""}${change}% on the period before`],
+      ["Sessions", String(x.sessions), n ? `on ${n} picked day${n === 1 ? "" : "s"}` : !before ? (x.before ? "none in the period before" : "your history starts in this period") : vsBefore(x.sessions, x.prev)],
       ["Cost", x.costKnown ? usd(x.cost) : "–", !x.costKnown ? "no cost recorded" : `${usd(x.cost / x.days)} / day${n || !before || !x.costPrev ? "" : ` · ${vsBefore(x.cost, x.costPrev)}`}`],
       // The `git commit`s agents ran, by session start (Output counts your git log by commit date).
       ["Agent commits", String(x.commits), x.perCommit == null ? "made by your agents" : `${usd(x.perCommit)} per commit`],
@@ -358,15 +357,16 @@ export default class Usage extends View {
     const peak = inPeriod.reduce((a, c) => (c.sessions > (a?.sessions ?? 0) ? c : a), null);
     const d = cells.find((c) => c.t === this.hoverDay) ?? (picked.length ? total(picked)
       : { ...total(inPeriod), label: p.label.charAt(0).toUpperCase() + p.label.slice(1), peak });
+    // Left: what's shown, shortening when room runs out; right: active days and the legend, always whole.
     const readout = h_flex().h(20).gap(10).items_center().text_size(12)
-      .child(div().font_semibold().child(d.t != null ? `${WD[d.wd]} ${date(d.t)}` : d.label ?? this.selLabel()))
-      .child(div().text_color(t.muted).child(!d.sessions && d.tokens ? `no session started · ${short(d.tokens)} tokens from earlier sessions' sub-agents`
+      .child(h_flex().flex_1().min_w(0).gap(10).items_center().overflow_hidden()
+      .child(div().flex_none().font_semibold().child(d.t != null ? `${WD[d.wd]} ${date(d.t)}` : d.label ?? this.selLabel()))
+      .child(div().min_w(0).truncate().text_color(t.muted).child(!d.sessions && d.tokens ? `no session started · ${short(d.tokens)} tokens from earlier sessions' sub-agents`
         : `${d.sessions} session${d.sessions === 1 ? "" : "s"} · ${short(d.tokens)} tokens${d.cost ? ` · ${usd(d.cost)}` : ""}${d.peak ? ` · busiest ${WD[d.peak.wd]} ${date(d.peak.t)} (${d.peak.sessions})` : ""}`))
-      .children(ORDER.filter((h) => d.by[h]).map((h) => h_flex().gap(4).items_center().text_size(11).text_color(t.dim)
-        .child(div().size(8).rounded(2).bg(HARNESS[h].color)).child(`${HARNESS[h].name} ${d.by[h]}`)))
-      .child(div().flex_1())
+      .children(d.label ? [] : ORDER.filter((h) => d.by[h]).map((h) => h_flex().flex_none().gap(4).items_center().text_size(11).text_color(t.dim)
+        .child(div().size(8).rounded(2).bg(HARNESS[h].color)).child(`${HARNESS[h].name} ${d.by[h]}`))))
       .when(!!active, (el) => el.child(div().flex_none().mr(8).text_size(11).text_color(t.dim).child(active)))
-      .child(h_flex().gap(3).items_center().text_size(11).text_color(t.dim).child(div().mr(4).child("Less"))
+      .child(h_flex().flex_none().gap(3).items_center().text_size(11).text_color(t.dim).child(div().mr(4).child("Less"))
         .children(LEVEL.map((a, i) => div().size(11).rounded(3).bg(i ? alpha(ink, a) : t.raised))).child(div().ml(4).child("More")));
     const metrics = [["sessions", "Sessions"], ["tokens", "Tokens"], ...(cells.some((d) => d.cost) ? [["cost", "Cost"]] : [])];
     const all = cells[0].t >= p.from;
@@ -699,7 +699,6 @@ export default class Usage extends View {
     const W = this.width - 32 - 30, list = r.strengths, name = (k) => KINDS.find(([x]) => x === k)[1];
     const color = (x) => HARNESS[x.h]?.color ?? t.accent, rate = (v) => `${pct(v.clean)} (${v.ok}/${v.n})`;
     // Hovering a cell or row: its numbers in a readout, in the card's own type (Herdr's tooltips are one plain line).
-    // What it says: the share, then how sure it is, the range the rate would likely settle in over many more runs.
     const key = (x, k) => `${x.h}|${x.model}|${k}`, hovered = this.strHover;
     const hover = (el, x, k) => el.on_hover((on, cx) => {
       if (on) this.strHover = key(x, k); else if (this.strHover === key(x, k)) this.strHover = null;
@@ -709,9 +708,7 @@ export default class Usage extends View {
       .when(withPair, (el) => el.child(div().font_medium().child(`${HARNESS[x.h]?.name ?? x.h} · ${x.model}`)))
       .child(div().font_medium().text_color(withPair ? t.muted : t.foreground).child(label))
       .child(div().text_color(t.foreground).child(v.clean == null ? `${v.n} run${v.n === 1 ? "" : "s"}: under the 5 needed to score it`
-        : `${v.ok} of ${v.n} runs clean (${pct(v.clean)})`))
-      .when(v.clean != null, (el) => el.child(div().text_color(t.dim)
-        .child(`· from ${v.n} runs it's an estimate: over many more, likely ${pct(v.lo)}–${pct(v.hi)}`)));
+        : `${v.ok} of ${v.n} runs clean (${pct(v.clean)})`));
     const at = hovered ? list.flatMap((x) => KINDS.map(([k, label]) => ({ x, k, label }))).find((c) => key(c.x, c.k) === hovered) : null;
     const best = Object.fromEntries(KINDS.map(([k]) => {
       const m = list.filter((x) => x.kinds[k].clean != null).sort((a, b) => b.kinds[k].lo - a.kinds[k].lo);
@@ -750,17 +747,18 @@ export default class Usage extends View {
         .child(radar(t, { size, labels: KINDS.map(([, label]) => label), values: KINDS.map(([k]) => x.kinds[k].clean), color: color(x) }))
         .when(wide, (el) => el.child(table(x))))
       // the footer: the hovered row's numbers while one is, else best and weakest
-      .child(at && at.x === x
-        ? div().min_h(18).child(detail(x, at.k, at.label, x.kinds[at.k], false))
-        : h_flex().w_full().min_h(18).gap(8).justify_between().text_size(11)
+      .child(at && at.x === x // two lines tall either way, for the same reason as the grid's readout
+        ? div().h(34).overflow_hidden().child(detail(x, at.k, at.label, x.kinds[at.k], false))
+        : h_flex().w_full().h(34).items_start().gap(8).justify_between().text_size(11)
           .child(div().truncate().text_color(t.done).child(x.best ? `Best: ${name(x.best)} ${rate(x.kinds[x.best])}` : "Too few runs of any one kind"))
           .child(div().truncate().text_color(t.muted).child(x.worst ? `Weakest: ${name(x.worst)} ${rate(x.kinds[x.worst])}` : "")));
     const rows = [];
     for (let i = 0; i < list.length; i += cols) rows.push(h_flex().gap(12).items_stretch().children(list.slice(i, i + cols).map(tile)));
-    // under the grid: the hovered cell's numbers, else what hovering gives
-    const readout = div().min_h(20).pt(2).child(at && grid
+    // under the grid: the hovered cell's numbers, else what hovering gives. Two lines tall whatever it says, so a long
+    // detail that wraps doesn't push the radars down and slide another cell under the pointer.
+    const readout = div().h(36).overflow_hidden().child(at
       ? detail(at.x, at.k, at.label, at.x.kinds[at.k], true)
-      : div().text_size(12).text_color(t.dim).child("Hover a cell for its runs and how sure its rate is."));
+      : div().text_size(12).text_color(t.dim).child("Hover a cell for its runs."));
     return this.card(t, "Strengths by kind of work", div().text_size(11).text_color(t.dim).child("clean runs per kind · a kind needs 5 runs · outlined: best in its column"),
       v_flex().gap(16).children(list.length > 1 ? [v_flex().gap(8).child(grid).child(readout)] : []).children(rows));
   }

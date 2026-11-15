@@ -253,9 +253,8 @@ test("strengthsOf: clean rate per kind for big enough pairs, best and weakest of
   expect(rest).toEqual([]);
   expect([c.h, c.model, c.n]).toEqual(["claude", "claude-m", 12]);
   expect(c.kinds.build).toMatchObject({ n: 6, ok: 5, clean: 5 / 6 });
-  expect(c.kinds.build.hi).toBeGreaterThan(c.kinds.build.clean);   // its 95% range, for the hover
-  expect(c.kinds.build.lo).toBeLessThan(c.kinds.build.clean);
-  expect(c.kinds.research.hi).toBe(null);
+  expect(c.kinds.build.lo).toBeLessThan(c.kinds.build.clean);      // the low end of its range ranks best and weakest
+  expect(c.kinds.research.lo).toBe(null);
   expect(c.kinds.debug).toMatchObject({ n: 5, ok: 3, clean: 0.6 });
   expect(c.kinds.research).toMatchObject({ n: 1, clean: null }); // under 5: not measured
   expect([c.best, c.worst]).toEqual(["build", "debug"]);
