@@ -1,0 +1,19 @@
+{"type": "file-history-snapshot", "messageId": "x"}
+{"type": "user", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "user", "content": "FIRST QUESTION about margo"}}
+{"type": "assistant", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "assistant", "content": [{"type": "thinking", "thinking": "thinking hard"}]}}
+{"type": "assistant", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "assistant", "content": [{"type": "text", "text": "FIRST ANSWER"}]}}
+{"type": "assistant", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/w/margo/a.py"}}]}}
+{"type": "user", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "TOOL_RESULT body"}]}}
+{"type": "system", "content": "sys"}
+{"type": "attachment", "attachment": {}}
+{"type": "user", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "user", "content": "META caveat"}, "isMeta": true}
+{"type": "user", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "user", "content": [{"type": "text", "text": "META text"}]}, "isMeta": true}
+{"type": "user", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "user", "content": "<command-name>/model</command-name>"}}
+{"type": "user", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "user", "content": "SIDECHAIN ask"}, "isSidechain": true}
+{"type": "assistant", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "assistant", "content": [{"type": "text", "text": "SIDECHAIN reply"}]}, "isSidechain": true}
+{"type": "user", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "user", "content": "SUMMARY of earlier work"}, "isCompactSummary": true, "isVisibleInTranscriptOnly": true}
+{"type": "user", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "user", "content": "SECOND QUESTION"}}
+{"type": "assistant", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "assistant", "content": [{"type": "text", "text": "SECOND ANSWER"}]}}
+{"type": "user", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "user", "content": [{"type": "text", "text": "LAST QUESTION"}]}}
+{"type": "assistant", "sessionId": "11111111-2222-3333-4444-555555555555", "message": {"role": "assistant", "content": [{"type": "text", "text": "LAST ANSWER"}]}}
+not json

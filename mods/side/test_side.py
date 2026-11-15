@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
 import unittest
@@ -65,6 +66,8 @@ class ProtocolTest(unittest.TestCase):
 
 INSTR = "Answer and explain; don't edit files. Files may have changed since this point."
 FIX = os.path.join(HERE, "fixtures")
+TRANSCRIPT = os.path.join(FIX, "claude", "2.1.325", "transcript.jsonl")
+claude = ADAPTERS["claude"]
 
 
 def claude_home(tmp, pid, transcript=True):
@@ -79,7 +82,7 @@ def claude_home(tmp, pid, transcript=True):
     if transcript:
         proj = os.path.join(tmp, ".claude", "projects", "-w-margo")
         os.makedirs(proj)
-        open(os.path.join(proj, f"{data['sessionId']}.jsonl"), "w").close()
+        shutil.copy(TRANSCRIPT, os.path.join(proj, f"{data['sessionId']}.jsonl"))
     return tmp
 
 
@@ -114,38 +117,73 @@ class ClaudeTest(unittest.TestCase):
     def copy(self, answer_only):
         e = env(home=claude_home(self.tmp, 300), procs=lambda pid: TREE)
         session = {"harness": "claude", "id": "11111111-2222-3333-4444-555555555555", "cwd": "/w/margo"}
-        return side.handle("copy", {"session": session, "pid": 100, "answerOnly": answer_only}, e)
+        return side.handle("copy", {"session": session, "pid": 100, "answerOnly": answer_only,
+                                    "dataDir": os.path.join(self.tmp, "data")}, e)
 
-    def test_copy_full_answer_only(self):
+    def test_render_skips_noise(self):
+        with open(TRANSCRIPT) as f:
+            es, summary = claude.entries(f)
+        texts = " ".join(t for _, t in es)
+        self.assertNotIn("thinking", texts)
+        for noise in ("<command-name>", "META", "SIDECHAIN", "TOOL_RESULT", "SUMMARY"):
+            self.assertNotIn(noise, texts)
+        self.assertIn(("agent", "[used Read]"), es)
+        self.assertEqual(es[0], ("user", "FIRST QUESTION about margo"))
+        self.assertEqual(es[-1], ("agent", "LAST ANSWER"))
+        self.assertEqual(summary, "SUMMARY of earlier work")
+
+    def test_recent_cuts_at_user(self):
+        es = [("user", "a" * 10), ("agent", "b" * 10), ("user", "c" * 10), ("agent", "d" * 10)]
+        self.assertEqual(claude.recent(es, cap=25), es[2:])
+
+    def test_background_one_huge_exchange(self):
+        es = [("user", "q"), ("agent", "x" * 100)]
+        self.assertEqual(claude.recent(es, cap=30), [("agent", "x" * 30)])
+
+    def test_copy_fresh_answer_only(self):
         r = self.copy(True)
-        self.assertEqual(r["launch"]["argv"], [BIN, "--resume", "11111111-2222-3333-4444-555555555555",
-                                               "--fork-session", "--model", "opus", "--permission-mode", "plan",
-                                               "--append-system-prompt", INSTR])
+        argv = r["launch"]["argv"]
+        self.assertEqual(argv[:4], [BIN, "--permission-mode", "plan", "--append-system-prompt-file"])
+        self.assertEqual(argv[5:], ["--model", "opus"])
+        self.assertNotIn("--resume", argv)
+        self.assertNotIn("--fork-session", argv)
         self.assertEqual(r["launch"]["cwd"], "/w/margo")
+        with open(argv[4]) as f:
+            bg = f.read()
+        conv = os.path.join(os.path.dirname(argv[4]), "conversation.md")
+        self.assertIn(INSTR, bg)
+        self.assertIn("SUMMARY of earlier work", bg)
+        self.assertIn(conv, bg)
+        self.assertIn("LAST QUESTION", bg)
+        with open(conv) as f:
+            self.assertIn("FIRST QUESTION about margo", f.read())
 
-    def test_copy_full_not_answer_only(self):
-        argv = self.copy(False)["launch"]["argv"]
-        self.assertNotIn("--permission-mode", argv)
-        self.assertNotIn("--dangerously-skip-permissions", argv)
-        self.assertNotIn("-c", argv)
-        self.assertEqual(argv, [BIN, "--resume", "11111111-2222-3333-4444-555555555555", "--fork-session",
-                                "--model", "opus"])
+    def test_copy_fresh_not_answer_only(self):
+        r = self.copy(False)
+        self.assertEqual(r["launch"]["argv"][1], "--append-system-prompt-file")
+        self.assertNotIn("--permission-mode", r["launch"]["argv"])
+        self.assertEqual(r["note"], "can-edit")
+
+    def test_old_chats_trimmed(self):
+        for i in range(25):
+            os.makedirs(os.path.join(self.tmp, "data", "chats", f"{1000 + i}-old"))
+        self.copy(True)
+        self.assertEqual(len(os.listdir(os.path.join(self.tmp, "data", "chats"))), 20)
+
+    def fresh(self, tree):
+        e = env(home=claude_home(self.tmp, 300), procs=lambda pid: tree)
+        session = {"harness": "claude", "id": "11111111-2222-3333-4444-555555555555", "cwd": "/w"}
+        return side.handle("copy", {"session": session, "pid": 100, "answerOnly": False,
+                                    "dataDir": os.path.join(self.tmp, "data")}, e)["launch"]["argv"]
 
     def test_copy_carries_equals_form(self):
-        tree = TREE[:2] + [side.Proc(300, ["claude", "--effort=high", "--settings", "x.json"], "ttys003")]
-        e = env(home=claude_home(self.tmp, 300), procs=lambda pid: tree)
-        session = {"harness": "claude", "id": "s", "cwd": "/w"}
-        argv = side.handle("copy", {"session": session, "pid": 100, "answerOnly": False}, e)["launch"]["argv"]
-        self.assertEqual(argv, ["claude", "--resume", "s", "--fork-session", "--effort=high"])
+        argv = self.fresh(TREE[:2] + [side.Proc(300, ["claude", "--effort=high", "--settings", "x.json"], "ttys003")])
+        self.assertEqual([argv[0], argv[1], argv[3:]], ["claude", "--append-system-prompt-file", ["--effort=high"]])
 
     def test_copy_spaced_path_falls_back(self):
         # ps splits "/Users/x/Library/Application Support/Claude/claude" on its space: not a program to run
-        tree = TREE[:2] + [side.Proc(300, ["/no/such/Application", "Support/Claude/claude", "--model", "opus"])]
-        e = env(home=claude_home(self.tmp, 300), procs=lambda pid: tree)
-        session = {"harness": "claude", "id": "s", "cwd": "/w"}
-        argv = side.handle("copy", {"session": session, "pid": 100, "answerOnly": False}, e)["launch"]["argv"]
-        self.assertEqual(argv[:4], ["claude", "--resume", "s", "--fork-session"])
-
+        argv = self.fresh(TREE[:2] + [side.Proc(300, ["/no/such/Application", "Support/Claude/claude", "--model", "opus"])])
+        self.assertEqual(argv[:2], ["claude", "--append-system-prompt-file"])
 
 OC = os.path.join(FIX, "opencode", "2.3.0")
 

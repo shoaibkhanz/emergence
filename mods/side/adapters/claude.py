@@ -1,14 +1,20 @@
 """Claude Code: a running claude writes ~/.claude/sessions/<pid>.json (sessionId, cwd); Herdr's foreground pid may
-be a shell above it, so the process tree is walked. A copy is `--resume <id> --fork-session` (new id, original
-untouched); answer-only is plan mode plus a one-line instruction (about 1% extra cache write, findings §6)."""
+be a shell above it, so the process tree is walked. A side chat is a fresh session (empty screen, original untouched)
+given the conversation as background: `--append-system-prompt-file` with the side-chat instruction, the latest
+compaction summary and the most recent exchanges, plus the path of a plain-text digest of the whole conversation it
+can read when asked about something older. Files, never argv: argv shows in `ps`. Answer-only adds plan mode."""
 from __future__ import annotations  # stock macOS python3 is 3.9: `str | None` must not evaluate at import
 
 import glob
 import json
 import os
+import shutil
+import time
 
 NAME = "Claude Code"
 INSTR = "Answer and explain; don't edit files. Files may have changed since this point."
+CAP = 24000  # characters of recent exchanges in the background (~6k tokens)
+KEEP = 20  # chat folders kept under <dataDir>/chats
 CARRY = ("--model", "--effort")  # the copy talks to the same model; every other flag is dropped
 
 
@@ -51,13 +57,92 @@ def _carried(args: list[str]) -> list[str]:
     return out
 
 
+def entries(lines) -> tuple:
+    """Transcript lines -> ([(role, text)], latest compaction summary or None). Only what was said: no tool results,
+    meta records, sidechains, slash-command wrappers or thinking; a tool use is one "[used <name>]" line."""
+    out, summary = [], None
+    for line in lines:
+        try:
+            o = json.loads(line)
+        except ValueError:
+            continue
+        if o.get("type") not in ("user", "assistant") or o.get("isSidechain") or o.get("isMeta"):
+            continue
+        c = (o.get("message") or {}).get("content")
+        parts = [{"type": "text", "text": c}] if isinstance(c, str) else c if isinstance(c, list) else []
+        for p in parts:
+            if not isinstance(p, dict):
+                continue
+            if o["type"] == "user" and p.get("type") == "text":
+                text = p.get("text") or ""
+                if o.get("isCompactSummary"):
+                    summary = text
+                elif text.strip() and not text.startswith(("<command-", "<local-command-")):
+                    out.append(("user", text))
+            elif o["type"] == "assistant" and p.get("type") == "text" and (p.get("text") or "").strip():
+                out.append(("agent", p["text"]))
+            elif o["type"] == "assistant" and p.get("type") == "tool_use":
+                out.append(("agent", f"[used {p.get('name')}]"))
+    return out, summary
+
+
+def digest(es: list) -> str:
+    """Entries as text: a heading each time the speaker changes."""
+    out, last = [], None
+    for role, text in es:
+        if role != last:
+            out.append(f"\n## {'You' if role == 'user' else 'Agent'}\n")
+            last = role
+        out.append(text)
+    return "\n".join(out).strip() + "\n"
+
+
+def recent(es: list, cap: int = CAP) -> list:
+    """The longest tail of entries that starts at something the person said and fits in cap characters; if none fits,
+    the last entry alone, trimmed to its end."""
+    best, size = None, 0
+    for i in range(len(es) - 1, -1, -1):
+        size += len(es[i][1])
+        if size > cap:
+            break
+        if es[i][0] == "user":
+            best = i
+    if best is not None:
+        return es[best:]
+    return [(es[-1][0], es[-1][1][-cap:])] if es else []
+
+
+def _write_chat(sid: str, transcript: str, data_dir: str) -> str:
+    with open(transcript) as f:
+        es, summary = entries(f)
+    chats = os.path.join(data_dir, "chats")
+    d = os.path.join(chats, f"{int(time.time() * 1000)}-{sid[:8]}")
+    os.makedirs(d)
+    conv = os.path.join(d, "conversation.md")
+    with open(conv, "w") as f:
+        f.write(digest(es))
+    bg = [INSTR, f"You're a side chat beside an agent. Its whole conversation so far is in {conv}; read it in parts "
+                 "when asked about something not below.",
+          f"## Earlier, summarised\n\n{summary}" if summary else "",
+          "## Most recent exchanges\n" + digest(recent(es))]
+    path = os.path.join(d, "background.md")
+    with open(path, "w") as f:
+        f.write("\n\n".join(b for b in bg if b))
+    for old in sorted(os.listdir(chats))[:-KEEP]:
+        shutil.rmtree(os.path.join(chats, old), ignore_errors=True)
+    return path
+
+
 def copy(req: dict, env) -> dict:
     p, _ = _owner(req, env)
     args = p.args if p and p.args else ["claude"]
     # ps splits a path with spaces (the desktop app's "…/Application Support/…"): then run claude from PATH
     prog = args[0] if "/" not in args[0] or os.path.exists(args[0]) else "claude"
     sid = req["session"]["id"]
-    argv = [prog, "--resume", sid, "--fork-session", *_carried(args)]
-    if req.get("answerOnly"):
-        argv += ["--permission-mode", "plan", "--append-system-prompt", INSTR]
-    return {"launch": {"argv": argv, "cwd": req["session"]["cwd"]}, "note": None}
+    found = glob.glob(os.path.join(env.home, ".claude", "projects", "*", f"{sid}.jsonl"))
+    if not found:
+        return {"error": {"code": "not-found", "message": "this Claude session has no conversation yet"}}
+    bg = _write_chat(sid, found[0], req["dataDir"])
+    mode = ["--permission-mode", "plan"] if req.get("answerOnly") else []
+    argv = [prog, *mode, "--append-system-prompt-file", bg, *_carried(args)]
+    return {"launch": {"argv": argv, "cwd": req["session"]["cwd"]}, "note": None if req.get("answerOnly") else "can-edit"}
