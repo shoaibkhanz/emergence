@@ -41,6 +41,7 @@
         {
           "id": "sidebar-lists",
           "type": "column",
+          "resizable": false,
           "children": [
             {
               "id": "spaces",
