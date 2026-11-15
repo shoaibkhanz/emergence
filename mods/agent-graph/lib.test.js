@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, ringed, sidebarCursor, openOnActive, filterCounts } from "./lib.js";
+import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, ringed, sidebarCursor, openOnActive, filterCounts, activeNudge } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -142,4 +142,14 @@ test("openOnActive: working or needs you opens on Active; finished, idle or no a
 test("filterCounts: Active counts the agents Active shows (all but idle), All every agent", () => {
   expect(filterCounts(FILTER_ITEMS)).toEqual({ active: 2, all: 3 });
   expect(filterCounts([])).toEqual({ active: 0, all: 0 });
+});
+
+// On All, the Active count lights when there's something Active would show you: amber over blue, never once you've
+// switched yourself (armed is false) or while you're on Active.
+test("activeNudge: blocked beats working; nothing on Active, when disarmed, or with nothing active", () => {
+  expect(activeNudge(FILTER_ITEMS, { onAll: true, armed: true })).toBe("working");
+  expect(activeNudge([...FILTER_ITEMS, { agent: true, status: "blocked" }], { onAll: true, armed: true })).toBe("blocked");
+  expect(activeNudge(FILTER_ITEMS, { onAll: false, armed: true })).toBe(null);
+  expect(activeNudge(FILTER_ITEMS, { onAll: true, armed: false })).toBe(null);
+  expect(activeNudge([{ agent: true, status: "done" }, { agent: false, status: "working" }], { onAll: true, armed: true })).toBe(null);
 });

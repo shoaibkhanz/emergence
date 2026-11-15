@@ -140,6 +140,13 @@ export const sidebarCursor = (inbox, spaces) => (inbox && spaces ? (inbox.at > s
 // How the panel opens, each time (nothing remembered): on Active when an agent works or needs you, else on All.
 export const openOnActive = (items) => items.some((i) => i.agent && (i.status === "working" || i.status === "blocked"));
 
+// While you're on All, the Active count lights when Active has something for you: "blocked" (an agent needs you) over
+// "working", else null. Not armed once you've switched yourself while agents were active: All was your choice.
+export function activeNudge(items, { onAll, armed }) {
+  const agents = onAll && armed ? items.filter((i) => i.agent) : [];
+  return agents.some((i) => i.status === "blocked") ? "blocked" : agents.some((i) => i.status === "working") ? "working" : null;
+}
+
 // The Active | All switch's counts: Active is what the Active view shows (every agent but the idle), All every agent.
 export function filterCounts(items) {
   const agents = items.filter((i) => i.agent);
