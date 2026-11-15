@@ -53,7 +53,7 @@ export function kindOf(s) {
 // Compare's radars: each harness and main model with 10+ top-level sessions (the six busiest), its clean-run rate in
 // each kind of work it did 5+ times (null under that: not measured), and its best and weakest measured kinds, ranked
 // by the low end of the rate's 95% interval so 5 of 5 doesn't beat 27 of 30.
-export const RADAR_MIN = 10, KIND_MIN = 5;
+const RADAR_MIN = 10, KIND_MIN = 5;
 export function strengthsOf(top) {
   const groups = new Map();
   for (const s of top) { const k = `${s.h}\u0000${topModel(s)}`; (groups.get(k) ?? groups.set(k, []).get(k)).push(s); }
@@ -63,7 +63,7 @@ export function strengthsOf(top) {
       const x = g.filter((s) => kindOf(s) === kind);
       const ok = x.filter(clean).length;
       const w = x.length >= KIND_MIN ? wilson(ok, x.length) : null;
-      kinds[kind] = { n: x.length, ok, clean: w ? ok / x.length : null, lo: w?.lo ?? null, hi: w?.hi ?? null };
+      kinds[kind] = { n: x.length, ok, clean: w ? ok / x.length : null, lo: w?.lo ?? null };
     }
     const measured = KINDS.map(([kind]) => kind).filter((kind) => kinds[kind].clean != null)
       .sort((a, b) => kinds[b].lo - kinds[a].lo || kinds[b].n - kinds[a].n);
@@ -100,18 +100,19 @@ export function summarize(all, { from, to, harnesses, sameRepos = false, kind = 
   if (!active.has(dayKey(t))) t = startOfDay(t - DAY / 2);
   while (active.has(dayKey(t))) { streak++; t = startOfDay(t - DAY / 2); }
   const tin = sum(ss, (s) => s.tin), tcr = sum(ss, (s) => s.tcr);
+  const was = pick(from - (to - from), from), wasTop = was.filter((s) => !s.sub); // the period before
   const tiles = {
-    sessions: top.length, prev: pick(from - (to - from), from).filter((s) => !s.sub).length,
+    sessions: top.length, prev: wasTop.length,
     activeDays: active.size, days, streak,
     tokens: sum(ss, (s) => s.tok), cacheHit: tin + tcr ? tcr / (tin + tcr) : null,
     cost: sum(ss, (s) => s.cost), costKnown: ss.some((s) => s.cost != null),
-    costPrev: sum(pick(from - (to - from), from), (s) => s.cost),
+    costPrev: sum(was, (s) => s.cost),
     // The "vs before" lines need a history reaching back over the whole period before (within a day), any harness.
     before: all.some((s) => s.start <= from - (to - from) + DAY),
     // What the spend got: the agents' `git commit`s (a session's count includes its sub-agents', so top-level only).
     commits: sum(top, (s) => s.commits), perCommit: perCommitOf(top, sum(ss, (s) => s.cost)),
     clean: top.length ? top.filter(clean).length / top.length : null,
-    cleanPrev: (() => { const p = pick(from - (to - from), from).filter((s) => !s.sub); return p.length ? p.filter(clean).length / p.length : null; })(),
+    cleanPrev: wasTop.length ? wasTop.filter(clean).length / wasTop.length : null,
   };
   // Where tokens go (sub-agents included), and each harness' share of runs, tokens and recorded spend.
   const mix = mixOf(ss);
@@ -141,7 +142,7 @@ export function summarize(all, { from, to, harnesses, sameRepos = false, kind = 
   // rows add up to the Cost tile.
   const places = new Map();
   for (const s of ss) {
-    const p = places.get(s.where ?? null) ?? places.set(s.where ?? null, { key: s.where ?? null, sessions: 0, cost: 0, commits: 0, top: [] }).get(s.where ?? null);
+    const k = s.where ?? null, p = places.get(k) ?? places.set(k, { key: k, sessions: 0, cost: 0, commits: 0, top: [] }).get(k);
     p.cost += s.cost ?? 0;
     if (!s.sub) { p.sessions++; p.commits += s.commits ?? 0; p.top.push(s); }
   }
