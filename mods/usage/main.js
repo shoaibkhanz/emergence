@@ -698,10 +698,21 @@ export default class Usage extends View {
   strengthsCard(t, r) {
     const W = this.width - 32 - 30, list = r.strengths, name = (k) => KINDS.find(([x]) => x === k)[1];
     const color = (x) => HARNESS[x.h]?.color ?? t.accent, rate = (v) => `${pct(v.clean)} (${v.ok}/${v.n})`;
-    // what a cell's number is, for its hover: the raw share, and the range the true rate likely sits in
-    const tip = (x, label, v) => v.clean == null
-      ? `${label}: ${v.n} run${v.n === 1 ? "" : "s"}, under the 5 needed to score it`
-      : `${label}: ${v.ok} of ${v.n} runs clean (${pct(v.clean)}). 95% range ${pct(v.lo)}–${pct(v.hi)}: with ${v.n} runs, the true rate likely sits there.`;
+    // Hovering a cell or row: its numbers in a readout, in the card's own type (Herdr's tooltips are one plain line).
+    // What it says: the share, then how sure it is, the range the rate would likely settle in over many more runs.
+    const key = (x, k) => `${x.h}|${x.model}|${k}`, hovered = this.strHover;
+    const hover = (el, x, k) => el.on_hover((on, cx) => {
+      if (on) this.strHover = key(x, k); else if (this.strHover === key(x, k)) this.strHover = null;
+      cx.notify();
+    });
+    const detail = (x, k, label, v, withPair) => h_flex().flex_wrap().gap_x(6).gap_y(2).items_baseline().text_size(12)
+      .when(withPair, (el) => el.child(div().font_medium().child(`${HARNESS[x.h]?.name ?? x.h} · ${x.model}`)))
+      .child(div().font_medium().text_color(withPair ? t.muted : t.foreground).child(label))
+      .child(div().text_color(t.foreground).child(v.clean == null ? `${v.n} run${v.n === 1 ? "" : "s"}: under the 5 needed to score it`
+        : `${v.ok} of ${v.n} runs clean (${pct(v.clean)})`))
+      .when(v.clean != null, (el) => el.child(div().text_color(t.dim)
+        .child(`· from ${v.n} runs it's an estimate: over many more, likely ${pct(v.lo)}–${pct(v.hi)}`)));
+    const at = hovered ? list.flatMap((x) => KINDS.map(([k, label]) => ({ x, k, label }))).find((c) => key(c.x, c.k) === hovered) : null;
     const best = Object.fromEntries(KINDS.map(([k]) => {
       const m = list.filter((x) => x.kinds[k].clean != null).sort((a, b) => b.kinds[k].lo - a.kinds[k].lo);
       return [k, m.length > 1 ? m[0] : null];
@@ -714,8 +725,10 @@ export default class Usage extends View {
         .children(KINDS.map(([, label]) => div().flex_1().min_w(0).truncate().text_center().text_size(11).text_color(t.dim).child(label))))
       .children(list.map((x) => h_flex().gap(4).items_center().child(who(x)).children(KINDS.map(([k, label]) => {
         const v = x.kinds[k], on = best[k] === x;
-        return v_flex().id(`str-${x.h}-${x.model}-${k}`).tooltip(tip(x, label, v)).flex_1().min_w(0).h(40).items_center().justify_center().rounded(6)
-          .bg(v.clean == null ? t.raised : alpha(t.done, 0.12 + 0.55 * v.clean)).border(1).border_color(on ? t.foreground : alpha(t.border, 0))
+        const lit = hovered === key(x, k);
+        return hover(v_flex().id(`str-${x.h}-${x.model}-${k}`), x, k).flex_1().min_w(0).h(40).items_center().justify_center().rounded(6)
+          .bg(v.clean == null ? t.raised : alpha(t.done, 0.12 + 0.55 * v.clean))
+          .border(1).border_color(lit ? t.accent : on ? t.foreground : alpha(t.border, 0))
           .child(div().text_size(12).font_medium().text_color(v.clean == null ? t.dim : t.foreground).child(v.clean == null ? "" : pct(v.clean)))
           .child(div().text_size(10).text_color(v.clean == null ? t.dim : t.muted).child(v.n ? `${v.n} run${v.n === 1 ? "" : "s"}` : ""));
       }))));
@@ -724,7 +737,8 @@ export default class Usage extends View {
     const size = wide ? 190 : Math.min(230, tw - 20);
     const table = (x) => v_flex().flex_1().min_w(0).gap(6).justify_center().children(KINDS.map(([k, label]) => {
       const v = x.kinds[k];
-      return h_flex().id(`strow-${x.h}-${x.model}-${k}`).tooltip(tip(x, label, v)).h(20).gap(8).items_center().text_size(12)
+      return hover(h_flex().id(`strow-${x.h}-${x.model}-${k}`), x, k).h(20).px(4).gap(8).items_center().rounded(4).text_size(12)
+        .when(hovered === key(x, k), (el) => el.bg(t.hover))
         .child(div().w(84).flex_none().text_color(v.clean == null ? t.dim : t.foreground).child(label))
         .child(div().flex_1().h(6).rounded(3).bg(t.raised).child(div().h(6).rounded(3).w(`${Math.round((v.clean ?? 0) * 100)}%`).bg(color(x))))
         .child(div().w(40).flex_none().text_right().text_color(v.clean == null ? t.dim : t.foreground).child(v.clean == null ? "–" : pct(v.clean)))
@@ -735,13 +749,20 @@ export default class Usage extends View {
       .child(h_flex().w_full().gap(16).items_center().justify_center()
         .child(radar(t, { size, labels: KINDS.map(([, label]) => label), values: KINDS.map(([k]) => x.kinds[k].clean), color: color(x) }))
         .when(wide, (el) => el.child(table(x))))
-      .child(h_flex().w_full().gap(8).justify_between().text_size(11)
-        .child(div().truncate().text_color(t.done).child(x.best ? `Best: ${name(x.best)} ${rate(x.kinds[x.best])}` : "Too few runs of any one kind"))
-        .child(div().truncate().text_color(t.muted).child(x.worst ? `Weakest: ${name(x.worst)} ${rate(x.kinds[x.worst])}` : "")));
+      // the footer: the hovered row's numbers while one is, else best and weakest
+      .child(at && at.x === x
+        ? div().min_h(18).child(detail(x, at.k, at.label, x.kinds[at.k], false))
+        : h_flex().w_full().min_h(18).gap(8).justify_between().text_size(11)
+          .child(div().truncate().text_color(t.done).child(x.best ? `Best: ${name(x.best)} ${rate(x.kinds[x.best])}` : "Too few runs of any one kind"))
+          .child(div().truncate().text_color(t.muted).child(x.worst ? `Weakest: ${name(x.worst)} ${rate(x.kinds[x.worst])}` : "")));
     const rows = [];
     for (let i = 0; i < list.length; i += cols) rows.push(h_flex().gap(12).items_stretch().children(list.slice(i, i + cols).map(tile)));
-    return this.card(t, "Strengths by kind of work", div().text_size(11).text_color(t.dim).child("clean runs per kind · a kind needs 5 runs · outlined: best in its column · hover for the range"),
-      v_flex().gap(16).children(list.length > 1 ? [grid] : []).children(rows));
+    // under the grid: the hovered cell's numbers, else what hovering gives
+    const readout = div().min_h(20).pt(2).child(at && grid
+      ? detail(at.x, at.k, at.label, at.x.kinds[at.k], true)
+      : div().text_size(12).text_color(t.dim).child("Hover a cell for its runs and how sure its rate is."));
+    return this.card(t, "Strengths by kind of work", div().text_size(11).text_color(t.dim).child("clean runs per kind · a kind needs 5 runs · outlined: best in its column"),
+      v_flex().gap(16).children(list.length > 1 ? [v_flex().gap(8).child(grid).child(readout)] : []).children(rows));
   }
 
   compare(t, r) {
