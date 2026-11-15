@@ -94,7 +94,7 @@ export default class Side extends View {
       if (made.error) return warn(noticeFor(made, h));
       const label = `${NAMES[h]} · ${(found.session.cwd ?? pane.cwd ?? "").split("/").filter(Boolean).pop()}`; // folders tell chats apart; tab names repeat
       if (!slotted) run("terminal.open", { argv: made.launch.argv, folder: made.launch.cwd, place: "right", name: `${NAMES[h]} · side` });
-      else if (!(await this.start(spot, made.launch, h, label))) return;
+      else if (!(await this.start(spot, made.launch, h, label, pane.branch || agent?.tab_name || null))) return; // from: as the inbox names an agent
       say(noticeFor(found, h));
       say(noticeFor(made, h));
     } finally {
@@ -103,7 +103,7 @@ export default class Side extends View {
   }
 
   // Hand the chat to its slot's host (starting the host first if the slot has none), then show the slot.
-  async start({ slot, create }, launch, harness, label) {
+  async start({ slot, create }, launch, harness, label, from) {
     if (create) {
       const r = await hc(["run", "--bg", "--name", slot, "--cwd", home(), "--no-parent", "--no-notify", "--",
         "python3", "-B", `${appHome()}/mods/side/host.py`, "serve", slot, SLOT_DIR()]);
@@ -111,7 +111,7 @@ export default class Side extends View {
     }
     const r = await py("host.py", ["send", slot, SLOT_DIR(), JSON.stringify({ argv: launch.argv, cwd: launch.cwd })]);
     if (r.code !== 0) { warn({ title: "Side chat couldn't start", body: r.stderr.trim().split("\n").pop() }); return false; }
-    setShared("side.tabs", { ...(shared("side.tabs") ?? {}), [slot]: { harness, label, at: Date.now() } });
+    setShared("side.tabs", { ...(shared("side.tabs") ?? {}), [slot]: { harness, label, from, at: Date.now() } });
     show(slot);
     if (create) { // a block shown before its terminal existed stays blank until shown again (findings §3)
       run("layout.hide", { id: "side-slots" });

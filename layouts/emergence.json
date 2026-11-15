@@ -66,6 +66,17 @@
               }
             },
             {
+              "id": "side-chats",
+              "type": "block",
+              "size": {
+                "px": 0
+              },
+              "min": 0,
+              "content": {
+                "mod": "side-chats"
+              }
+            },
+            {
               "id": "ports",
               "type": "block",
               "size": {

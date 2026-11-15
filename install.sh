@@ -54,7 +54,8 @@ RETIRED = {"keys.json": [("global", k, "tabs-plus." + a) for k, a in (
     ("cmd-shift-g", "graph"), ("cmd-shift-u", "prs"), ("cmd-shift-m", "usage"),  # before ⌘⇧A, ⌘⇧R, ⌘⇧U
     ("cmd-shift-a", "graph"), ("cmd-shift-r", "prs"), ("cmd-shift-k", "skills"),  # global until they moved to layout:emergence
     ("cmd-shift-u", "usage"), ("cmd-shift-j", "attention"), ("cmd-shift-o", "worktrees"))]
-    + [("layout:emergence", "cmd-shift-j", "tabs-plus.attention")]}  # ⌘⇧J -> ⌘⇧I: Homerow's scroll mode holds ⌘⇧J
+    + [("layout:emergence", "cmd-shift-j", "tabs-plus.attention")]  # ⌘⇧J -> ⌘⇧I: Homerow's scroll mode holds ⌘⇧J
+    + [("mod:inbox", "ctrl-j", "ports.focus"), ("mod:ports", "ctrl-k", "inbox.focus")]}  # Side chats sits between them
 for name in ("keys.json", "programs.json"):
     ours = json.load(open(os.path.join(sys.argv[1], name)))
     path = os.path.realpath(os.path.join(sys.argv[2], name))  # may be a dotfiles symlink: write through it

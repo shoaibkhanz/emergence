@@ -70,7 +70,7 @@ export default class Ports extends View {
         const c = await nextCommand();
         if (c === "focus" && this.rows.length) { this.cur ??= this.rows[0].key; this.fh.focus(); }
         else if (c === "back") back();
-        else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "spaces-plus.focus"); // ⌘B: the last in Spaces → Inbox → Ports
+        else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "spaces-plus.focus"); // ⌘B: the last in Spaces → Inbox → Side chats → Ports
         cx.notify();
       }
     });
@@ -176,7 +176,7 @@ export default class Ports extends View {
   }
 
   key(k, cx) {
-    if (k === "ctrl-k") return run("inbox.focus");
+    if (k === "ctrl-k") return run("side-chats.up"); // passes on to the inbox when there are no side chats
     if (k === "ctrl-l" || k === "escape") return back();
     const rows = this.rows, i = rows.findIndex((r) => r.key === this.cur);
     if (k === "up" || k === "down") {
