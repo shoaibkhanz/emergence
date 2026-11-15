@@ -62,10 +62,10 @@ leaves your machine.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/usage-overview.png" alt="Usage overview"><br><b>Overview.</b> Sessions, tokens,
-spend and cache share against the period before.</td>
+<td width="50%"><img src="docs/images/usage-overview.png" alt="Usage overview"><br><b>Overview.</b> Sessions, cost, agent
+commits and clean runs against the period before; the period day by day; where the spend went, by project.</td>
 <td width="50%"><img src="docs/images/usage-compare.png" alt="Usage compare"><br><b>Compare.</b> Clean-run rate (95%
-range), cost per clean run and commits, per harness and model.</td>
+range), cost per clean run and commits, per harness and model; what each is best at, by kind of work.</td>
 </tr>
 <tr>
 <td><img src="docs/images/usage-harnesses.png" alt="Usage harnesses"><br><b>Harnesses.</b> Tokens, models and effort

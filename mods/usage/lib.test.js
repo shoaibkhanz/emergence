@@ -199,3 +199,68 @@ test("skillsOf: by category merges a session's skills in one category once; harn
   expect(rows.map((r) => [r.key, r.n])).toEqual([["Code review", 1], ["Planning and design", 1]]);
   expect(skillsOf(sessions, { from: 0, to: 5000, harnesses: new Set(["omp"]) }).rows.map((r) => r.key)).toEqual(["ponytail-review"]);
 });
+
+// Overview: what the spend got (commits, cost per commit), how it went (clean runs), each against the period before;
+// the period day by day; and where the spend went, by project.
+test("summarize: commits from top-level sessions, cost per commit from costed ones, clean share, vs the period before", () => {
+  const all = [
+    s("claude", 1, { cost: 4, commits: 3, where: "app" }),
+    s("claude", 1, { cost: 2, commits: 1, sub: true, where: "app" }), // a sub-agent: its commit is already its parent's
+    s("codex", 2, { cost: null, commits: 5, where: "api" }),           // no cost: its commits count, not in cost per commit
+    s("claude", 2, { cost: 7, commits: 0, aborts: 1, where: "api" }),
+    s("claude", 9, { cost: 3, commits: 1, where: "app" }),             // the period before
+  ];
+  const r = summarize(all, { from: startOfDay(NOW) - 6 * DAY, to: NOW, harnesses: new Set(["claude", "codex"]) });
+  expect(r.tiles.commits).toBe(8);
+  expect(r.tiles.perCommit).toBe(13 / 3);  // the Cost tile's $13 (sub-agent included) over the costed sessions' 3 commits
+  expect(r.tiles.clean).toBeCloseTo(2 / 3);
+  expect(r.tiles.cleanPrev).toBe(1);
+  expect(r.tiles.costPrev).toBe(3);
+  const day = r.buckets.find((b) => b.t === startOfDay(NOW - DAY));
+  expect([day.sessions, day.cost, day.commits]).toEqual([{ claude: 1 }, { claude: 6 }, { claude: 3 }]); // the sub-agent's cost is the day's
+  expect(r.buckets.find((b) => b.t === startOfDay(NOW - 2 * DAY)).commits).toEqual({ codex: 5, claude: 0 });
+  expect(r.spend.map((x) => [x.key, x.sessions, x.cost, x.commits])).toEqual([["api", 2, 7, 5], ["app", 1, 6, 3]]);
+  expect(r.spend.reduce((a, x) => a + x.cost, 0)).toBe(r.tiles.cost); // the rows add up to the Cost tile
+  expect(r.spend.find((x) => x.key === "app").perCommit).toBe(2);        // its $6 (sub-agent included) over 3 commits
+});
+
+test("summarize: where the spend went keeps the top projects and folds the rest into one row", () => {
+  const all = ["a", "b", "c", "d", "e", "f"].map((w, i) => s("claude", 1, { cost: 10 - i, where: w }));
+  const r = summarize([...all, s("claude", 1, { cost: 1, where: null })], { from: startOfDay(NOW) - 6 * DAY, to: NOW, harnesses: new Set(["claude"]) });
+  expect(r.spend.map((x) => x.key)).toEqual(["a", "b", "c", "d", null]);
+  expect(r.spend.at(-1)).toMatchObject({ sessions: 3, cost: 6 + 5 + 1 });
+});
+
+test("summarize: compares with the period before only when the history covers it", () => {
+  const from = startOfDay(NOW) - 6 * DAY, h = new Set(["omp"]);
+  expect(summarize([s("omp", 1), s("omp", 9)], { from, to: NOW, harnesses: h }).tiles.before).toBe(false); // starts mid-way
+  expect(summarize([s("omp", 1), s("omp", 13)], { from, to: NOW, harnesses: h }).tiles.before).toBe(true);
+  expect(summarize([s("omp", 1), s("claude", 30)], { from, to: NOW, harnesses: h }).tiles.before).toBe(true); // any harness's history
+});
+
+// Compare's radars: per harness and main model (10+ sessions), the clean-run rate in each kind of work it did 3+ times.
+test("strengthsOf: clean rate per kind for big enough pairs, best and weakest of the measured kinds", async () => {
+  const { strengthsOf } = await import("./lib.js");
+  const build = { tc: { edit: 8, read: 2, bash: 0, web: 0, agent: 0, other: 0 }, tools: 10 };
+  const debug = { tc: { edit: 0, read: 3, bash: 7, web: 0, agent: 0, other: 0 }, tools: 10 };
+  const sessions = [
+    ...Array.from({ length: 6 }, (_, i) => s("claude", 1, { ...build, aborts: i < 1 ? 1 : 0 })),  // build: 5 of 6 clean
+    ...Array.from({ length: 5 }, (_, i) => s("claude", 1, { ...debug, aborts: i < 2 ? 1 : 0 })),  // debug: 3 of 5
+    s("claude", 1, { tc: { edit: 0, read: 6, bash: 0, web: 4, agent: 0, other: 0 }, tools: 10 }), // one research: too few
+    ...Array.from({ length: 9 }, () => s("omp", 1, build)),                                        // 9 sessions: too few to draw
+  ];
+  const [c, ...rest] = strengthsOf(sessions);
+  expect(rest).toEqual([]);
+  expect([c.h, c.model, c.n]).toEqual(["claude", "claude-m", 12]);
+  expect(c.kinds.build).toMatchObject({ n: 6, ok: 5, clean: 5 / 6 });
+  expect(c.kinds.build.hi).toBeGreaterThan(c.kinds.build.clean);   // its 95% range, for the hover
+  expect(c.kinds.build.lo).toBeLessThan(c.kinds.build.clean);
+  expect(c.kinds.research.hi).toBe(null);
+  expect(c.kinds.debug).toMatchObject({ n: 5, ok: 3, clean: 0.6 });
+  expect(c.kinds.research).toMatchObject({ n: 1, clean: null }); // under 5: not measured
+  expect([c.best, c.worst]).toEqual(["build", "debug"]);
+  // best and weakest go by how sure the rate is (the low end of its interval), not the raw rate
+  const few = strengthsOf([...Array.from({ length: 5 }, () => s("omp", 1, build)),
+    ...Array.from({ length: 30 }, (_, i) => s("omp", 1, { ...debug, aborts: i < 3 ? 1 : 0 }))])[0];
+  expect([few.best, few.worst]).toEqual(["debug", "build"]); // 27/30 beats 5/5
+});
