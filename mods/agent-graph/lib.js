@@ -47,7 +47,7 @@ const repoName = (common) => (common.endsWith("/.git") ? tail(common.slice(0, -5
  *   { kind: "worktree", on, path } a worktree no space has open; null: the focused terminal (focused) is where you are.
  * -> repos [{ id, kind, name, machine, rank, worktrees: [{ id, kind, top, branch, path, ahead, behind, pr, rank, here, agents: [item + rank + here + children] }] }]
  * here marks where you are (the graph rings it): an agent for an Inbox card or the focused terminal, the worktrees of a
- * space's agents, an unopened worktree's own. Active only still draws what's here, so the ring has a card.
+ * space's agents, an unopened worktree's own. Active only still draws what the sidebar cursor marks, so its ring has a card.
  */
 export function buildTree(items, git, prs, { activeOnly = false, cursor = null, focused = null } = {}) {
   const ids = new Set(items.map((i) => i.id));
@@ -55,13 +55,13 @@ export function buildTree(items, git, prs, { activeOnly = false, cursor = null, 
   const nodes = items.map((i) => ({ ...i, children: [] }));
   for (const n of nodes) if (n.parent && ids.has(n.parent) && n.parent !== n.id) (kids.get(n.parent) ?? kids.set(n.parent, []).get(n.parent)).push(n);
   const inSpace = (n) => cursor?.kind === "space" && n.space === cursor.id;
-  // Most urgent status in a subtree; Active only drops idle ones, but not what's here, a space's agents, or one
+  // Most urgent status in a subtree; Active only drops idle ones, but not the sidebar cursor's, a space's agents, or one
   // holding them (an idle child that survived was kept).
   const settle = (n) => {
     n.children = (kids.get(n.id) ?? []).map(settle).filter(Boolean).sort(byRank);
     n.rank = Math.min(rank(n.status), ...n.children.map((c) => c.rank));
     n.here = cursor ? cursor.kind === "agent" && n.id === cursor.id : n.id === focused;
-    const kept = n.here || inSpace(n) || n.children.some((c) => c.rank === RANK.idle);
+    const kept = (cursor && n.here) || inSpace(n) || n.children.some((c) => c.rank === RANK.idle);
     return activeOnly && n.rank === RANK.idle && !kept ? null : n;
   };
   const spaceIn = (a) => inSpace(a) || a.children.some(spaceIn);

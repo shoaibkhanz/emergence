@@ -128,7 +128,7 @@ test("Active only still draws what's here (and what leads to it); nothing else i
   expect(shown(ringTree({ kind: "agent", id: "t3" }, "t1", true))).toEqual(["t1", "t2", "t3"]); // t2 holds its sub-agent t3
   expect(shown(ringTree({ kind: "space", id: "s2" }, "t1", true))).toEqual(["t1", "t2", "t3"]);
   expect(shown(ringTree({ kind: "worktree", on: null, path: "/r/app" }, "t1", true))).toEqual(["t1"]);
-  expect(shown(ringTree(null, "t2", true))).toEqual(["t1", "t2"]); // the focused terminal's idle agent too
+  expect(shown(ringTree(null, "t2", true))).toEqual(["t1"]); // Active only: the focused terminal's idle one stays hidden
 });
 
 test("sidebarCursor: whichever list holds the keyboard; the newer one while the keyboard moves between them", () => {
