@@ -1,67 +1,97 @@
 import { test, expect } from "bun:test";
-import { jumpRows, rowKey, selected } from "./lib.js";
+import { jumpRows, rowKey, selected, step } from "./lib.js";
 
-// Four spaces: Testing (you're here) and app-feat in repo app, pi and website in their own. login is a worktree of app
-// nothing has open. Shown most recently: Testing, website, pi; app-feat never.
+// The sidebar: Testing (repo app's main checkout, two sessions) with jump-a (a worktree space of app) nested under it,
+// website, notes (a folder in /r/pi-notes), pi, demo (repo demo) with demo-x under it. Spaces come in an order where
+// jump-a isn't next to Testing yet, so the nesting is Jump's own. app has four worktrees nothing has open.
 const sp = (id, name) => ({ id, name, machine: null });
-const S = { A: sp("sA", "Testing"), B: sp("sB", "pi"), C: sp("sC", "website"), D: sp("sD", "app-feat") };
-const tab = (s, id, cwd, here = false) => ({ kind: "tab", s, tb: { id, name: id }, cwd, branch: null, here, who: "Claude Code" });
-const TABS = [tab(S.A, "t1", "/r/app", true), tab(S.B, "t2", "/r/pi"), tab(S.C, "t3", "/r/web"), tab(S.D, "t4", "/r/app/.wt/feat")];
-const wt = (path, repo, key, branch) => ({ path, repo, key, branch, machine: null, at: 0 });
-const WTS = [wt("/r/app", "app", "K1", "main"), wt("/r/app/.wt/feat", "app", "K1", "feat"), wt("/r/app/.wt/login", "app", "K1", "login"),
-  wt("/r/pi", "pi", "K2", "main"), wt("/r/web", "web", "K3", "main")];
-const RECENT = ["t1", "t3", "t2"];
-const show = (r) => r.kind === "space" ? r.s.name : r.kind === "tab" ? `  ${r.tb.id}` : r.kind === "wt" ? `  ⑂ ${r.branch}` : `${r.kind} ${r.branch ?? r.repo}`;
-const jump = (query = "") => jumpRows({ tabs: TABS, wts: WTS, recent: RECENT, query });
+const S = { A: sp("sA", "Testing"), C: sp("sC", "website"), N: sp("sN", "notes"), B: sp("sB", "pi"), J: sp("sJ", "jump-a"),
+  D: sp("sD", "demo"), X: sp("sX", "demo-x") };
+const SPACES = [S.A, S.C, S.N, S.B, S.J, S.D, S.X];
+const tab = (s, id, cwd, extra = {}) => ({ kind: "tab", s, tb: { id, name: s.name }, cwd, branch: "main", here: false, who: "Claude Code", ...extra });
+const TABS = [
+  tab(S.A, "t1", "/r/app", { here: true, state: "working" }), tab(S.A, "t5", "/r/app", { on: "Graph animation", state: "idle" }),
+  tab(S.C, "t3", "/r/web"), tab(S.N, "t8", "/r/pi-notes"), tab(S.B, "t2", "/r/pi", { on: "Explore the repo", state: "idle" }),
+  tab(S.J, "t6", "/r/app/.wt/a", { branch: "a", on: "Fix flaky test", state: "blocked" }), tab(S.D, "t4", "/r/demo"), tab(S.X, "t7", "/r/demo-x", { branch: "x" }),
+];
+const wt = (path, key, branch, main = false) => ({ path, key, branch, main, repo: key, machine: null, at: 0 });
+const WTS = [wt("/r/app", "app", "main", true), wt("/r/app/.wt/a", "app", "a"), wt("/r/app/.wt/b", "app", "b"), wt("/r/app/.wt/c", "app", "c"),
+  wt("/r/app/.wt/d", "app", "d"), wt("/r/app/.wt/e", "app", "e"), wt("/r/pi", "pi", "main", true), wt("/r/pi-notes", "notes", "main", true),
+  wt("/r/web", "web", "main", true), wt("/r/demo", "demo", "main", true), wt("/r/demo-x", "demo", "x")];
+const RECENT = ["t1", "t2", "t6", "t3"];
+const pad = (r) => "  ".repeat(r.depth ?? 0);
+const show = (r) => r.kind === "label" ? `# ${r.text}` : r.kind === "space" ? `${pad(r)}${r.dim ? "~" : ""}${r.s.name}${r.tab ? ` =${r.tab.tb.id}` : ""}`
+  : r.kind === "tab" ? `${r.recent ? "r " : ""}${pad(r)}${r.dim ? "~" : ""}${r.tb.id}` : r.kind === "wt" ? `${pad(r)}⑂ ${r.branch}`
+  : r.kind === "more" ? `${pad(r)}+${r.count}` : `${r.kind} ${r.branch ?? r.repo}`;
+const jump = (query = "", more = {}) => jumpRows({ spaces: SPACES, tabs: TABS, wts: WTS, recent: RECENT, query, ...more });
 
-test("jumpRows: spaces with their sessions under them, where you are first, then by the session shown last", () => {
+test("jumpRows: Recent (the last three sessions, not where you are), then every space as the sidebar nests them", () => {
   const { rows, pick } = jump();
-  expect(rows.map(show)).toEqual(["Testing", "  t1", "  ⑂ login", "website", "  t3", "pi", "  t2", "app-feat", "  t4"]);
-  expect(rows[pick].tb.id).toBe("t3"); // ⌘E ↵ goes back to the session before this one, never a space
-  expect(rows[0]).toMatchObject({ kind: "space", here: true, repo: "app", branch: "main" });
+  expect(rows.map(show)).toEqual([
+    "# Recent", "r t2", "r t6", "r t3", "# Spaces",
+    "Testing", "  t1", "  t5", "  jump-a =t6", "  ⑂ b", "  ⑂ c", "  +2", // a space with one session is one row; worktrees past two fold
+    "website =t3", "notes =t8", "pi =t2", "demo =t4", "  demo-x =t7"]);
+  expect(rows[pick]).toMatchObject({ recent: true, tb: { id: "t2" } }); // ⌘E ↵ goes back to the session before this one
 });
 
-test("jumpRows: a repo's worktrees nothing has open sit under the space you were in last in that repo", () => {
-  const away = TABS.map((r) => ({ ...r, here: r.tb.id === "t3" })); // you're in website; app-feat shown after Testing
-  const rows = jumpRows({ tabs: away, wts: WTS, recent: ["t3", "t4", "t1"], query: "" }).rows.map(show);
-  expect(rows.slice(0, 5)).toEqual(["website", "  t3", "app-feat", "  t4", "  ⑂ login"]);
+test("jumpRows: ⌘E ↵ then ⌘E ↵ again comes back", () => {
+  const there = TABS.map((r) => ({ ...r, here: r.tb.id === "t2" }));
+  const { rows, pick } = jumpRows({ spaces: SPACES, tabs: there, wts: WTS, recent: ["t2", "t1", "t6"], query: "" });
+  expect(rows[pick].tb.id).toBe("t1");
 });
 
-test("jumpRows: typing keeps the spaces with a match, a space's name all its sessions", () => {
-  expect(jump("pi").rows.map(show)).toEqual(["pi", "  t2", "new pi"]); // a word that could be a branch offers one, as before
-  expect(jump("login").rows.map(show)).toEqual(["Testing", "  ⑂ login"]);
-  expect(jump("/ web site").rows.map(show)).toEqual(["website", "  t3"]); // a leading "/" is ignored; every word
-  expect(jump("zz zz").rows).toEqual([]);
+test("jumpRows: folded worktrees open (expanded), archived ones show only while typing", () => {
+  expect(jump("", { expanded: new Set(["app"]) }).rows.map(show).slice(9, 14)).toEqual(["  ⑂ b", "  ⑂ c", "  ⑂ d", "  ⑂ e", "website =t3"]);
+  const archived = new Set([JSON.stringify([null, "/r/app/.wt/b"])]);
+  expect(jump("", { archived }).rows.map(show).slice(9, 13)).toEqual(["  ⑂ c", "  ⑂ d", "  ⑂ e", "website =t3"]); // "+1" would save nothing
+  expect(jump("b", { archived }).rows.map(show)).toContain("  ⑂ b");
+});
+
+test("jumpRows: typing keeps what matches with its parents (dimmed); state words find an agent that needs you", () => {
+  expect(jump("needs you").rows.map(show)).toEqual(["~Testing", "  jump-a =t6"]);
+  expect(jump("flaky").rows.map(show).filter((s) => !s.startsWith("new"))).toEqual(["~Testing", "  jump-a =t6"]);
+});
+
+test("jumpRows: a space's name keeps all it holds", () => {
+  expect(jump("testing").rows.map(show).filter((s) => !s.startsWith("new")))
+    .toEqual(["Testing", "  t1", "  t5", "  jump-a =t6", "  ⑂ b", "  ⑂ c", "  ⑂ d", "  ⑂ e"]);
+});
+
+test("jumpRows: a name match ranks above a path match, and is picked", () => {
+  const { rows, pick } = jump("pi");
+  expect(rows.map(show).filter((s) => !s.startsWith("new"))).toEqual(["pi =t2", "notes =t8"]); // notes only by its folder
+  expect(rows[pick].s.name).toBe("pi");
+});
+
+test("jumpRows: how many spaces, and how many are shown", () => {
+  expect(jump()).toMatchObject({ total: 7, shown: 7 });
+  expect(jump("pi")).toMatchObject({ total: 7, shown: 2 });
 });
 
 test("jumpRows: a branch name nothing has offers a new worktree in your repo, last", () => {
   const { rows } = jump("fix-typo");
   expect(rows.map(show)).toEqual(["new fix-typo"]);
   expect(rows[0]).toMatchObject({ kind: "new", repo: "app", space: S.A, cwd: "/r/app" });
-  expect(jump("login").rows.some((r) => r.kind === "new")).toBe(false); // login exists
+  expect(jump("c").rows.some((r) => r.kind === "new")).toBe(false); // c exists
 });
 
 test("jumpRows: a worktree of a repo no space is in gets its repo as the heading", () => {
-  const rows = jumpRows({ tabs: TABS, wts: [...WTS, wt("/r/lib", "lib", "K9", "dev")], recent: RECENT, query: "dev" }).rows;
-  expect(rows.map(show).slice(0, 2)).toEqual(["repo lib", "  ⑂ dev"]);
+  const rows = jumpRows({ spaces: SPACES, tabs: TABS, wts: [...WTS, wt("/r/lib", "lib", "dev", true), wt("/r/lib-dev", "lib", "dev2")], recent: RECENT, query: "dev" }).rows;
+  expect(rows.map(show).slice(0, 3)).toEqual(["repo lib", "  ⑂ dev", "  ⑂ dev2"]);
 });
 
-test("jumpRows: with only where you are, the pick is it", () => {
-  const { rows, pick } = jumpRows({ tabs: [TABS[0]], wts: WTS, recent: RECENT, query: "" });
-  expect(rows[pick].kind).toBe("tab");
+test("step: ↑/↓ skip the section labels and repo headings", () => {
+  const { rows } = jump();
+  expect(rows[step(rows, 3, 1)].s.name).toBe("Testing"); // from the last recent row, past "# Spaces"
+  expect(rows[step(rows, 5, -1)].tb.id).toBe("t3");
+  expect(rows[step(rows, 1, -1)].s.name).toBe("demo-x"); // wraps, past "# Recent"
 });
 
-test("jumpRows: ⌘E ↵ then ⌘E ↵ again comes back", () => {
-  const there = TABS.map((r) => ({ ...r, here: r.tb.id === "t3" })); // went to website: tabs-plus put it first
-  const { rows, pick } = jumpRows({ tabs: there, wts: WTS, recent: ["t3", "t1", "t2"], query: "" });
-  expect(rows[pick].tb.id).toBe("t1");
-});
-
-test("selected: the pick follows its row when worktrees arrive late and shift the list", () => {
-  const before = jumpRows({ tabs: TABS, wts: [], recent: RECENT, query: "" }); // worktrees not listed yet
-  const after = jumpRows({ tabs: TABS, wts: WTS, recent: RECENT, query: "" }); // ⑂ login now sits under Testing
-  expect(after.rows[selected(after, null)].tb.id).toBe("t3"); // nothing chosen yet: the pick, never a heading
-  const chosen = rowKey(before.rows[before.pick]);
-  expect(after.rows[selected(after, chosen)].tb.id).toBe("t3"); // the row, not its old position
-  expect(selected(after, "tab:gone")).toBe(after.pick); // a row that's gone (filtered out): the pick
+test("selected: the highlight follows its row when worktrees arrive late and shift the list", () => {
+  const before = jumpRows({ spaces: SPACES, tabs: TABS, wts: [], recent: RECENT, query: "" });
+  const after = jump();
+  const web = rowKey(before.rows.find((r) => r.kind === "space" && r.s.name === "website"));
+  expect(after.rows[selected(after, web)].s.name).toBe("website");
+  expect(selected(after, null)).toBe(after.pick);
+  expect(selected(after, "tab:gone")).toBe(after.pick);
 });

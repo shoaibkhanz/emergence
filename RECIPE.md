@@ -232,19 +232,22 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
 - **Tab names.** tabs-plus renames an unnamed tab after its first terminal's branch, or its repo (else folder, `~` at
   home) when the branch is main, master, trunk or develop. It remembers the names it gave in `shared("tabs.auto")`,
   so a given name keeps following the branch while a name you give (`tab.rename`) stays yours.
-- **Jump (`mods/jump`, ⌘E, a 680×520 dialog).**
-  - Rows (`lib.js` `jumpRows`, tested): each space as a 30px heading (name; branch · repo · machine; ↵ selects it) with
-    its tabs indented under it. Where you are first, then spaces by their tab shown last (`shared("jump.recent")`:
-    tabs-plus puts each focused tab first, 100 kept), never-shown ones in space order; tabs in a space by the same. Each
-    repo's checkouts no session's terminal is inside (`git worktree list` once per repo, newest commit first) sit under
-    the space you were in last in that repo; a repo no space is in heads its own.
-  - The tab shown last that isn't where you are is picked (never a heading), so ⌘E ↵ goes back.
-  - A tab row (48px, indented): program icon, tab name, branch; under it the agent's terminal title (what it's on), else
-    the folder; on the right its state with how long ("working 12m", "needs you 3m") and its agents.
-  - Typing filters on every word (tab, space, branch, folder, agent, title; a leading `/` is ignored) and keeps the
-    spaces with a match. A single
-    branch-like word no checkout has adds "New worktree <name>" (Herdr's worktree dialog, action `new`), when the
-    tab you're on is in a repo. ↑/↓, ↵ (a worktree opens with `space.new`), Esc.
+- **Jump (`mods/jump`, ⌘E, a 680×640 dialog).**
+  - Rows (`lib.js` `jumpRows`, tested), 28px, one line each. Untyped, "Recent" first: the last 3 tabs shown
+    (`shared("jump.recent")`: tabs-plus puts each focused tab first, 100 kept), not where you are; the first is picked,
+    so ⌘E ↵ goes back. Then "Spaces": every space as the sidebar nests them, from `spaces()` (already in the
+    sidebar's order: spaces-plus moves them): a repo's main checkout, its worktree spaces under it, then its checkouts
+    no space has open (`git worktree list` per repo, read in parallel, newest commit first; past 2, "N worktrees not
+    open" and ↵ shows them; archived ones only while typing). A repo no space is in heads its own worktrees.
+  - A space with one tab is one row (↵ selects the tab); with more, a row (↵ `space.select`) and its tabs under it.
+    A row: mark (program icon, else folder or branch), name, dim branch, what the agent is on, and its state with how
+    long ("working 12m", "needs you 3m"). The header counts spaces ("8 spaces", "2 of 8 spaces" while typing).
+  - Typing filters on every word: names and branch, agent, title, state words ("needs you"), the folder counting
+    least. Matches keep their parents (dimmed) and a matching space keeps all it holds; groups go by best match (a word
+    starting a name first), else sidebar order; nothing reorders inside a group. A single branch-like word no checkout
+    has adds "New worktree <name>" (Herdr's worktree dialog, action `new`), when the tab you're on is in a repo.
+  - The highlight is the row's key (`rowKey`), so worktrees arriving late don't move it; ↑/↓ (`step`) pass the section
+    labels. ↵ goes (a worktree opens with `space.new`), Esc leaves.
 - **Agents panel.**
   - Cards for repos (15px semibold), worktrees (branch, ahead/behind, a PR chip) and agents (program
     icon, title without harness marks, state).
