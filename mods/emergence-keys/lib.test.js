@@ -16,7 +16,7 @@ test("rows: bound keys from keys.json, unbound shows —, in-mod keys as written
   expect(all["Find across the PR"]).toBe("⌘F");
   expect(all["Back to the terminal you came from"]).toBe("⌃L · Esc");
   expect(all["Move between panes and (n)vim splits (nav-keys, optional)"]).toBe("—");
-  expect(rows(b, "archive")).toEqual([["Sidebar", [["→", "On a worktree: archive it (asks first; also on right-click)"]]]]);
+  expect(rows(b, "archive")).toEqual([["Sidebar", [["→", "On a worktree: archive it, or delete it permanently (asks first; also on right-click)"]]]]);
 });
 
 test("rows: an action bound in several sections shows the binding from the section the row names", () => {

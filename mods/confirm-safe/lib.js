@@ -4,3 +4,11 @@ export function shortPath(path, home, max = 46) {
   const parts = p.split("/");
   return p.length <= max || parts.length <= 4 ? p : [parts[0], parts[1], "…", ...parts.slice(-2)].join("/");
 }
+
+// The selected button after a key, of `n` in a row: ←/→ move and stop at the ends, Tab wraps; other keys leave it.
+export function step(sel, key, n) {
+  if (key === "left") return Math.max(0, sel - 1);
+  if (key === "right") return Math.min(n - 1, sel + 1);
+  if (key === "tab") return (sel + 1) % n;
+  return sel;
+}

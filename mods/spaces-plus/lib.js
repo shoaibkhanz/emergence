@@ -86,6 +86,44 @@ export function cursorOf(r) {
   return r?.w ? { kind: "space", id: r.w.id } : null;
 }
 
+// `git status --porcelain`'s exec result -> how many files have uncommitted changes (untracked too); null: git failed.
+export function changeCount(st) {
+  return st.code === 0 ? st.stdout.split("\n").filter(Boolean).length : null;
+}
+
+// The red line under the archive confirm's Delete permanently (`git worktree remove --force`): what it loses.
+export function forceWarn(n) {
+  if (n === 0) return "Delete permanently removes the folder now. Can't be undone.";
+  const what = n === null ? "any uncommitted changes" : `its ${n} uncommitted change${n === 1 ? "" : "s"}`;
+  return `Delete permanently loses ${what}. Can't be undone.`;
+}
+
+// A repo's name from its git folder: /x/app/.git -> app, /x/app.git (bare) -> app.
+export const repoName = (repo) => repo.endsWith("/.git") ? base(repo.slice(0, -5)) : base(repo).replace(/\.git$/, "");
+
+// The bulk delete dialog's list (worktree-sweep): every linked worktree in `trees`, archived ones too, never a main
+// checkout (git lists it first; a bare repo's own entry too), a bare or a prunable one. `opens`: the open spaces in
+// linked worktrees, [{repo, top, branch, id}], matched by path or branch as addWorktrees does: the space to close.
+export function sweepItems(trees, opens, archived = {}) {
+  return Object.entries(trees).flatMap(([repo, { list }]) => {
+    const [on, dir] = JSON.parse(repo);
+    return list.slice(1).filter((wt) => !wt.bare && !wt.prunable).map((wt) => {
+      const key = JSON.stringify([on, wt.path]);
+      const open = opens.find((o) => o.repo === repo && (o.top === wt.path || (wt.branch && o.branch === wt.branch)));
+      return { key, on, path: wt.path, label: wt.branch ?? base(wt.path), repo: repoName(dir), space: open?.id ?? null, archived: key in archived };
+    });
+  });
+}
+
+// The notice after a bulk delete: labels removed, labels skipped (uncommitted changes), [label, git's error] refused.
+export function sweepReport(removed, skipped, failed) {
+  const n = removed.length;
+  const body = [skipped.length ? `Skipped ${skipped.length} with uncommitted changes: ${skipped.join(", ")}.` : "",
+    ...failed.map(([label, err]) => `Couldn't delete ${label}: ${err.replace(/\.$/, "")}.`)].filter(Boolean).join(" ");
+  return { title: n ? `Deleted ${n} worktree${n === 1 ? "" : "s"}` : "No worktrees deleted", body: body || "Branches stay.",
+    level: failed.length ? "error" : skipped.length ? "warning" : "success" };
+}
+
 // Spaces' sizes (px): its header (shorter than the other sections': it tops the sidebar), a row (a worktree's or a
 // nested space's a little less), and the room under the list, which the inbox leaves under its cards too
 // (mods/sidebar.test.js holds the sections' copies together).

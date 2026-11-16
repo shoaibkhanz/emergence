@@ -96,16 +96,17 @@ PR review's diff lines and hunk headers, and the Library's code view; everything
 file paths, commit hashes, counts) is Geist. Sizes: title 15/600, body 13, a name 13/500, secondary 12
 `muted`, labels and section headers 11.5 `dim`, hints and chips 11 `dim`, buttons 12/500.
 
-Dialogs (Emergence's own: confirm-safe, the port card, System, the keys list and settings; Jump and the Library are
-palettes with their search field as the header) share one frame: `popover`, radius 10, 24px padding, 16px gaps, a 22px
-title row (15px semibold title, Herdr's "Esc" chip: 11px `dim`, `hover` background, closes on click), sections headed
-11.5px `dim` with their columns named at the same widths as the rows'. Buttons are 32px, 12/500, and exactly one is
-filled: the one Enter presses (`solid`; a destructive one `blocked` at 18%), with ↵; ←/→/Tab move the fill; the others
-are `raised` with an `input` border, Stop and Delete in `blocked` text. A question or status sits left of the buttons
-(12 `muted`, two lines at most), so asking never changes a dialog's height. A boxed subject is `surface` with a
-`border`. Widths: 440 (a question), 560 (a card), 680 (a list or palette). Centred (`kind: "dialog"`), as tall as
-their content where it's known up front, else a fixed height (or a share of the window, as the keys list's 0.9) whose
-lists scroll inside.
+Dialogs (Emergence's own: confirm-safe, the port card, System, the keys list, settings and Delete worktrees; Jump and
+the Library are palettes with their search field as the header) share one frame: `popover`, radius 10, 24px padding,
+16px gaps, a 22px title row (15px semibold title, Herdr's "Esc" chip: 11px `dim`, `hover` background, closes on click),
+sections headed 11.5px `dim` with their columns named at the same widths as the rows'. Buttons are 32px, 12/500, and
+exactly one is filled: the one Enter presses (`solid`; a destructive one `blocked` at 18%), with ↵; ←/→/Tab move the
+fill; the others are `raised` with an `input` border, Stop and Delete in `blocked` text. A destructive third choice
+(confirm-safe's `extra`) stands apart at the far left in `blocked` text, ← from Cancel, never selected first, with a
+`blocked` line under the box saying what it loses. A question or status sits left of the buttons (12 `muted`, two lines
+at most), so asking never changes a dialog's height. A boxed subject is `surface` with a `border`. Widths: 440 (a
+question), 560 (a card), 680 (a list or palette). Centred (`kind: "dialog"`), as tall as their content where it's known
+up front, else a fixed height (or a share of the window, as the keys list's 0.9) whose lists scroll inside.
 
 ## How it behaves
 
@@ -174,12 +175,27 @@ lists scroll inside.
     button named for the action, red for Delete). Every close gives the keyboard back to Spaces if it was there (the
     Focus rule below; asked by a click from the terminal, it stays in the terminal), and after a `space.close`
     Spaces takes it again 300 ms later (the next space's terminal grabs it).
-    Delete: `git status --porcelain` first (dirty: a warning toast, no dialog), then `space.close` if open and
-    `git worktree remove` (the branch stays). Archive: shared `spaces.archived` (JSON [machine, path] → the space it
-    closed), skipped by `addWorktrees`; reopening it in another space drops it from the archive (`reopened`).
+    Delete: `git status --porcelain` first (dirty: a warning toast pointing at →, no dialog), then `space.close` if
+    open and `git worktree remove` (the branch stays). Archive: shared `spaces.archived` (JSON [machine, path] → the
+    space it closed), skipped by `addWorktrees`; reopening it in another space drops it from the archive (`reopened`).
+    The archive confirm also offers Delete permanently (red, at its left: ← from Cancel, then ↵), dirty or not:
+    `space.close` if open, then `git worktree remove --force` (the branch stays; the folder's uncommitted changes and
+    untracked files go). Its red line counts them from the same `git status --porcelain` (`lib.js` `forceWarn`).
+  - ⇧← anywhere in Spaces (or Delete worktrees… on a worktree's right-click) opens `worktree-sweep`, a 680px dialog
+    listing every linked worktree of the repos Spaces knows (archived ones too; never a main checkout, a bare or a
+    prunable one: `lib.js` `sweepItems`), the cursor's ticked. A 32px row: checkbox, branch (13/500), repo · open ·
+    archived (12 `dim`), then its uncommitted changes from `git status --porcelain` (a 6px `blocked` dot and "3
+    changes" in `blocked`, else "clean" `dim`; "couldn't check" counts as changed). ↑/↓ move, Space or a click ticks,
+    ↵ asks once the ticked counts are in: the line under the list becomes the question ("Delete 3 worktrees? 1 has
+    uncommitted changes: Delete skips it.") and the buttons Back (selected), Delete N clean, and at the far left in
+    red Delete permanently, including N with changes (←/→/Tab). Its `lib.js` decides (`plan`, `choices`, tested).
+    The plan goes back in shared `spaces.sweep` and `spaces-plus.sweep` runs it (the dialog is gone by then):
+    `space.close` for open ones, then `git worktree remove` one at a time, `--force` only for a changed one on the red
+    choice, dropping removed ones from `spaces.archived`; a notice says what went, what was skipped, what git refused
+    (`sweepReport`). Never a branch.
   - Right-click on a worktree opens `row-menu` (Herdr's `menu` has fixed items): Open (greyed) or Rename and Close
-    space (open), then Archive worktree… (→) and Delete worktree… (←), which run `spaces-plus.ask-archive` /
-    `ask-delete`; the target waits in `menuFor`. Main checkouts keep Herdr's space menu.
+    space (open), then Archive worktree… (→), Delete worktree… (←) and Delete worktrees… (⇧←), which run
+    `spaces-plus.ask-archive` / `ask-delete` / `ask-sweep`; the target waits in `menuFor`. Main checkouts keep Herdr's space menu.
   - ctrl-j (Spaces → `inbox.focus`), ctrl-k (Inbox → `spaces-plus.focus`), ctrl-l and Esc (`pane.focus` on
     `focused()`). Not `pane.go`: it releases only a keyboard `pane.go` gave, not one a mod took itself.
     keys.json binds them in `mod:spaces-plus` / `mod:inbox` (`inbox.focus`, `spaces-plus.focus`, `<mod>.back`):
@@ -394,7 +410,11 @@ lists scroll inside.
   `parseTrack`, `addWorktrees`, `nearest`, tested in `lib.test.js`), folding, the keyboard and the rail and dots
   sizes. Per main checkout it runs `git worktree list --porcelain` and
   `git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads`; a machine that stops answering keeps
-  its last list. Commands `focus`, `toggle`.
+  its last list. Commands `focus`, `toggle`, and for its dialogs `archive`, `delete`, `force-delete`, `sweep` and the
+  row menu's `ask-*`.
+- **`mods/worktree-sweep`**: the bulk delete dialog. Props `{ items, ticked }` from spaces-plus, `exec` (`git status
+  --porcelain` per row), `setShared("spaces.sweep" | "emergence.over")`, `run("spaces-plus.sweep")`. `lib.js`
+  (`plan`, `tally`, `question`, `choices`, `tick`, `step`) is pure and tested.
 - **`mods/agent-graph`**: `lib.js` builds the tree and lays it out. It runs `git rev-parse` per folder (30s cache) and
   `gh pr list` per repo (60s), and draws edges with `PathBuilder` + `window.paint_path`.
 - **`mods/pr-review`**: `github.js` (gh api) and `gitlab.js` (glab api), the same functions and shapes; `gitlab-map.js`
