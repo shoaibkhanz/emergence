@@ -233,13 +233,16 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
   home) when the branch is main, master, trunk or develop. It remembers the names it gave in `shared("tabs.auto")`,
   so a given name keeps following the branch while a name you give (`tab.rename`) stays yours.
 - **Jump (`mods/jump`, ⌘E, a 680×520 dialog).**
-  - Rows: every tab, ordered by `shared("jump.recent")` (tabs-plus puts each focused tab first, 100 kept), then
-    never-shown tabs in space order. After them, under "Worktrees, not open", the checkouts of each repo a terminal is in
-    (`git worktree list` once per repo, newest commit first) that no session's terminal is inside.
-  - The first row that isn't where you are is picked, so ⌘E ↵ goes back.
-  - A tab row (48px): program icon, tab name, space, branch; under it the agent's terminal title (what it's on), else
+  - Rows (`lib.js` `jumpRows`, tested): each space as a 30px heading (name; branch · repo · machine; ↵ selects it) with
+    its tabs indented under it. Where you are first, then spaces by their tab shown last (`shared("jump.recent")`:
+    tabs-plus puts each focused tab first, 100 kept), never-shown ones in space order; tabs in a space by the same. Each
+    repo's checkouts no session's terminal is inside (`git worktree list` once per repo, newest commit first) sit under
+    the space you were in last in that repo; a repo no space is in heads its own.
+  - The tab shown last that isn't where you are is picked (never a heading), so ⌘E ↵ goes back.
+  - A tab row (48px, indented): program icon, tab name, branch; under it the agent's terminal title (what it's on), else
     the folder; on the right its state with how long ("working 12m", "needs you 3m") and its agents.
-  - Typing filters on every word (tab, space, branch, folder, agent, title; a leading `/` is ignored). A single
+  - Typing filters on every word (tab, space, branch, folder, agent, title; a leading `/` is ignored) and keeps the
+    spaces with a match. A single
     branch-like word no checkout has adds "New worktree <name>" (Herdr's worktree dialog, action `new`), when the
     tab you're on is in a repo. ↑/↓, ↵ (a worktree opens with `space.new`), Esc.
 - **Agents panel.**
