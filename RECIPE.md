@@ -131,7 +131,7 @@ inside.
     motion, never a timer (AGENTS.md: a timer redraws the whole window); they run only while drawn and something works.
   - The graph rings where you are (`agent-graph/lib.js` `ringed`): while Inbox or Spaces has the keyboard, its cursor
     (shared `inbox.cursor` / `spaces.cursor`, null otherwise): an Inbox card rings its agent, a space the worktree its
-    agents work in, an unopened worktree row its card. Otherwise the focused terminal's agent.
+    agents work in, an unopened worktree row its card. Otherwise the focused terminal's agent. Active only still draws the cursor's idle agent (or its space's), so the ring has a card (`cursorKeeps`).
   - The inbox order drives ⌘] / ⌘[ (`setAgentOrder`).
 - **Ports.**
   - Every 5 s: `lsof -nP -iTCP -sTCP:LISTEN -Fpcn`, `ps -axo pid=,ppid=,etime=,comm=`, the listeners' folders

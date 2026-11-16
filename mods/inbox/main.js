@@ -46,6 +46,7 @@ function ago(ms) {
 }
 
 const GLYPH = { cmd: "⌘", shift: "⇧", alt: "⌥", ctrl: "⌃" };
+const LIST_PAD = 14; // under the last card, as Spaces leaves under its last row (its list's pb(14))
 const PORTS_FALLBACK = 64; // Ports' empty height ("Ports none" + Working) until it says what it needs
 const RANK = { blocked: 0, done: 1, idle: 2 };
 
@@ -219,7 +220,7 @@ export default class Inbox extends View {
     }
     // Header, the list's content (cards are alike: one is measured), the feet and the open shelf.
     const listH = cards.length ? cards.length * ((this.cardH ?? 50) + 2) - 2 : 32;
-    this.fitSpaces(collapsed, 41 + listH + (settled.length ? 32 + (this.shelf ? Math.min(160, settled.length * 30) + 6 : 0) : 0));
+    this.fitSpaces(collapsed, 41 + listH + LIST_PAD + (settled.length ? 32 + (this.shelf ? Math.min(160, settled.length * 30) + 6 : 0) : 0));
     const bound = keys().find((k) => k.action === "tabs-plus.attention")?.keys;
     // Header and inset line up with Herdr's Spaces list above (16px, 11.5px label).
     return this.measured(root.border_t(1).border_color(t.border))
@@ -230,7 +231,7 @@ export default class Inbox extends View {
         .when(Boolean(bound), (el) => el.child(div().id("inbox-key").h(18).px(5).flex().items_center().rounded(4).border(1).border_color(t.border)
           .text_size(11).tooltip("Next agent that needs you")
           .child(bound.split("-").map((p) => GLYPH[p] ?? p.toUpperCase()).join("")))))
-      .child(v_flex().id("inbox-list").flex_1().min_h(0).px(6).gap(2).overflow_y_scrollbar().track_scroll(this.list)
+      .child(v_flex().id("inbox-list").flex_1().min_h(0).px(6).pb(LIST_PAD).gap(2).overflow_y_scrollbar().track_scroll(this.list)
         .when(cards.length === 0, (el) => el.child(h_flex().h(32).flex_none().px(10).gap(8).items_center().text_size(12).text_color(t.dim)
           .child(svg("mods/workspace-chrome/circle-check.svg").size(14).flex_none()).child("All caught up")))
         .children(cards.map((a, n) => this.card(t, a, tabs.get(a.tab), pane.get(a.pane), now)

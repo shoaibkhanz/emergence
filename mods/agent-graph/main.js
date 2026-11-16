@@ -5,7 +5,7 @@
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout } from "herdr";
-import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, ringed, sidebarCursor, openOnActive, filterCounts, activeNudge } from "./lib.js";
+import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, ringed, sidebarCursor, openOnActive, filterCounts, activeNudge, cursorKeeps } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000;
 const ZMIN = 0.3, ZMAX = 2, ZFIT = 1, PAD = 48;
@@ -229,14 +229,15 @@ export default class AgentGraph extends View {
     if (opening || this.activeOnly === null) this.activeOnly = openOnActive(items); // however it was opened: the same rule
     if (opening || !openOnActive(items)) this.nudge = true; // the Active count may light again (lib activeNudge)
     if (shown && !this.busy && items.some((i) => i.cwd && !this.git.has(key(i.machine, i.cwd)))) this.refresh(cx);
-    const tree = buildTree(items, (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined, { activeOnly: this.activeOnly });
+    const cursor = sidebarCursor(shared("inbox.cursor"), shared("spaces.cursor")); // where the sidebar's keyboard is
+    const tree = buildTree(items, (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined, { activeOnly: this.activeOnly, keep: cursorKeeps(cursor) });
     const L = graphLayout(tree), M = this.moved(L); // M: with the person's dragged offsets
     const list = this.panel && this.loaded && !!this.size && (this.size.width - 2 * PANEL_PAD) / Math.max(1, L.width) < PANEL_Z;
     const walk = (a) => [{ data: a }, ...a.children.flatMap(walk)];
     const picks = list ? tree.flatMap((r) => r.worktrees.flatMap((w) => w.agents.flatMap(walk)))
       : M.nodes.filter((n) => n.kind === "agent").sort((a, b) => a.y - b.y || a.x - b.x);
     const foc = focused()?.terminal ?? null;
-    const ring = ringed(tree, sidebarCursor(shared("inbox.cursor"), shared("spaces.cursor")), foc); // where you are: see lib
+    const ring = ringed(tree, cursor, foc); // where you are: see lib
     if (!picks.some((n) => n.data.id === this.sel)) this.sel = (picks.find((n) => n.data.id === foc) ?? picks[0])?.data.id ?? null;
 
     // A popup is as tall as its content (mod.json height is the cap): size to the window. A panel fills its block.

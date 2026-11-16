@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, ringed, sidebarCursor, openOnActive, filterCounts, activeNudge } from "./lib.js";
+import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, ringed, sidebarCursor, openOnActive, filterCounts, activeNudge, cursorKeeps } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -152,4 +152,13 @@ test("activeNudge: blocked beats working; nothing on Active, when disarmed, or w
   expect(activeNudge(FILTER_ITEMS, { onAll: false, armed: true })).toBe(null);
   expect(activeNudge(FILTER_ITEMS, { onAll: true, armed: false })).toBe(null);
   expect(activeNudge([{ agent: true, status: "done" }, { agent: false, status: "working" }], { onAll: true, armed: true })).toBe(null);
+});
+
+test("Active only keeps the sidebar cursor's idle agent, and what leads to it; nothing else idle", () => {
+  const ids = (tree) => tree.flatMap((r) => r.worktrees.flatMap((w) => w.agents.flatMap(function walk(a) { return [a.id, ...a.children.flatMap(walk)]; })));
+  const tree = (cursor) => buildTree(RING_ITEMS, git, () => undefined, { activeOnly: true, keep: cursorKeeps(cursor) });
+  expect(ids(tree(null))).toEqual(["t1"]);
+  expect(ids(tree({ kind: "agent", id: "t3" }))).toEqual(["t1", "t2", "t3"]); // t3 is t2's sub-agent: t2 stays to hold it
+  expect(ids(tree({ kind: "space", id: "s2" }))).toEqual(["t1", "t2", "t3"]);
+  expect(ids(tree({ kind: "worktree", on: null, path: "/r/app" }))).toEqual(["t1"]);
 });

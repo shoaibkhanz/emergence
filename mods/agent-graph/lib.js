@@ -45,16 +45,18 @@ const repoName = (common) => (common.endsWith("/.git") ? tail(common.slice(0, -5
  * prs: (machine, common) -> Map branch -> PR, or undefined while unknown
  * -> repos [{ id, kind, name, machine, rank, worktrees: [{ id, kind, top, branch, path, ahead, behind, pr, rank, agents: [item + rank + children] }] }]
  */
-export function buildTree(items, git, prs, { activeOnly = false } = {}) {
+export function buildTree(items, git, prs, { activeOnly = false, keep = () => false } = {}) {
   const ids = new Set(items.map((i) => i.id));
   const kids = new Map();
   const nodes = items.map((i) => ({ ...i, children: [] }));
   for (const n of nodes) if (n.parent && ids.has(n.parent) && n.parent !== n.id) (kids.get(n.parent) ?? kids.set(n.parent, []).get(n.parent)).push(n);
-  // Most urgent status in a subtree; filtered children drop out.
+  // Most urgent status in a subtree; filtered children drop out, unless kept (keep: the sidebar cursor's, cursorKeeps)
+  // or holding a kept one.
   const settle = (n) => {
     n.children = (kids.get(n.id) ?? []).map(settle).filter(Boolean).sort(byRank);
     n.rank = Math.min(rank(n.status), ...n.children.map((c) => c.rank));
-    return activeOnly && n.rank === RANK.idle ? null : n;
+    const kept = keep(n) || n.children.some((c) => c.rank === RANK.idle);
+    return activeOnly && n.rank === RANK.idle && !kept ? null : n;
   };
   const roots = nodes.filter((n) => !(n.parent && ids.has(n.parent) && n.parent !== n.id)).map(settle).filter(Boolean);
 
@@ -152,3 +154,8 @@ export function filterCounts(items) {
   const agents = items.filter((i) => i.agent);
   return { active: agents.filter((i) => i.status !== "idle").length, all: agents.length };
 }
+
+// What Active only keeps although idle: the agent the sidebar's cursor is on, or a space's agents. The ring points
+// there (ringed), so the card it points at must be drawn.
+export const cursorKeeps = (cursor) => (n) =>
+  cursor?.kind === "agent" ? n.id === cursor.id : cursor?.kind === "space" ? n.space === cursor.id : false;
