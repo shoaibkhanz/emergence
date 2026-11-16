@@ -1,7 +1,8 @@
 """omp: a running omp writes ~/.omp/agent/terminal-sessions/<tty> (its folder, then its session file), so the pane's
 tty names the session exactly. A side chat is a fresh omp given the conversation as background (pi_format): never the
 session file itself, which omp writes into on quit. Answer-only allows only omp's read and search tools; omp adds
-write back to any --tools list (18.20.2), so always-ask makes it wait for the person's yes."""
+write back to any --tools list (18.20.2), so always-ask makes it wait for the person's yes. No find: it needs a
+judge model, and omp won't start at all when one isn't there (18.20.3)."""
 from __future__ import annotations  # stock macOS python3 is 3.9: `str | None` must not evaluate at import
 
 import os
@@ -30,4 +31,4 @@ def locate(req: dict, env) -> dict:
 
 
 def copy(req: dict, env) -> dict:
-    return pi_format.copy(req, env, "omp", ["--tools", "read,grep,glob,find", "--approval-mode", "always-ask"])
+    return pi_format.copy(req, env, "omp", ["--tools", "read,grep,glob", "--approval-mode", "always-ask"])

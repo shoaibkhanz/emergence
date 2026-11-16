@@ -409,7 +409,8 @@ class OmpTest(unittest.TestCase):
         # --no-session also keeps omp's autoResume from opening the agent's own file. omp adds write back to any
         # --tools list (18.20.2): always-ask makes it wait for the person's yes
         self.assertEqual(argv[:3], ["omp", "--no-session", "--append-system-prompt"])
-        self.assertEqual(argv[4:], ["--tools", "read,grep,glob,find", "--approval-mode", "always-ask",
+        # no find: omp 18.20.3 refuses to start when its judge model is missing ("Built-in tool unavailable")
+        self.assertEqual(argv[4:], ["--tools", "read,grep,glob", "--approval-mode", "always-ask",
                                     "--model", "anthropic/claude-opus-5-5", "--thinking", "high", "--profile", "work"])
 
 
@@ -462,6 +463,12 @@ class HostTest(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             host.run({"argv": ["true"], "cwd": self.dir, "intro": "INTRO LINE"}, stop_path, poll=0.05)
         self.assertIn("INTRO LINE", out.getvalue())
+
+    def test_a_chat_that_fails_at_once_keeps_its_error_on_screen(self):
+        # omp 18.20.3 refused a tool and exited 2 at once; the slot cleared its message and sat on "Opening a side chat…"
+        self.assertTrue(host.failed_at_once(2, 0.4))
+        self.assertFalse(host.failed_at_once(0, 0.4))  # /exit at once is still an ending
+        self.assertFalse(host.failed_at_once(1, 120))  # a chat that ran a while: its error isn't why it never opened
 
     def test_idle_screen_says_opening(self):
         # an idle slot is only ever seen at a key press, before its chat starts

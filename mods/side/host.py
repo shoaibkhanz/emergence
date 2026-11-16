@@ -88,6 +88,15 @@ def ready(path: str) -> bool:
         return False
 
 
+FAILED_S = 5  # a chat that ends with an error this soon never really opened: its message stays (failed_at_once)
+
+
+def failed_at_once(code: int, took: float) -> bool:
+    """Whether a chat ended with an error before it ever really opened (a flag its harness refused, a missing
+    program): then its message stays on screen instead of being cleared for the next one."""
+    return code != 0 and took < FAILED_S
+
+
 def idle() -> None:
     print(CLEAR + OPENING, end="", flush=True)
 
@@ -110,8 +119,12 @@ def serve(slot: str, d: str) -> None:
                 if os.path.exists(stop_path):
                     os.remove(stop_path)  # a stop from before this chat
                 print(CLEAR, end="", flush=True)
-                run(req, stop_path)
-                idle()
+                began = time.time()
+                code = run(req, stop_path)
+                if failed_at_once(code, time.time() - began):
+                    print(f"\n  This side chat couldn't start (exit {code}); the message above says why.", flush=True)
+                else:
+                    idle()
             time.sleep(0.25)
         except Exception as e:  # never end: the slot's layout block depends on this terminal
             print(f"side host: {e}", flush=True)
