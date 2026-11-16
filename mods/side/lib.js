@@ -13,15 +13,22 @@ export const harnessOf = (pane, agent) => KEYS[agent?.app] ?? KEYS[pane?.program
 export function decide(harness, choices, installed, supported) {
   const name = NAMES[harness];
   if (!harness) return { action: "notice", notice: { title: "Side chat works on an agent's pane" } };
+  // No adapter yet: say so before anything a switch could change (the chooser shows it as "coming", no switch).
+  if (!supported.includes(harness)) return { action: "notice", notice: { title: `Side chat for ${name} is coming` } };
   if (!choices) return { action: "choose" };
   if (!installed[harness]) return { action: "notice", notice: { title: `${name} isn't installed` } };
   if (choices[harness] === false) {
     // Herdr's palette doesn't list mod commands: clicking the notice is the way back to the switches.
     return { action: "notice", notice: { title: `Side sessions are off for ${name}`, body: "Click to choose harnesses", action: { name: "side.harnesses" } } };
   }
-  if (!supported.includes(harness)) return { action: "notice", notice: { title: `Side chat for ${name} is coming` } };
   return { action: "open" };
 }
+
+// The switches without harnesses that have no adapter: nobody can flip those (the chooser offers no switch), so a
+// saved one is a leftover (the first chooser saved every harness, off where not yet installed) that would turn the
+// harness off the day its adapter lands.
+export const withoutStale = (choices, supported) =>
+  choices && Object.fromEntries(Object.entries(choices).filter(([h]) => supported.includes(h)));
 
 // A helper answer (locate's or copy's) -> what to tell the person, or null.
 export function noticeFor(answer, harness) {

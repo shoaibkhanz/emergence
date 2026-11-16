@@ -15,7 +15,7 @@ import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, hc, run, theme, props, nextCommand, focused, panes, agents, terminals, spaces, knownAgents, notify,
   openOverlay, closeOverlay, appHome, home, layout, shared, setShared } from "herdr";
-import { NAMES, harnessOf, decide, noticeFor, tabsOf, slotView, claim, bannerOf, withoutTab, INTRO, withoutStarting } from "./lib.js";
+import { NAMES, harnessOf, decide, noticeFor, tabsOf, slotView, claim, bannerOf, withoutTab, INTRO, withoutStarting, withoutStale } from "./lib.js";
 
 const SUPPORTED = ["claude", "opencode"]; // harnesses with an adapter in side.py; codex, pi and omp come next
 const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(c, id)).find(Boolean));
@@ -56,6 +56,8 @@ export default class Side extends View {
     if (p.panel) return cx.timer.every(5000, (cx) => cx.notify()); // a handed-over chat that never started drops out
     if (!p.resident) return;
     this.retryAt = shared("side.retry")?.at; // a retry from before this load isn't for us
+    const saved = choices(), kept = withoutStale(saved, SUPPORTED); // the first chooser's leftovers go (lib withoutStale)
+    if (JSON.stringify(kept) !== JSON.stringify(saved)) setShared("side.harnesses", kept);
     cx.spawn(async () => {
       for (;;) {
         const c = await nextCommand();
@@ -195,7 +197,7 @@ export default class Side extends View {
   done(save) {
     const p = props();
     if (save) {
-      setShared("side.harnesses", { ...this.picked }); // only what was flipped: a harness never switched stays on
+      setShared("side.harnesses", withoutStale(this.picked, SUPPORTED)); // only what was flipped: a harness never switched stays on
       if (p.then === "chat") setShared("side.retry", { at: Date.now() });
     }
     closeOverlay(p.overlay);

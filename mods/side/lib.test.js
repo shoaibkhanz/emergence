@@ -1,18 +1,21 @@
 import { expect, test } from "bun:test";
-import { harnessOf, decide, noticeFor, tabsOf, SLOTS, slotView, claim, bannerOf, withoutTab, INTRO, withoutStarting } from "./lib.js";
+import { harnessOf, decide, noticeFor, tabsOf, SLOTS, slotView, claim, bannerOf, withoutTab, INTRO, withoutStarting, withoutStale } from "./lib.js";
 
 const installed = { claude: true, opencode: true, codex: true, pi: false, omp: true };
 const supported = ["claude", "opencode"];
 
-test("decide: not an agent, then choose, not installed, off, coming, open", () => {
+test("decide: not an agent, coming, then choose, not installed, off, open", () => {
   expect(decide(null, {}, installed, supported)).toEqual({ action: "notice", notice: { title: "Side chat works on an agent's pane" } });
   expect(decide("claude", null, installed, supported)).toEqual({ action: "choose" });
-  expect(decide("pi", {}, installed, supported)).toEqual({ action: "notice", notice: { title: "pi isn't installed" } });
+  expect(decide("opencode", {}, { ...installed, opencode: false }, supported)).toEqual({ action: "notice", notice: { title: "OpenCode isn't installed" } });
   expect(decide("claude", { claude: false }, installed, supported)).toEqual({
     action: "notice",
     notice: { title: "Side sessions are off for Claude Code", body: "Click to choose harnesses", action: { name: "side.harnesses" } },
   });
   expect(decide("codex", {}, installed, supported)).toEqual({ action: "notice", notice: { title: "Side chat for Codex is coming" } });
+  // No adapter yet: "coming", never "off" (a leftover switch) and never the chooser, which can't help.
+  expect(decide("omp", { omp: false }, installed, supported)).toEqual({ action: "notice", notice: { title: "Side chat for omp is coming" } });
+  expect(decide("omp", null, installed, supported)).toEqual({ action: "notice", notice: { title: "Side chat for omp is coming" } });
   expect(decide("claude", { claude: true }, installed, supported)).toEqual({ action: "open" });
   expect(decide("opencode", {}, installed, supported)).toEqual({ action: "open" }); // installed and never switched: on
 });
@@ -89,4 +92,9 @@ test("withoutStarting: a slot whose host was just started isn't offered again un
   expect(withoutStarting(v, { "side-1": 1000 }, 12000).missing).toEqual(["side-1", "side-2"]);
   expect(claim(withoutStarting(v, { "side-1": 1000, "side-2": 1000 }, 2000))).toBe(null);
   expect(v.missing).toEqual(["side-1", "side-2"]); // not mutated
+});
+
+test("withoutStale: drops switches for harnesses without an adapter (nobody can flip those), keeps the rest", () => {
+  expect(withoutStale({ claude: true, opencode: false, codex: true, pi: true, omp: false }, supported)).toEqual({ claude: true, opencode: false });
+  expect(withoutStale(null, supported)).toBe(null);
 });
