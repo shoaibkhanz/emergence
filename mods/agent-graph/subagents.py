@@ -401,7 +401,8 @@ def real_env() -> Env:
         return procs_from(ps[0], pid)
 
     def git_status(top: str):
-        code, out = run(["git", "-C", top, "status", "--porcelain", "-z", "--untracked-files=all"])
+        # no index.lock: the agents in that worktree may be committing right now
+        code, out = run(["git", "--no-optional-locks", "-C", top, "status", "--porcelain", "-z", "--untracked-files=all"])
         return out if code == 0 else None
 
     return Env(home=home, app=os.environ.get("HERDR_APP_HOME") or os.path.join(home, ".config", "herdr-app"),

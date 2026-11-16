@@ -436,7 +436,7 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
   prints their sub-agents and recent edits: Claude by pid → `~/.claude/sessions/<pid>.json` → `~/.claude/projects/*/
   <sessionId>/subagents/agent-<id>.jsonl` + `.meta.json`; omp by tty → `~/.omp/agent/terminal-sessions/<tty>` → the
   session's `<session>/<Task>.jsonl` (nested a level down; `__*` skipped). Edited = Edit/Write paths plus the files a
-  Bash call changed (`bashEditDiff`), omp's edit/write paths; uncommitted from `git status --porcelain -z`. Each log
+  Bash call changed (`bashEditDiff`), omp's edit/write paths; uncommitted from `git --no-optional-locks status --porcelain -z` (no index.lock while agents commit). Each log
   is read from a byte offset kept in `data/agent-graph/subagents.json`.
 - **`mods/pr-review`**: `github.js` (gh api) and `gitlab.js` (glab api), the same functions and shapes; `gitlab-map.js`
   maps GitLab's JSON to them (pure, tested); `lib.js` parses diffs, builds the file tree and handles tag bodies.

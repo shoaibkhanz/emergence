@@ -385,10 +385,16 @@ export default class AgentGraph extends View {
         .when(!!ic, (el) => el.child(ic))
         .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(a.name))
         .when(warn.length > 0, (el) => el.child(this.warn(t, `w-${a.id}`, warn, 1, false)))
-        .child(div().flex_none().text_size(11).text_color(loud ? t.blocked : t.dim).when(loud, (el) => el.font_semibold())
-          .child(sub ? (sub.running ? WORD.working : subState(sub, this.now)) : a.agent ? WORD[a.status] : a.kind))
+        .child(sub // what it's doing now shares the row with its title
+          ? div().flex_1().min_w(0).truncate().text_right().text_size(11).text_color(t.dim).child(subState(sub, this.now))
+          : div().flex_none().text_size(11).text_color(loud ? t.blocked : t.dim).when(loud, (el) => el.font_semibold())
+            .child(a.agent ? WORD[a.status] : a.kind))
         .when(!!sub?.edited.length, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(`✎ ${sub.edited.length}`))));
-      if (sub && sel) for (const e of sub.edited.slice(0, MAX_FILES)) rows.push(row(`l:${a.id}|${e.path}`, depth + 1).h(22).child(this.file(t, e, 1)));
+      if (sub && sel) {
+        for (const e of sub.edited.slice(0, MAX_FILES)) rows.push(row(`l:${a.id}|${e.path}`, depth + 1).h(22).child(this.file(t, e, 1)));
+        const more = sub.edited.length - MAX_FILES;
+        if (more > 0) rows.push(row(`l:${a.id}|more`, depth + 1).h(22).text_size(11).text_color(t.dim).child(`+${more} more`));
+      }
       for (const c of a.children) agent(c, depth + 1);
     };
     for (const r of tree) {
@@ -591,10 +597,10 @@ export default class AgentGraph extends View {
 
   // The hover label: tooltips take plain text.
   fileTip(s) {
-    if (!s.edited.length) return s.running ? subState(s, this.now) : "No files edited";
+    if (!s.edited.length) return `${subState(s, this.now)}\nNo files edited`;
     const more = s.edited.length - MAX_FILES;
     const where = s.worktree ? ` in ${s.worktree.split("/").pop()}` : ""; // an isolated sub-agent's own worktree
-    return [`${s.edited.length} edited${where} · ● uncommitted`, ...s.edited.slice(0, MAX_FILES).map((e) => `${e.dirty ? "●" : "  "} ${this.fileName(e)}`),
+    return [subState(s, this.now), `${s.edited.length} edited${where} · ● uncommitted`, ...s.edited.slice(0, MAX_FILES).map((e) => `${e.dirty ? "●" : "  "} ${this.fileName(e)}`),
       ...(more > 0 ? [`+${more} more`] : [])].join("\n");
   }
 
