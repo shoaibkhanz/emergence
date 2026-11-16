@@ -251,16 +251,31 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
   - Click an agent to jump to it, a PR chip to open it in PRs, a repo to list its worktrees.
   - Drag a card to move it; drag empty space to pan; R resets the layout.
   - The wheel zooms, a trackpad scroll pans, ⌘-scroll zooms. The − / % / + control sits bottom-right, and the % fits.
-  - A narrow panel shows the same tree as a list.
+  - A narrow panel shows the same tree as a list (indented rows, the same numbers, ▸/▾ to fold).
+  - Keys: ↑/↓ select a card (worktrees and history cards too), ←/→ fold / open the selected one, A switches Active |
+    All, ↵ focuses an agent (on a worktree or history card: folds it), F fits, R resets.
   - In-process sub-agents (Claude Code's Task/Agent, omp's `task`; Herdr sees only terminals, so these come from their
-    logs through `subagents.py`) are cards under their agent, beside `hc run` ones: running first, finished ones for
-    30 min, in both views (Active never drops one by itself, and a finished one never keeps its agent there). The
-    card: the task's title; its state line "Working · <what it's doing now>" (a Bash call's description, omp's intent,
-    else "Edit <file>") or "Finished 4m"; "✎ N" edited files in the dim slot. Hovering lists the files; selecting it
-    (↑/↓, a click) lists them under the card (the list view: under the row), worktree-relative, newest first, with a
-    dot on those still uncommitted. A click focuses its agent's terminal. Read on each refresh and every 5 s while an
-    agent or sub-agent works and the graph shows, in the refresh's task (no timer of its own); a redraw only when
-    the answer changed. This computer only; pi, Codex and OpenCode aren't read yet.
+    logs through `subagents.py`) are cards under their agent, beside `hc run` ones, in both views (Active never drops
+    one by itself, and a finished one never keeps its agent there). Running ones are cards of their own; every one the
+    session ran that has finished sits under one history card per agent, "12 earlier sub-agents" with their calls and
+    cost, folded by default; opened, their cards newest first. The card: the task's title; its state line
+    "Working · <what it's doing now>" (a Bash call's description, omp's intent, else "Edit <file>") or "Finished 4m";
+    "✎ N" edited files and its metrics in the dim slot. Hovering lists the files; selecting it (↑/↓, a click) lists
+    them under the card (the list view: under the row), worktree-relative, newest first, with a dot on those still
+    uncommitted. A click focuses its agent's terminal. Read on each refresh and every 5 s while an agent or sub-agent
+    works and the graph shows, in the refresh's task (no timer of its own); a redraw only when the answer changed.
+    This computer only; pi, Codex and OpenCode aren't read yet.
+  - Tool calls and cost: every agent and sub-agent card ends its state line with its own "⚒ 66 · ≈ $1.20" (`lib.js`
+    `metricLine`); an agent's hover adds "with sub-agents: …". A worktree's chip row shows everything under it,
+    cost first ("≈ $14 · ⚒ 900"). "$" is exact: omp's recorded cost, or Claude billed to an API key; "≈" is Claude
+    on a subscription priced at API list prices (what Claude Code itself computes; hover: "at API prices
+    (subscription)"); a sum with any estimate in it is "≈". A model with no listed price shows tokens ("1.2M tok"),
+    and a sum missing some prices ends in "+". Money: "$0.42", "$12", "$1.2k"; tokens "980", "12k", "1.2M".
+  - Folding: a chevron on the right edge of any card with something under it (worktree, agent, history card) folds
+    its subtree; a folded worktree or agent carries a summary chip on its bottom edge ("3 agents · 5 sub-agents ·
+    ≈ $14"; a click opens it), and folding never widens the graph, so folded agents let a 620px panel draw the graph
+    instead of the list. Live work starts open, history folded; choices are kept in the mod's localStorage
+    (`folds`). The header's fold button collapses every card while any is open, else expands all (history too).
   - Overlap: a file two live writers (agents, running sub-agents) in a worktree both edited in the last 15 min and
     haven't committed puts a ⚠ chip (`t.blocked`) on both cards and the file (+N) on the worktree card's chip row
     (`lib.js` `overlaps`).
@@ -437,7 +452,18 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
   <sessionId>/subagents/agent-<id>.jsonl` + `.meta.json`; omp by tty → `~/.omp/agent/terminal-sessions/<tty>` → the
   session's `<session>/<Task>.jsonl` (nested a level down; `__*` skipped). Edited = Edit/Write paths plus the files a
   Bash call changed (`bashEditDiff`), omp's edit/write paths; uncommitted from `git --no-optional-locks status --porcelain -z` (no index.lock while agents commit). Each log
-  is read from a byte offset kept in `data/agent-graph/subagents.json`.
+  is read from a byte offset kept in `data/agent-graph/subagents-2.json`, with its totals; a first read takes the
+  whole log, skipping lines that hold nothing it counts (an agent's own transcript: only usage lines before its last
+  8 MiB), and a finished sub-agent's entry drops the ids it deduplicated by. Metrics: Claude counts `tool_use`
+  parts by call id and usage once per `message.id` (a message is written once per content block, and may repeat far
+  down the log; `api-request-blob` lines repeat calls and are skipped), including the advisor's requests in
+  `usage.iterations`; an agent's own transcript counts only its session's records (a resume copies the earlier
+  session's in). Cost = tokens at the Claude API list prices in `PRICES` (one table, dated, longest model-id prefix;
+  cache writes x1.25 for 5 min, x2 for 1 h, `speed: "fast"` x2); `<synthetic>` costs nothing. "api" when the agent's
+  environment (`ps eww`) holds an ANTHROPIC_API_KEY whose last 20 characters are in `~/.claude.json`
+  `customApiKeyResponses.approved`, else "estimate". omp: `usage.cost.total` as recorded, `toolCall` parts. Checked
+  against Claude Code's own `cost-state` on this machine: within about 1% of a $1,092 session (its sub-agents
+  included); the rest is side requests Claude Code doesn't write to the transcript.
 - **`mods/pr-review`**: `github.js` (gh api) and `gitlab.js` (glab api), the same functions and shapes; `gitlab-map.js`
   maps GitLab's JSON to them (pure, tested); `lib.js` parses diffs, builds the file tree and handles tag bodies.
 - **`mods/skills`**: finds skills with `find` and reads `~/.claude/plugins/installed_plugins.json`.
@@ -472,8 +498,10 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
   If a name clashes and you rename a mod, rename these references too.
 - **Programs and files outside each mod's folder.**
   - `agent-graph`, `pr-review`: run `git` and `gh`, and post to GitHub on comment actions. `agent-graph` also runs
-    `python3` on its `subagents.py`, which reads `~/.claude` and `~/.omp` session logs and runs `ps` and `git status`;
-    only file paths and short labels (a Bash call's description, omp's intent) come out, never commands or prompts.
+    `python3` on its `subagents.py`, which reads `~/.claude` and `~/.omp` session logs and `~/.claude.json`, and runs
+    `ps` and `git status`; only file paths, short labels (a Bash call's description, omp's intent) and counts and
+    costs come out, never commands or prompts. It reads a Claude agent's environment (`ps eww`) only to tell whether
+    an approved API key bills it: just that yes / no leaves, never the key or any part of it.
   - `skills`: reads the skill folders.
   - `usage`: runs `python3` on its own scripts, which read `~/.omp`, `~/.claude`, `~/.codex`, `~/.local/share/opencode`
     and `~/.pi` session logs and run `git`, `gh` and `glab`. Only counts, models and timestamps are read, never prompt
