@@ -287,6 +287,13 @@ class PiFormatTest(unittest.TestCase):
                               ("user", "LAST QUESTION"), ("agent", "LAST ANSWER")])
         self.assertEqual(summary, "SUMMARY of earlier work")
 
+    def test_model_flags_both_formats(self):
+        from adapters import pi_format
+        omp = ['{"type":"model_change","id":"m","parentId":null,"model":"openai/gpt-5.5"}']
+        self.assertEqual(pi_format.model_flags(omp), ["--model", "openai/gpt-5.5"])
+        with open(PI_FIX) as f:
+            self.assertEqual(pi_format.model_flags(f), ["--model", "anthropic/claude-opus-5-5", "--thinking", "high"])
+
     def test_entries_empty_file(self):
         from adapters import pi_format
         self.assertEqual(pi_format.entries([]), ([], None))
@@ -340,10 +347,12 @@ class PiTest(unittest.TestCase):
     def test_copy_answer_only(self):
         r = self.copy(True)
         argv = r["launch"]["argv"]
-        self.assertEqual(argv[:2], ["pi", "--append-system-prompt"])
-        self.assertEqual(argv[3:], ["--tools", "read,grep,find,ls", "--model", "sonnet", "--thinking=high"])
+        # --no-session: a side chat saves nothing, so it's never the folder's newest session (pi's locate guess)
+        self.assertEqual(argv[:3], ["pi", "--no-session", "--append-system-prompt"])
+        # the model from the session: a running pi shows only "pi" in ps (process.title), never its flags
+        self.assertEqual(argv[4:], ["--tools", "read,grep,find,ls", "--model", "anthropic/claude-opus-5-5", "--thinking", "high"])
         self.assertEqual((r["launch"]["cwd"], r["note"]), ("/w/pi", None))
-        with open(argv[2]) as f:
+        with open(argv[3]) as f:
             bg = f.read()
         for want in (INSTR, "SUMMARY of earlier work", "LAST QUESTION"):
             self.assertIn(want, bg)
@@ -352,6 +361,7 @@ class PiTest(unittest.TestCase):
     def test_copy_not_answer_only_can_edit(self):
         r = self.copy(False)
         self.assertNotIn("--tools", r["launch"]["argv"])
+        self.assertIn("--no-session", r["launch"]["argv"])
         self.assertEqual(r["note"], "can-edit")
 
     def test_copy_session_file_gone(self):
@@ -396,8 +406,11 @@ class OmpTest(unittest.TestCase):
         r = side.handle("copy", {"session": session, "pid": 100, "answerOnly": True, "dataDir": os.path.join(self.tmp, "d")},
                         env(home=self.tmp, procs=lambda pid: OMP_TREE))
         argv = r["launch"]["argv"]
-        self.assertEqual(argv[:2], ["omp", "--append-system-prompt"])
-        self.assertEqual(argv[3:], ["--tools", "read,grep,glob,find", "--model", "opus", "--profile", "work"])
+        # --no-session also keeps omp's autoResume from opening the agent's own file. omp adds write back to any
+        # --tools list (18.20.2): always-ask makes it wait for the person's yes
+        self.assertEqual(argv[:3], ["omp", "--no-session", "--append-system-prompt"])
+        self.assertEqual(argv[4:], ["--tools", "read,grep,glob,find", "--approval-mode", "always-ask",
+                                    "--model", "anthropic/claude-opus-5-5", "--thinking", "high", "--profile", "work"])
 
 
 class HostTest(unittest.TestCase):

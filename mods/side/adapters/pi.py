@@ -1,6 +1,7 @@
 """pi: sessions are ~/.pi/agent/sessions/--<cwd with / as ->--/<time>_<id>.jsonl, and a running pi names its file
 nowhere but its argv (--session <path|id prefix>); otherwise the folder's most recently written file is a guess. A
-side chat is a fresh pi given the conversation as background (pi_format); answer-only allows only pi's read tools."""
+side chat is a fresh pi given the conversation as background (pi_format); answer-only allows only pi's read tools
+(--tools drops every other tool, extensions' too, from its registry)."""
 from __future__ import annotations  # stock macOS python3 is 3.9: `str | None` must not evaluate at import
 
 import glob
@@ -49,4 +50,4 @@ def locate(req: dict, env) -> dict:
 
 
 def copy(req: dict, env) -> dict:
-    return pi_format.copy(req, env, "pi", "read,grep,find,ls")
+    return pi_format.copy(req, env, "pi", ["--tools", "read,grep,find,ls"])
