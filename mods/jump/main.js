@@ -10,7 +10,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, ScrollHandle } from "gpui-base";
 import { agents, spaces, panes, focused, exec, run, theme, props, shared, setShared, openOverlay, closeOverlay, home } from "herdr";
-import { jumpRows, inside } from "./lib.js";
+import { jumpRows, rowKey, selected } from "./lib.js";
 
 const tilde = (p) => (p && home() && (p === home() || p.startsWith(`${home()}/`)) ? `~${p.slice(home().length)}` : p ?? "");
 
@@ -53,11 +53,12 @@ export default class Jump extends View {
   init(_props, cx) {
     setShared("emergence.over", { at: Date.now(), open: true }); // the keyboard goes back where it was when this closes
     this.input = InputState.new({ placeholder: "Jump to a session or worktree…" });
-    this.input.on("change", (_e, cx) => { this.at = null; cx.notify(); });
-    this.input.on("submit", () => this.go(this.list().rows[this.at]));
+    this.input.on("change", (_e, cx) => { this.sel = null; cx.notify(); });
+    this.input.on("submit", () => { const l = this.list(); this.go(l.rows[selected(l, this.sel)]); });
     this.input.focus();
     cx.timer.after(150, () => this.input.focus());
-    this.at = null; // the pick; null: lib jumpRows' (the session shown last that isn't where you are)
+    this.sel = null; // the highlighted row's key (lib rowKey), from ↑/↓; null: jumpRows' pick (the session shown last that isn't where you are)
+    this.scrolled = null; // the row last scrolled to
     this.wts = [];
     this.scroll = ScrollHandle.new();
     cx.spawn(async (cx) => { await cx.sleep(16); this.wts = await worktrees(); cx.notify(); }); // host calls before the first frame never resolve
@@ -91,9 +92,8 @@ export default class Jump extends View {
   }
 
   render() {
-    const t = theme(), { rows, pick } = this.list();
-    if (this.at === null) { this.at = pick; this.scroll.scroll_to_item(this.at); }
-    this.at = Math.min(this.at, Math.max(0, rows.length - 1));
+    const t = theme(), l = this.list(), { rows } = l, at = selected(l, this.sel);
+    if (rows[at] && rowKey(rows[at]) !== this.scrolled) { this.scrolled = rowKey(rows[at]); this.scroll.scroll_to_item(at); } // it follows its row as the list shifts
     const two = (on, icon, top, bottom, right, pad = 26) => h_flex().h(48).mx(6).pl(pad).pr(10).gap(10).items_center().rounded(7).cursor_pointer()
       .when(on, (x) => x.bg(t.selected)).when(!on, (x) => x.hover((h) => h.bg(t.hover)))
       .child(div().size(16).flex_none().flex().items_center().justify_center().when(Boolean(icon), (x) => x.child(icon)))
@@ -103,7 +103,7 @@ export default class Jump extends View {
     const sub = (text, path) => div().min_w(0).whitespace_nowrap().overflow_hidden().text_size(12).text_color(t.dim)
       .map((x) => (path ? x.text_ellipsis_start() : x.text_ellipsis())).child(text);
     const row = (r, i) => {
-      const on = i === this.at;
+      const on = i === at;
       // A space (↵ goes to it) or a repo no space is in: a heading over its sessions and worktrees, 11.5 as the sidebar's.
       if (r.kind === "space" || r.kind === "repo") return h_flex().h(30).mx(6).mt(i ? 6 : 0).px(10).gap(8).items_center().rounded(7)
         .when(r.kind === "space", (x) => x.cursor_pointer().when(on, (y) => y.bg(t.selected)).when(!on, (y) => y.hover((h) => h.bg(t.hover))))
@@ -132,7 +132,7 @@ export default class Jump extends View {
             .child(since ? `${STATE[st]} ${ago(since)}` : STATE[st])))
           .child(div().text_color(t.dim).child(r.here ? "you're here" : r.who)));
     };
-    const move = (by, cx) => { if (rows.length) { this.at = (this.at + by + rows.length) % rows.length; this.scroll.scroll_to_item(this.at); } cx.stop_propagation(); cx.notify(); };
+    const move = (by, cx) => { if (rows.length) this.sel = rowKey(rows[(at + by + rows.length) % rows.length]); cx.stop_propagation(); cx.notify(); };
     return v_flex().id("jump").size_full().bg(t.popover).text_size(13)
       .on_key_down((e, cx) => {
         if (e.key === "escape") this.dismiss();

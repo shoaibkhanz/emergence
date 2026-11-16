@@ -61,3 +61,14 @@ export function jumpRows({ tabs, wts, recent = [], query = "" }) {
   const best = sessions.filter(([r]) => !r.here).sort(([a, i], [b, j]) => rank(a) - rank(b) || i - j)[0] ?? sessions[0];
   return { rows, pick: best ? best[1] : 0 };
 }
+
+// A row's identity across renders: the list shifts when worktrees arrive (they're read after the first frame), so the
+// highlight follows its row, not its position.
+export const rowKey = (r) => (r.kind === "tab" ? `tab:${r.tb.id}` : r.kind === "space" ? `space:${r.s.id}` : r.kind === "wt" || r.kind === "repo"
+  ? `${r.kind}:${r.machine ?? ""}:${r.path ?? r.repo}` : `new:${r.branch}`);
+
+// The highlighted row's index: the chosen one (key, from ↑/↓) while it's listed, else jumpRows' pick.
+export function selected({ rows, pick }, key) {
+  const i = key == null ? -1 : rows.findIndex((r) => rowKey(r) === key);
+  return i < 0 ? pick : i;
+}

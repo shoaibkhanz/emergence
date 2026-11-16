@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { jumpRows } from "./lib.js";
+import { jumpRows, rowKey, selected } from "./lib.js";
 
 // Four spaces: Testing (you're here) and app-feat in repo app, pi and website in their own. login is a worktree of app
 // nothing has open. Shown most recently: Testing, website, pi; app-feat never.
@@ -55,4 +55,13 @@ test("jumpRows: ⌘E ↵ then ⌘E ↵ again comes back", () => {
   const there = TABS.map((r) => ({ ...r, here: r.tb.id === "t3" })); // went to website: tabs-plus put it first
   const { rows, pick } = jumpRows({ tabs: there, wts: WTS, recent: ["t3", "t1", "t2"], query: "" });
   expect(rows[pick].tb.id).toBe("t1");
+});
+
+test("selected: the pick follows its row when worktrees arrive late and shift the list", () => {
+  const before = jumpRows({ tabs: TABS, wts: [], recent: RECENT, query: "" }); // worktrees not listed yet
+  const after = jumpRows({ tabs: TABS, wts: WTS, recent: RECENT, query: "" }); // ⑂ login now sits under Testing
+  expect(after.rows[selected(after, null)].tb.id).toBe("t3"); // nothing chosen yet: the pick, never a heading
+  const chosen = rowKey(before.rows[before.pick]);
+  expect(after.rows[selected(after, chosen)].tb.id).toBe("t3"); // the row, not its old position
+  expect(selected(after, "tab:gone")).toBe(after.pick); // a row that's gone (filtered out): the pick
 });
