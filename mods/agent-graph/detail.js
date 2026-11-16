@@ -8,15 +8,14 @@
 // the transcript when this opens and every 5 s while the sub-agent runs; nothing is cached.
 
 import { div } from "gpui-kit";
-import { v_flex, h_flex, ScrollHandle } from "gpui-base";
+import { v_flex, h_flex, ScrollHandle, TextView } from "gpui-base";
 import { run, exec, props, closeOverlay, theme, setShared, appHome, home } from "herdr";
-import { detailHead, mdLines, groupSteps, toolMix, stepKind, stepTarget, groupTarget, offset, took, tokens, costLabel, own, modelName } from "./lib.js";
+import { subState, groupSteps, toolMix, stepKind, stepTarget, groupTarget, offset, took, tokens, costLabel, own, modelName } from "./lib.js";
 
 const DIALOG = { pad: 24, gap: 16, title: 22, radius: 10, button: 32 }; // Emergence's frame (RECIPE "Dialogs"); join mods/dialogs.test.js when this branch merges
 const TABS = ["overview", "steps", "files"];
 const FOLD = { task: 360, result: 1600 }; // characters shown (whole lines) until Space shows the rest
 const LIVE_MS = 5000;
-const MONO = "Geist Mono"; // code and command output only (the font rule)
 const WORD = { read: "Read", edit: "Edit", run: "Run", search: "Search", web: "Web", agent: "Sub-agent", other: "Other" };
 const PY = () => `${appHome()}/mods/agent-graph/subagents.py`;
 const alpha = (c, a) => c.slice(0, 7) + Math.round(a * 255).toString(16).padStart(2, "0");
@@ -41,19 +40,22 @@ export class Detail {
     this.stepInfo = {}; // call -> { input, output, ok } | "loading" | { error }
     this.followed = true; // Steps follows the newest call while it runs, until you move
     this.scroll = { overview: ScrollHandle.new(), steps: ScrollHandle.new(), files: ScrollHandle.new() };
+    this.kids = {}; // tab -> the id of each child of its scroll list, in order (null: not a row), for scroll_to_item
     this.h = cx.focus_handle();
     this.h.focus();
     cx.timer.after(300, () => this.h.focus());
     cx.spawn(async (cx) => {
       await cx.sleep(16); // host calls made before a copy's first frame never resolve
+      let misses = 0; // refreshes that failed in a row (its agent gone): three end the live loop
       for (;;) {
         const out = await ask("--detail", p.detail);
         if (this.closed) return;
-        if (out?.detail) this.d = out.detail;
-        else this.err = out?.error?.message ?? "Couldn't read it.";
+        if (out?.detail) { this.d = out.detail; this.err = null; this.got = true; misses = 0; this.follow = true; }
+        else if (!this.got) this.err = out?.error?.message ?? "Couldn't read it."; // a later miss keeps what it showed
+        else misses++;
         this.loading = false;
         cx.notify();
-        if (!this.d?.running || this.err) return;
+        if (this.err || !this.d?.running || misses >= 3) return;
         await cx.sleep(LIVE_MS);
         if (this.closed) return;
       }
@@ -90,7 +92,10 @@ export class Detail {
   selected() {
     const list = this.items();
     if (this.tab === "steps" && this.followed && this.d?.running) return list[list.length - 1] ?? null;
-    return list.includes(this.sel[this.tab]) ? this.sel[this.tab] : list[0] ?? null;
+    const sel = this.sel[this.tab];
+    if (list.includes(sel)) return sel;
+    const g = this.tab === "steps" && this.rows().find((r) => r.group && r.steps.some((x) => x.call === sel)); // a run grew around it
+    return g ? g.id : list[0] ?? null;
   }
 
   toggle(id, cx) {
@@ -98,7 +103,8 @@ export class Detail {
     const was = this.open.has(id);
     this.open = was ? new Set([...this.open].filter((x) => x !== id)) : new Set([...this.open, id]);
     const call = !was && this.tab === "steps" && !id.startsWith("g:") ? id : null;
-    if (call && !this.stepInfo[call]) this.loadStep(call, cx);
+    const info = call && this.stepInfo[call];
+    if (call && (!info || info.error || (info !== "loading" && info.output == null))) this.loadStep(call, cx); // again while it ran
   }
 
   loadStep(call, cx) {
@@ -121,10 +127,14 @@ export class Detail {
       if (this.tab === "steps") this.followed = false;
     } else if (e.key === "space" || e.key_char === " ") this.toggle(this.selected(), cx);
     else return;
-    const i = this.items().indexOf(this.selected());
-    if (i >= 0 && this.tab !== "overview") this.scroll[this.tab].scroll_to_item(i);
+    this.scrollTo(this.selected());
     cx.stop_propagation();
     cx.notify();
+  }
+
+  scrollTo(id) {
+    const i = (this.kids[this.tab] ?? []).indexOf(id);
+    if (i >= 0) this.scroll[this.tab].scroll_to_item(i);
   }
 
   // ---- Drawing ----
@@ -146,18 +156,15 @@ export class Detail {
   }
 
   // Markdown lines, folded to `fold` until opened.
+  // Markdown, Herdr's own (TextView: selectable), folded to its first whole lines within `fold` characters until opened.
   text(t, id, body, fold, empty) {
     if (!body) return div().text_color(t.dim).child(empty);
-    const lines = mdLines(body), whole = this.open.has(id);
+    const lines = body.replace(/\s+$/, "").split("\n"), whole = this.open.has(id);
     let n = 0, chars = 0;
-    while (n < lines.length && (n === 0 || chars + lines[n].text.length <= fold)) chars += lines[n++].text.length;
-    const shown = whole ? lines : lines.slice(0, n);
-    const line = (l) => l.kind === "gap" ? div().h(6)
-      : l.kind === "h" ? div().pt(2).font_semibold().text_color(t.foreground).child(l.text)
-      : l.kind === "li" ? h_flex().items_start().gap(8).pl(l.depth * 14).child(div().flex_none().text_color(t.dim).child("•")).child(div().flex_1().min_w(0).text_color(t.foreground).child(l.text))
-      : l.kind === "code" ? div().px(8).bg(t.background).font_family(MONO).text_size(12).text_color(t.foreground).child(l.text || " ")
-      : div().text_color(t.foreground).child(l.text);
-    return v_flex().gap(2).children(shown.map(line))
+    while (n < lines.length && (n === 0 || chars + lines[n].length <= fold)) chars += lines[n++].length;
+    return v_flex().gap(2)
+      .child(TextView.markdown(`md-${id}-${whole ? "all" : n}`, (whole ? lines : lines.slice(0, n)).join("\n")).selectable(true).scrollable(false)
+        .w_full().text_size(13).text_color(t.foreground))
       .when(n < lines.length, (el) => el.child(div().pt(6).text_size(12).text_color(t.muted)
         .child(whole ? "Show less (space)" : `${lines.length - n} more lines (space)`)));
   }
@@ -213,9 +220,10 @@ export class Detail {
   }
 
   stepOpen(t, s, info) {
+    // A fenced block in Herdr's markdown view: its code font, selectable (a longer fence than any in the text).
     const box = (title, body) => v_flex().gap(4).child(div().text_size(11).text_color(t.dim).child(title))
-      .child(div().px(10).py(8).rounded(6).bg(t.background).font_family(MONO).text_size(11.5).text_color(t.foreground)
-        .children((body ?? "").split("\n").map((l) => div().child(l || " "))));
+      .child(TextView.markdown(`so-${s.call}-${title}`, `${"`".repeat(6)}\n${body ?? ""}\n${"`".repeat(6)}`).selectable(true).scrollable(false)
+        .w_full().text_size(12).text_color(t.foreground));
     return v_flex().id(`so-${s.call}`).flex_none().ml(62).mr(8).mb(6).gap(8)
       .child(info === "loading" ? div().text_size(12).text_color(t.dim).child("Reading…")
         : info.error ? div().text_size(12).text_color(t.muted).child(info.error)
@@ -226,9 +234,13 @@ export class Detail {
   steps(t, d) {
     const rows = this.rows();
     if (!rows.length) return div().text_color(t.dim).child(this.loading ? "Reading its transcript…" : "No tool calls.");
+    const kids = [], keys = [];
+    const add = (s, depth) => this.stepRow(t, s, depth, d).forEach((el, i) => { kids.push(el); keys.push(i ? null : s.group ? s.id : s.call); });
+    for (const r of rows) { add(r, 0); if (r.group && this.open.has(r.id)) r.steps.forEach((x) => add(x, 1)); }
+    this.kids.steps = keys;
+    if (this.follow && this.followed && d.running) { this.follow = false; this.scroll.steps.scroll_to_item(keys.length - 1); } // the newest call in view
     return v_flex().id("dt-steps").flex_1().min_h(0).p(4).rounded(8).bg(t.surface).border_1().border_color(t.border)
-      .overflow_y_scrollbar().track_scroll(this.scroll.steps)
-      .children(rows.flatMap((r) => [...this.stepRow(t, r, 0, d), ...(r.group && this.open.has(r.id) ? r.steps.flatMap((s) => this.stepRow(t, s, 1, d)) : [])]));
+      .overflow_y_scrollbar().track_scroll(this.scroll.steps).children(kids);
   }
 
   fileRow(t, id, p, dirty, dim) {
@@ -243,11 +255,15 @@ export class Detail {
   files(t, d) {
     const edited = d.edited ?? [], read = d.read ?? [];
     if (!edited.length && !read.length) return div().text_color(t.dim).child(this.loading ? "Reading its transcript…" : "It touched no files.");
-    const group = (title, n, rows) => v_flex().flex_none().gap(6).child(this.label(t, title, String(n)))
-      .child(v_flex().p(4).rounded(8).bg(t.surface).border_1().border_color(t.border).children(rows));
-    return v_flex().id("dt-files").flex_1().min_h(0).gap(18).overflow_y_scrollbar().track_scroll(this.scroll.files)
-      .when(edited.length > 0, (el) => el.child(group("Edited", edited.length, edited.map((e) => this.fileRow(t, `e:${e.path}`, e.rel ?? e.path.replace(home(), "~"), e.dirty, false)))))
-      .when(read.length > 0, (el) => el.child(group("Read", read.length, read.map((r) => this.fileRow(t, `r:${r}`, r, false, true)))));
+    // One scrolling card, its rows its children (scroll_to_item counts them), each list headed inside it.
+    const head = (title, n, first) => h_flex().h(28).flex_none().px(8).items_center().when(!first, (el) => el.mt(8)).child(this.label(t, title, String(n)));
+    const rows = [...(edited.length ? [[null, head("Edited", edited.length, true)]] : []),
+      ...edited.map((e) => [`e:${e.path}`, this.fileRow(t, `e:${e.path}`, e.rel ?? e.path.replace(home(), "~"), e.dirty, false)]),
+      ...(read.length ? [[null, head("Read", read.length, !edited.length)]] : []),
+      ...read.map((r) => [`r:${r}`, this.fileRow(t, `r:${r}`, r, false, true)])];
+    this.kids.files = rows.map(([k]) => k);
+    return v_flex().id("dt-files").flex_1().min_h(0).p(4).rounded(8).bg(t.surface).border_1().border_color(t.border)
+      .overflow_y_scrollbar().track_scroll(this.scroll.files).children(rows.map(([, el]) => el));
   }
 
   tabs(t, d) {
@@ -260,9 +276,9 @@ export class Detail {
   }
 
   render() {
-    const t = theme(), d = this.d ?? {}, now = Date.now(), head = detailHead(d, now), p = props() ?? {};
+    const t = theme(), d = this.d ?? {}, now = Date.now(), p = props() ?? {};
     const facts = [d.type, p.ownerName && `from ${p.ownerName}`, d.worktree && `in ${d.worktree.split("/").pop()}`].filter(Boolean).join(" · ");
-    const state = d.running && d.steps?.length ? `Working · ${d.steps[d.steps.length - 1].label}` : head.state;
+    const state = d.running && d.steps?.length ? `Working · ${d.steps[d.steps.length - 1].label}` : subState({ running: d.running, updatedAt: d.endedAt ?? now }, now);
     const body = this.err
       ? v_flex().flex_1().min_h(0).gap(6).child(div().text_color(t.muted).child(this.err))
         .child(div().text_size(12).text_color(t.dim).child("History is kept 30 days at most; past that, a sub-agent's details aren't kept."))

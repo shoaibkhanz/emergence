@@ -225,6 +225,7 @@ export default class AgentGraph extends View {
     if (!n.sub) return this.focusAgent(n);
     const req = detailRequest(n, this.items(), (i) => this.git.get(key(i.machine, i.cwd))?.v?.top ?? null);
     if (!req) return this.focusAgent(n);
+    this.handoff = true; // the dialog takes the keyboard: the side panel mustn't (close's emergence.back)
     this.dismiss();
     openOverlay({ mod: "agent-graph", kind: "dialog", width: 680, height: 0.9, props: { detail: req, owner: n.owner, ownerName: this.items().find((i) => i.id === n.owner)?.name ?? null, name: n.name, sub: n.sub, panel: this.panel } });
   }
@@ -302,7 +303,7 @@ export default class AgentGraph extends View {
   // The large popup (mod.open) closing gives the keyboard back to the side panel showing (emergence.back).
   async close() {
     if (this.detail) return this.detail.dismissed();
-    if (!this.panel && props()?.overlay) setShared("emergence.back", Date.now());
+    if (!this.panel && props()?.overlay && !this.handoff) setShared("emergence.back", Date.now());
   }
 
   render(cx) {

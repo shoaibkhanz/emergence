@@ -315,30 +315,6 @@ export function took(ms) {
 // "opus-5-5" from "claude-opus-5-5" or omp's "anthropic/claude-opus-5-5".
 export const modelName = (m) => m?.replace(/^.*\//, "").replace(/^claude-/, "") || null;
 
-// The header: its state chip, "Plan · fable-5-2 · ran 6m 26s", "⚒ 15 · 880k tokens · ≈ $3.42".
-export function detailHead(d, now) {
-  const span = d.startedAt != null ? `${d.running ? "running" : "ran"} ${took((d.running ? now : d.endedAt ?? now) - d.startedAt)}` : "";
-  const t = own(d);
-  return { state: subState({ running: d.running, updatedAt: d.endedAt ?? now }, now),
-    facts: [d.type, modelName(d.model), span].filter(Boolean).join(" · "),
-    metrics: [t.tools ? `⚒ ${t.tools}` : "", t.tokens ? `${tokens(t.tokens)} tokens` : "", costLabel(t)].filter(Boolean).join(" · ") };
-}
-
-// A task's or report's markdown as lines to style: headings, bullets (depth by indent), code (fenced, kept as is),
-// gaps; bold, italics and backticks dropped, since a line is drawn in one style.
-export function mdLines(body) {
-  const out = [], plain = (s) => s.replace(/\*\*(.+?)\*\*|__(.+?)__/g, "$1$2").replace(/`([^`]+)`/g, "$1");
-  let code = false;
-  for (const l of body.replace(/\s+$/, "").split("\n")) {
-    if (/^\s*```/.test(l)) { code = !code; continue; }
-    const li = l.match(/^(\s*)[-*]\s+(.*)$/);
-    out.push(code ? { kind: "code", text: l } : !l.trim() ? { kind: "gap", text: "" }
-      : /^#{1,6}\s/.test(l) ? { kind: "h", text: plain(l.replace(/^#{1,6}\s+/, "")) }
-      : li ? { kind: "li", text: plain(li[2]), depth: Math.floor(li[1].length / 2) } : { kind: "p", text: plain(l) });
-  }
-  return out;
-}
-
 // ---- A sub-agent's steps (its tool calls, the dialog's Steps tab) ----
 
 const KIND = { read: "read", edit: "edit", multiedit: "edit", write: "edit", notebookedit: "edit", bash: "run", grep: "search", glob: "search", ls: "search",

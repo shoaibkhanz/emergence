@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
   RANK, subItems, subState, ago, harnessOf, subRequests, overlaps, conflictsOf, metered, own, addUp, money, tokens, costLabel, metricLine,
-  summary, fold, foldables, isFolded, refold, worktreeOwners, worktreeNote, GONE, detailRequest, detailHead, took, mdLines, stepKind, groupSteps, toolMix, offset, stepTarget, groupTarget, historySince } from "./lib.js";
+  summary, fold, foldables, isFolded, refold, worktreeOwners, worktreeNote, GONE, detailRequest, took, modelName, stepKind, groupSteps, toolMix, offset, stepTarget, groupTarget, historySince } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -357,20 +357,9 @@ test("detailRequest: a sub-agent card asks subagents.py about itself through its
   expect(detailRequest(card("gone"), items, () => null)).toBeNull();
 });
 
-test("took and detailHead: the dialog's header facts", () => {
+test("took and modelName: the dialog's time and model", () => {
   expect([took(45_000), took(386_000), took(4_380_000), took(-5)]).toEqual(["45s", "6m 26s", "1h 13m", "0s"]);
-  const d = { running: false, type: "Plan", model: "claude-fable-5-2", startedAt: 0, endedAt: 386_000, updatedAt: 386_000, tools: 15, tokens: 879_699, cost: 3.4177, costKind: "estimate" };
-  expect(detailHead(d, 386_000 + 6 * 3_600_000)).toEqual({ state: "Finished 6h", facts: "Plan · fable-5-2 · ran 6m 26s", metrics: "⚒ 15 · 880k tokens · ≈ $3.42" });
-  expect(detailHead({ ...d, running: true, model: null, type: null }, 400_000).facts).toBe("running 6m 40s");
-  expect(detailHead({ ...d, model: "anthropic/claude-opus-5-5" }, 386_000).facts).toBe("Plan · opus-5-5 · ran 6m 26s"); // omp names its provider
-});
-
-test("mdLines: a report's markdown as plain lines a dialog can style (no inline markup)", () => {
-  const md = "## What I found\n\nThe **graph** reads `items()`.\n- one\n  * two\n1. first\n```js\nconst **x** = 1;\n```\nend";
-  expect(mdLines(md)).toEqual([
-    { kind: "h", text: "What I found" }, { kind: "gap", text: "" }, { kind: "p", text: "The graph reads items()." },
-    { kind: "li", text: "one", depth: 0 }, { kind: "li", text: "two", depth: 1 }, { kind: "p", text: "1. first" },
-    { kind: "code", text: "const **x** = 1;" }, { kind: "p", text: "end" }]);
+  expect([modelName("claude-fable-5-2"), modelName("anthropic/claude-opus-5-5"), modelName(null)]).toEqual(["fable-5-2", "opus-5-5", null]);
 });
 
 test("stepKind, toolMix: what kind of work each call was, and the mix, most first", () => {

@@ -355,7 +355,7 @@ class DetailTest(Base):
         procs = self.steps_log()
         d = sa.detail(self.req(), env(self.home, procs))["detail"]
         self.assertEqual([(x["tool"], x["label"], x["target"], x["ok"], x["ms"]) for x in d["steps"]], [
-            ("Read", "Read a.py", "a.py", True, 2000), ("Bash", "Run the tests", "SECRET_CMD pytest", False, 5000), ("Grep", "Search", "def a", None, None)])
+            ("Read", "Read a.py", "a.py", True, 2000), ("Bash", "Run the tests", "SECRET_CMD", False, 5000), ("Grep", "Search", "def a", None, None)])
         self.assertEqual([x["call"] for x in d["steps"]], ["u1", "u2", "u3"])  # the handback is the result, not a step
         self.assertEqual(d["read"], ["a.py"])
         self.assertNotIn("-x", json.dumps(d["steps"]))  # a command's program, never its arguments: those come when it's opened
@@ -367,6 +367,8 @@ class DetailTest(Base):
         self.assertTrue(s["output"].startswith("Exit code 1\nFAILED test_a"))
         self.assertEqual(len(s["output"].split("\n")), sa.STEP_LINES + 1)  # cut, with "…" on its own line
         self.assertEqual(sa.step({**self.req(), "call": "nope"}, env(self.home, procs))["error"]["code"], "gone")
+        self.assertEqual(sa.step({**self.req(), "call": "x" * 300}, env(self.home, procs))["error"]["code"], "bad-request")
+        self.assertEqual(sa.detail({**self.req(), "id": "a/b"}, env(self.home, procs))["error"]["code"], "bad-request")  # claude ids are flat
         self.assertEqual(sa.step({**self.req(), "call": "u3"}, env(self.home, procs))["step"]["output"], None)  # still running
 
     def test_bash_target_is_its_program(self):
@@ -376,7 +378,24 @@ class DetailTest(Base):
         self.assertEqual(sa.bash_target("ANTHROPIC_API_KEY=sk-SECRET python3 -m pytest"), "python3")
         self.assertEqual(sa.bash_target("/usr/bin/gh pr list --json x"), "gh pr")
         self.assertEqual(sa.bash_target("bun test"), "bun test")
+        self.assertEqual(sa.bash_target("cd mods && (bun test 2>&1 | tail -3)"), "bun test")  # a subshell's bracket goes
+        self.assertEqual(sa.bash_target("(cd /w && git status)"), "git status")
+        for cmd in ("echo hunter2", "ssh prodbox", "sudo rm secretfile", 'API_KEY="sk ant" curl x', "TOKEN=$(cat key) npm publish"):
+            self.assertNotIn(cmd.split()[-1], sa.bash_target(cmd) or "")  # arguments never: only known tools keep a subcommand
+        self.assertEqual(sa.bash_target('API_KEY="sk ant" curl x'), "curl")
+        self.assertIsNone(sa.bash_target("echo 'unclosed"))
         self.assertIsNone(sa.bash_target(""))
+
+    def test_step_survives_a_repeated_call_line_and_odd_ids(self):
+        procs = self.claude()
+        jsonl(os.path.join(self.subs, "agent-a1.jsonl"), [
+            use(NOW - 3 * MIN, "call_1|fc_2", "Bash", {"command": "ls"}), result(NOW - 3 * MIN, "call_1|fc_2"),
+            use(NOW - 2 * MIN, "call_1|fc_2", "Bash", {"command": "ls"}),  # Claude repeats a message far down the log
+            {"type": "user", "timestamp": iso(NOW - MIN), "message": {"content": 7}},  # odd content: no crash
+        ])
+        s = sa.step({**self.req(), "call": "call_1|fc_2"}, env(self.home, procs))["step"]
+        self.assertEqual((s["ok"], s["output"]), (True, "SECRET_OUTPUT"))
+        self.assertIn("detail", sa.detail(self.req(), env(self.home, procs)))
 
     def test_long_text_is_cut(self):
         procs = self.claude()

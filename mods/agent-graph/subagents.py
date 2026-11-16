@@ -17,6 +17,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -514,7 +515,7 @@ def _text(content) -> str | None:
     """A message's own words: a string, or its text blocks joined (None: only tool calls or results)."""
     if isinstance(content, str):
         return content
-    texts = [p.get("text") for p in content or [] if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str)]
+    texts = [p.get("text") for p in (content if isinstance(content, list) else []) if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str)]
     return "\n\n".join(texts) if texts else None
 
 
@@ -522,7 +523,7 @@ def _result_text(content) -> str | None:
     if isinstance(content, str):
         return content
     parts = [p.get("text") if p.get("type") == "text" else "[image]" if p.get("type") == "image" else None
-             for p in content or [] if isinstance(p, dict)]
+             for p in (content if isinstance(content, list) else []) if isinstance(p, dict)]
     return "\n".join(x for x in parts if isinstance(x, str)) or None
 
 
@@ -535,20 +536,25 @@ def _rel(path, top) -> str | None:
     return "~" + path[len(home):] if path.startswith(home + "/") else path
 
 
+SUBCOMMANDS = {"git", "bun", "npm", "pnpm", "yarn", "uv", "cargo", "go", "docker", "kubectl", "make", "gh", "glab", "pip", "brew", "hc", "herdr-app"}
+
+
 def bash_target(cmd) -> str | None:
-    """A command's program and its subcommand ("git status", "bun test"), never its arguments: VAR=value prefixes
-    and a leading cd go."""
+    """A command's program ("ls", "curl"), with its subcommand for tools that have them ("git status", "bun test"),
+    never its arguments: VAR=value prefixes, a leading cd and subshell brackets go; unparseable quoting: None."""
     if not isinstance(cmd, str):
         return None
-    parts = [x for x in re.split(r"&&|;|\|\|", cmd) if x.strip()]
+    parts = [x.strip().lstrip("({ ") for x in re.split(r"&&|;|\|\|", cmd) if x.strip().lstrip("({ ")]
     while len(parts) > 1 and parts[0].split()[0] == "cd":
         parts = parts[1:]
-    words = [w for w in (parts[0] if parts else "").split() if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w)]
+    try:
+        words = [w for w in shlex.split(parts[0] if parts else "") if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w)]
+    except ValueError:
+        return None
     if not words:
         return None
-    prog = os.path.basename(words[0])
-    sub = words[1] if len(words) > 1 and re.match(r"^[a-z][a-z0-9-]{1,20}$", words[1]) else None
-    return f"{prog} {sub}" if sub else prog
+    prog, sub = os.path.basename(words[0].rstrip(")}")), words[1].rstrip(")}") if len(words) > 1 else None
+    return f"{prog} {sub}" if prog in SUBCOMMANDS and sub and re.match(r"^[a-z][a-z0-9-]{1,20}$", sub) else prog
 
 
 FILE_TOOLS = set(CLAUDE_EDITS) | {"Read", "read", "edit", "write"}
@@ -624,6 +630,8 @@ def _sub_log(req, env: Env) -> dict:
     if not SUB_ID.match(sid) or ".." in sid.split("/"):
         return error("bad-request", "expected {pid, harness, top, id}")
     if req.get("harness") == "claude":
+        if "/" in sid:
+            return error("bad-request", "expected a Claude sub-agent id")
         session, pid = claude_session(req, env)
         if not session:
             return error("no-session", "Its agent's session isn't running any more.")
@@ -664,12 +672,12 @@ def step(req, env: Env) -> dict:
     if "error" in found:
         return found
     call = req.get("call")
-    if not isinstance(call, str) or not re.match(r"^[A-Za-z0-9_-]{1,80}$", call):
+    if not isinstance(call, str) or not 0 < len(call) <= 256:  # only compared, never a path (omp's: call_…|fc_…)
         return error("bad-request", "expected a call id")
     out = None
     for o in _lines(found["log"]):
         for e in found["events"](o):
-            if e[0] == "call" and e[1] == call:
+            if e[0] == "call" and e[1] == call and out is None:  # Claude repeats a message far down the log
                 name, inp = e[2], e[3]
                 text = inp.get("command") if name.lower() == "bash" else (e[5] or inp.get("file_path") or inp.get("notebook_path") or inp.get("path")) \
                     if name in FILE_TOOLS else json.dumps(inp, ensure_ascii=False)
