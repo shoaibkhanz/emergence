@@ -35,6 +35,7 @@ export const GROUPS = [
     [{ action: "mod.open:jump" }, "Jump: every session and worktree"],
     [{ action: "tabs-plus.worktrees" }, "Every worktree of the repo you're in"],
     [{ action: "mod.open:emergence-keys" }, "These keys"],
+    [{ action: "mod.open:emergence-settings" }, "Emergence settings: the switches the mods keep"],
   ]],
   ["Panes", [
     [{ action: ["nav-keys.left", "nav-keys.down", "nav-keys.up", "nav-keys.right"] }, "Move between panes and (n)vim splits (nav-keys, optional)"],

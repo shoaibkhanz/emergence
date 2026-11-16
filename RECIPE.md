@@ -96,16 +96,16 @@ PR review's diff lines and hunk headers, and the Library's code view; everything
 file paths, commit hashes, counts) is Geist. Sizes: title 15/600, body 13, a name 13/500, secondary 12
 `muted`, labels and section headers 11.5 `dim`, hints and chips 11 `dim`, buttons 12/500.
 
-Dialogs (Emergence's own: confirm-safe, the port card, System, the keys list; Jump and the Library are palettes with
-their search field as the header) share one frame: `popover`, radius 10, 24px padding, 16px gaps, a 22px title row
-(15px semibold title, Herdr's "Esc" chip: 11px `dim`, `hover` background, closes on click), sections headed 11.5px
-`dim` with their columns named at the same widths as the rows'. Buttons are 32px, 12/500, and exactly one is filled:
-the one Enter presses (`solid`; a destructive one `blocked` at 18%), with ↵; ←/→/Tab move the fill; the others are
-`raised` with an `input` border, Stop and Delete in `blocked` text. A question or status sits left of the buttons (12
-`muted`, two lines at most), so asking never changes a dialog's height. A boxed subject is `surface` with a `border`.
-Widths: 440 (a question), 560 (a card), 680 (a list or palette). Centred (`kind: "dialog"`), as tall as their content
-where it's known up front, else a fixed height (or a share of the window, as the keys list's 0.9) whose lists scroll
-inside.
+Dialogs (Emergence's own: confirm-safe, the port card, System, the keys list and settings; Jump and the Library are
+palettes with their search field as the header) share one frame: `popover`, radius 10, 24px padding, 16px gaps, a 22px
+title row (15px semibold title, Herdr's "Esc" chip: 11px `dim`, `hover` background, closes on click), sections headed
+11.5px `dim` with their columns named at the same widths as the rows'. Buttons are 32px, 12/500, and exactly one is
+filled: the one Enter presses (`solid`; a destructive one `blocked` at 18%), with ↵; ←/→/Tab move the fill; the others
+are `raised` with an `input` border, Stop and Delete in `blocked` text. A question or status sits left of the buttons
+(12 `muted`, two lines at most), so asking never changes a dialog's height. A boxed subject is `surface` with a
+`border`. Widths: 440 (a question), 560 (a card), 680 (a list or palette). Centred (`kind: "dialog"`), as tall as
+their content where it's known up front, else a fixed height (or a share of the window, as the keys list's 0.9) whose
+lists scroll inside.
 
 ## How it behaves
 
@@ -190,6 +190,17 @@ inside.
   - ⌘⇧/ (`mod.open:emergence-keys`, also a keyboard button after the panel buttons) lists every Emergence key: bound
     ones read live from `keys()`, the ones mods handle themselves as written (`emergence-keys/lib.js`). install.sh's
     SHADOWS lets it replace Herdr's global ⌘⇧/ (`app.help`, still on ⌘/).
+  - ⌘⌥, (`mod.open:emergence-settings`, also a sliders button after the keyboard one) opens Emergence settings, a
+    560×600 dialog of switches grouped by mod, each written at once to the shared value its mod already reads
+    (`emergence-settings/lib.js` `sections`): Sidebar "Fold to dots" (`sidebar.folded` dots / rail), PRs "Side by side
+    diffs" (`pr-review.split`), Library "Large skill window" (`skills.big`, clearing `skills.wsize` as the window's
+    own toggle does), and Side chats a switch per harness (`side.harnesses`, only flipped supported ones saved; the
+    names and the supported list come from side's resident copy in `shared("side.supported")`, since mods can't import
+    each other). Not installed or no adapter yet reads "not installed" / "coming", no switch. ↑/↓ move an `accent`
+    ring, ↵ or space flips, Esc closes. Herdr's own Settings (⌘,) has fixed sections no mod can add to (`frame/` is
+    rewritten each start), hence a page of our own. Not on it: view state (panel widths, Usage's range and harness
+    chips, folded repos, the graph's card positions: each copy's own `localStorage`, out of another mod's reach) and
+    the Agents panel's Active | All, which is decided each time it opens.
   - ⌘⇧I (not ⌘⇧J: Homerow takes that system-wide for its scroll mode) puts the keyboard in the Inbox (`inbox.focus`),
     opening the sidebar first if it's folded; ↵ there runs
     `agent.focus` then `pane.focus` on that agent's terminal (pane.focus releases the Inbox's keyboard).
@@ -405,8 +416,9 @@ inside.
   - `lib.js` does the maths: Wilson intervals, quartile levels, cost anatomy, rhythm.
   - `main.js` draws with divs only.
 - **`programs.json`**: gives omp its icon (`mods/inbox/omp.svg`, omp's MIT favicon).
-- **`keys.json`**: `layout:emergence` ⌘⇧A/R/K/U/J/O, ⌘B and ⌘⌥B; `global` ⌘E (`mod.open:jump`). The layout section beats
-  `global` and still applies while a terminal is focused (only a `terminal` binding for the same key would shadow it).
+- **`keys.json`**: `layout:emergence` ⌘⇧A/R/K/U/J/O, ⌘⇧/, ⌘⌥/, ⌘⌥, (settings), ⌘B and ⌘⌥B; `global` ⌘E
+  (`mod.open:jump`). The layout section beats `global` and still applies while a terminal is focused (only a
+  `terminal` binding for the same key would shadow it).
   `install.sh` drops the keys it used to add (`RETIRED`: ⌘⇧G, old ⌘⇧U, ⌘⇧M, and the panel keys in `global`) while
   they still hold its value, but only once that action's new key is theirs or free to add; then it adds the new ones.
 

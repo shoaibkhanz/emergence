@@ -58,6 +58,9 @@ export default class Side extends View {
     this.retryAt = shared("side.retry")?.at; // a retry from before this load isn't for us
     const saved = choices(), kept = withoutStale(saved, SUPPORTED); // the first chooser's leftovers go (lib withoutStale)
     if (JSON.stringify(kept) !== JSON.stringify(saved)) setShared("side.harnesses", kept);
+    // Emergence settings draws these switches too, and mods can't import each other.
+    const offer = { names: NAMES, supported: SUPPORTED };
+    if (JSON.stringify(shared("side.supported")) !== JSON.stringify(offer)) setShared("side.supported", offer);
     cx.spawn(async () => {
       for (;;) {
         const c = await nextCommand();
