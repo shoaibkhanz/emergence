@@ -5,7 +5,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { subAgents, splitColumn } from "./lib.js";
+import { subAgents, splitColumn, inboxHeight, HEADER_H, ROW_H, EMPTY_H, LIST_PAD, CARD_GAP, FOOT_H, SHELF_MAX, SHELF_PAD } from "./lib.js";
 import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared, setShared, nextCommand, focused } from "herdr";
 
 function find(node, id) {
@@ -46,7 +46,6 @@ function ago(ms) {
 }
 
 const GLYPH = { cmd: "⌘", shift: "⇧", alt: "⌥", ctrl: "⌃" };
-const LIST_PAD = 14; // under the last card, as Spaces leaves under its last row (its list's pb(14))
 const PORTS_FALLBACK = 64; // Ports' empty height ("Ports none" + Working) until it says what it needs
 const RANK = { blocked: 0, done: 1, idle: 2 };
 
@@ -173,7 +172,7 @@ export default class Inbox extends View {
 
   // A quiet row at the foot: the Settled shelf's header.
   foot(t, id, icon, label, n, onClick, open) {
-    return h_flex().id(id).h(32).px(16).gap(8).flex_none().items_center().text_size(12).text_color(t.muted).cursor_pointer()
+    return h_flex().id(id).h(FOOT_H).px(16).gap(8).flex_none().items_center().text_size(12).text_color(t.muted).cursor_pointer()
       .hover((s) => s.text_color(t.foreground)).on_click(onClick)
       .child(icon).child(label).child(div().text_size(11).text_color(t.dim).child(String(n))).child(div().flex_1())
       .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(11).text_color(t.dim));
@@ -219,30 +218,29 @@ export default class Inbox extends View {
           .child(String(cards.length))));
     }
     // Header, the list's content (cards are alike: one is measured), the feet and the open shelf.
-    const listH = cards.length ? cards.length * ((this.cardH ?? 50) + 2) - 2 : 32;
-    this.fitSpaces(collapsed, 41 + listH + LIST_PAD + (settled.length ? 32 + (this.shelf ? Math.min(160, settled.length * 30) + 6 : 0) : 0));
+    this.fitSpaces(collapsed, inboxHeight({ cards: cards.length, cardH: this.cardH, settled: settled.length, shelf: this.shelf }));
     const bound = keys().find((k) => k.action === "tabs-plus.attention")?.keys;
     // Header and inset line up with Herdr's Spaces list above (16px, 11.5px label).
     return this.measured(root.border_t(1).border_color(t.border))
-      .child(h_flex().h(41).pt(10).pl(16).pr(12).gap(6).flex_none().items_center().text_size(11.5).text_color(t.dim)
+      .child(h_flex().h(HEADER_H).pt(10).pl(16).pr(12).gap(6).flex_none().items_center().text_size(11.5).text_color(t.dim)
         .child(div().font_medium().child("Inbox"))
         .when(cards.length > 0, (el) => el.child(String(cards.length)))
         .child(div().flex_1())
         .when(Boolean(bound), (el) => el.child(div().id("inbox-key").h(18).px(5).flex().items_center().rounded(4).border(1).border_color(t.border)
           .text_size(11).tooltip("Next agent that needs you")
           .child(bound.split("-").map((p) => GLYPH[p] ?? p.toUpperCase()).join("")))))
-      .child(v_flex().id("inbox-list").flex_1().min_h(0).px(6).pb(LIST_PAD).gap(2).overflow_y_scrollbar().track_scroll(this.list)
-        .when(cards.length === 0, (el) => el.child(h_flex().h(32).flex_none().px(10).gap(8).items_center().text_size(12).text_color(t.dim)
+      .child(v_flex().id("inbox-list").flex_1().min_h(0).px(6).pb(LIST_PAD).gap(CARD_GAP).overflow_y_scrollbar().track_scroll(this.list)
+        .when(cards.length === 0, (el) => el.child(h_flex().h(EMPTY_H).flex_none().px(10).gap(8).items_center().text_size(12).text_color(t.dim)
           .child(svg("mods/workspace-chrome/circle-check.svg").size(14).flex_none()).child("All caught up")))
         .children(cards.map((a, n) => this.card(t, a, tabs.get(a.tab), pane.get(a.pane), now)
           .when(n === 0, (el) => el.on_size_change((size, cx) => { const h = Math.round(size.height / (settings().zoom ?? 1)); if (h !== this.cardH) { this.cardH = h; cx.notify(); } })))))
       .when(settled.length > 0, (el) => el
         .child(this.foot(t, "inbox-settled", svg("mods/workspace-chrome/archive.svg").size(12), "Settled", settled.length,
           (_e, cx) => { this.shelf = !this.shelf; cx.notify(); }, this.shelf))
-        .when(this.shelf, (el) => el.child(v_flex().id("inbox-shelf").flex_none().max_h(160).px(6).pb(6).overflow_y_scrollbar()
+        .when(this.shelf, (el) => el.child(v_flex().id("inbox-shelf").flex_none().max_h(SHELF_MAX).px(6).pb(SHELF_PAD).overflow_y_scrollbar()
           .children(settled.map((tab) => {
             const a = lead(tab);
-            return h_flex().id(`shelf-${tab.id}`).h(30).px(10).gap(8).flex_none().items_center().rounded(8).cursor_pointer()
+            return h_flex().id(`shelf-${tab.id}`).h(ROW_H).px(10).gap(8).flex_none().items_center().rounded(8).cursor_pointer()
               .text_size(12).text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
               .tooltip("Bring it back").on_click(() => run("tab.select", { id: tab.id }))
               .child(this.mark(t, a?.program, 14))

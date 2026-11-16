@@ -54,3 +54,14 @@ test("splitColumn: a side chat never over-fills a column that fitted without it"
     expect(spaces + side + ports + 90).toBeLessThanOrEqual(H); // the inbox keeps at least its 90
   }
 });
+
+import { inboxHeight } from "./lib.js";
+
+test("inboxHeight: header, the cards (or All caught up), room under them, then Settled and its open shelf", () => {
+  expect(inboxHeight({ cards: 0, cardH: 50, settled: 0, shelf: false })).toBe(41 + 32 + 14);
+  expect(inboxHeight({ cards: 2, cardH: 50, settled: 0, shelf: false })).toBe(41 + (50 + 2 + 50) + 14);
+  expect(inboxHeight({ cards: 1, cardH: null, settled: 0, shelf: false })).toBe(41 + 50 + 14); // before a card is measured
+  expect(inboxHeight({ cards: 1, cardH: 50, settled: 3, shelf: false })).toBe(41 + 50 + 14 + 32);
+  expect(inboxHeight({ cards: 1, cardH: 50, settled: 3, shelf: true })).toBe(41 + 50 + 14 + 32 + 3 * 30 + 6);
+  expect(inboxHeight({ cards: 1, cardH: 50, settled: 10, shelf: true })).toBe(41 + 50 + 14 + 32 + 160 + 6); // the shelf scrolls past 160
+});

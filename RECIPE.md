@@ -129,9 +129,12 @@ inside.
     as it draws blocked ones in `t.blocked`; a working agent's dot breathes (`.loop("opacity", { from: 0.4, to: 1,
     period: 1600 })`) and Working's spinner turns (`svg(spinner).spin(900)`), the only motion. Both are Herdr's native
     motion, never a timer (AGENTS.md: a timer redraws the whole window); they run only while drawn and something works.
-  - The graph rings where you are (`agent-graph/lib.js` `ringed`): while Inbox or Spaces has the keyboard, its cursor
-    (shared `inbox.cursor` / `spaces.cursor`, null otherwise): an Inbox card rings its agent, a space the worktree its
-    agents work in, an unopened worktree row its card. Otherwise the focused terminal's agent. Active only still draws the cursor's idle agent (or its space's), so the ring has a card (`cursorKeeps`).
+  - The graph rings where you are, which `buildTree` (`agent-graph/lib.js`) marks `here`: while Inbox or Spaces has the
+    keyboard, its cursor (shared `inbox.cursor` / `spaces.cursor`, null otherwise): an Inbox card marks its agent, a
+    space the worktrees its agents work in, an unopened worktree row its own. Otherwise the focused terminal's agent.
+    Active only still draws what's here, so the ring always has a card.
+  - The sidebar's sections keep their own copies of one set of sizes (header 41, row 30, empty line 32, 14 under a
+    list); `mods/sidebar.test.js` fails when the copies disagree. Inbox's height is `inbox/lib.js` `inboxHeight`.
   - The inbox order drives ⌘] / ⌘[ (`setAgentOrder`).
 - **Ports.**
   - Every 5 s: `lsof -nP -iTCP -sTCP:LISTEN -Fpcn`, `ps -axo pid=,ppid=,etime=,comm=`, the listeners' folders

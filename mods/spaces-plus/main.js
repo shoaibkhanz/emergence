@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, settings, shared, setShared, watchFolder, window, layout, nextCommand, focused, notify } from "herdr";
-import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf } from "./lib.js";
+import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, HEADER_H, ROW_H, SUB_ROW_H, LIST_PAD } from "./lib.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -35,7 +35,7 @@ function place(s, ps) {
   const tabs = new Set((s.tabs ?? []).map((c) => c.id));
   return ps.find((p) => tabs.has(p.tab) && p.cwd)?.cwd || s.folder;
 }
-const rowHeight = ({ tree, kind }) => (tree || kind === "wt" ? 28 : 30);
+const rowHeight = ({ tree, kind }) => (tree || kind === "wt" ? SUB_ROW_H : ROW_H);
 const machineOf = (r) => (r.w ? r.w.machine : r.on) ?? null;
 const RAIL_CELL = 32;
 const railCell = (el) => h_flex().flex_none().justify_center().child(el);
@@ -418,7 +418,7 @@ export default class Spaces extends View {
       return rows.map((r) => this.dot(r, t));
     }
     const draw = (r) => out(r.key, collapsed ? this.compact(r, t) : r.kind === "wt" ? this.worktreeRow(r, t) : this.row(r, t));
-    publish(45 + lights() + shown.reduce((h, r) => h + (collapsed ? 26 : rowHeight(r)), 0) + (remote.length ? (remote.length + 1) * 26 : 0));
+    publish(HEADER_H + LIST_PAD + lights() + shown.reduce((h, r) => h + (collapsed ? 26 : rowHeight(r)), 0) + (remote.length ? (remote.length + 1) * 26 : 0));
     const loading = m => {
       const layout = machines().find(k => k.name === m)?.layout;
       return layout === "loading" || (!layout && this.machines.some(k => k.name === m && k.state === "connected"))
@@ -693,12 +693,12 @@ export default class Spaces extends View {
     this.shareCursor("spaces.cursor", this.ringed && !narrow() ? cursorOf((this.rows ?? []).find((r) => r.key === this.cur)) : null);
     return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13).on_size_change((size) => this.shown(size))
       .track_focus(this.fh).on_key_down((e, cx) => this.key(e.keystroke, cx))
-      .when(!dots, (el) => el.child(h_flex().h(31 + top).pt(top).pl(16).pr(10).flex_none().items_center().justify_between().text_size(11.5).text_color(t.dim)
+      .when(!dots, (el) => el.child(h_flex().h(HEADER_H + top).pt(top).pl(16).pr(10).flex_none().items_center().justify_between().text_size(11.5).text_color(t.dim)
         .when(collapsed, el => el.pl(0).pr(0).justify_center())
         .when(!collapsed, el => el.child("Spaces"))
         .child(div().id("space-new").size(26).flex_none().flex().items_center().justify_center().rounded(6).hover(s => s.bg(t.hover).text_color(t.foreground))
           .on_click(() => run("space.new")).child(svg("mods/workspace-chrome/plus.svg").size(14)))))
-      .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pt(dots ? top + 8 : 0).pb(dots ? 8 : 14).overflow_y_scrollbar().mode("always").track_scroll(this.list)
+      .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pt(dots ? top + 8 : 0).pb(dots ? 8 : LIST_PAD).overflow_y_scrollbar().mode("always").track_scroll(this.list)
         .on_mouse_up("left", (_e, cx) => { this.pressed = null; cx.notify(); })
         .children(this.grouped(t, collapsed)));
   }

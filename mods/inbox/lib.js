@@ -23,3 +23,17 @@ export function splitColumn({ H, spacesWant, need, portsMin, sideWant = 0, colla
   const ports = collapsed ? 0 : rest ? Math.max(min, Math.round(rest - spaces - Math.max(need, INBOX_MIN))) : min;
   return { spaces, side, ports };
 }
+
+// The inbox block's parts (px), drawn by main.js with these same numbers. HEADER_H, ROW_H and EMPTY_H are the
+// sidebar's section sizes (Ports, Side chats; lib.test.js checks they agree); LIST_PAD is the room under the last card,
+// as Spaces leaves under its last row.
+export const HEADER_H = 41, ROW_H = 30, EMPTY_H = 32, LIST_PAD = 14, CARD_GAP = 2, CARD_H = 50, FOOT_H = 32,
+  SHELF_MAX = 160, SHELF_PAD = 6;
+
+// The height the inbox needs (fitSpaces' need): header, its cards (cardH: one measured, all alike; CARD_H until then)
+// or "All caught up", LIST_PAD, then the Settled foot and, open, its shelf (ROW_H a row, scrolling past SHELF_MAX).
+export function inboxHeight({ cards, cardH, settled, shelf }) {
+  const list = cards ? cards * ((cardH ?? CARD_H) + CARD_GAP) - CARD_GAP : EMPTY_H;
+  const foot = settled ? FOOT_H + (shelf ? Math.min(SHELF_MAX, settled * ROW_H) + SHELF_PAD : 0) : 0;
+  return HEADER_H + list + LIST_PAD + foot;
+}

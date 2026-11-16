@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, ringed, sidebarCursor, openOnActive, filterCounts, activeNudge, cursorKeeps } from "./lib.js";
+import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, sidebarCursor, openOnActive, filterCounts, activeNudge } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -98,23 +98,37 @@ const RING_ITEMS = [
   { id: "t2", cwd: "/r/app/.wt/feat", status: "idle", agent: true, name: "b", space: "s2" },
   { id: "t3", parent: "t2", cwd: "/r/app/.wt/feat", status: "idle", agent: true, name: "c", space: "s2" },
 ];
-const ringTree = () => buildTree(RING_ITEMS, git, () => undefined);
+// What the tree marks as where you are (here), by its own data: "agent <id>", "worktree <top>".
+const hereOf = (tree) => tree.flatMap((r) => r.worktrees.flatMap((w) => [...(w.here ? [`worktree ${w.top}`] : []),
+  ...w.agents.flatMap(function walk(a) { return [...(a.here ? [`agent ${a.id}`] : []), ...a.children.flatMap(walk)]; })]));
+const ringTree = (cursor, focused = "t1", activeOnly = false) => buildTree(RING_ITEMS, git, () => undefined, { cursor, focused, activeOnly });
+const shown = (tree) => tree.flatMap((r) => r.worktrees.flatMap((w) => w.agents.flatMap(function walk(a) { return [a.id, ...a.children.flatMap(walk)]; })));
 
-test("ringed: no sidebar cursor rings the focused terminal's agent", () => {
-  expect([...ringed(ringTree(), null, "t1")]).toEqual(["a:t1"]);
-  expect([...ringed(ringTree(), null, null)]).toEqual([]);
+test("here: no sidebar cursor marks the focused terminal's agent", () => {
+  expect(hereOf(ringTree(null))).toEqual(["agent t1"]);
+  expect(hereOf(ringTree(null, null))).toEqual([]);
 });
 
-test("ringed: an Inbox card rings its agent, not the focused one", () => {
-  expect([...ringed(ringTree(), { kind: "agent", id: "t3" }, "t1")]).toEqual(["a:t3"]);
+test("here: an Inbox card marks its agent, not the focused one", () => {
+  expect(hereOf(ringTree({ kind: "agent", id: "t3" }))).toEqual(["agent t3"]);
 });
 
-test("ringed: a space rings the worktree its agents work in, not an agent", () => {
-  expect([...ringed(ringTree(), { kind: "space", id: "s2" }, "t1")]).toEqual(["w:|/r/app/.wt/feat"]);
+test("here: a space marks the worktree its agents work in, not an agent", () => {
+  expect(hereOf(ringTree({ kind: "space", id: "s2" }))).toEqual(["worktree /r/app/.wt/feat"]);
 });
 
-test("ringed: an unopened worktree row rings that worktree's card", () => {
-  expect([...ringed(ringTree(), { kind: "worktree", on: null, path: "/r/app" }, "t1")]).toEqual(["w:|/r/app"]);
+test("here: an unopened worktree row marks that worktree", () => {
+  expect(hereOf(ringTree({ kind: "worktree", on: null, path: "/r/app" }))).toEqual(["worktree /r/app"]);
+  expect(hereOf(ringTree({ kind: "worktree", on: "", path: "/r/app" }))).toEqual(["worktree /r/app"]); // "" is this computer too
+  expect(hereOf(ringTree({ kind: "worktree", on: "mini", path: "/r/app" }))).toEqual([]); // the same path on another machine
+});
+
+test("Active only still draws what's here (and what leads to it); nothing else idle", () => {
+  expect(shown(ringTree(null, "t1", true))).toEqual(["t1"]);
+  expect(shown(ringTree({ kind: "agent", id: "t3" }, "t1", true))).toEqual(["t1", "t2", "t3"]); // t2 holds its sub-agent t3
+  expect(shown(ringTree({ kind: "space", id: "s2" }, "t1", true))).toEqual(["t1", "t2", "t3"]);
+  expect(shown(ringTree({ kind: "worktree", on: null, path: "/r/app" }, "t1", true))).toEqual(["t1"]);
+  expect(shown(ringTree(null, "t2", true))).toEqual(["t1", "t2"]); // the focused terminal's idle agent too
 });
 
 test("sidebarCursor: whichever list holds the keyboard; the newer one while the keyboard moves between them", () => {
@@ -152,13 +166,4 @@ test("activeNudge: blocked beats working; nothing on Active, when disarmed, or w
   expect(activeNudge(FILTER_ITEMS, { onAll: false, armed: true })).toBe(null);
   expect(activeNudge(FILTER_ITEMS, { onAll: true, armed: false })).toBe(null);
   expect(activeNudge([{ agent: true, status: "done" }, { agent: false, status: "working" }], { onAll: true, armed: true })).toBe(null);
-});
-
-test("Active only keeps the sidebar cursor's idle agent, and what leads to it; nothing else idle", () => {
-  const ids = (tree) => tree.flatMap((r) => r.worktrees.flatMap((w) => w.agents.flatMap(function walk(a) { return [a.id, ...a.children.flatMap(walk)]; })));
-  const tree = (cursor) => buildTree(RING_ITEMS, git, () => undefined, { activeOnly: true, keep: cursorKeeps(cursor) });
-  expect(ids(tree(null))).toEqual(["t1"]);
-  expect(ids(tree({ kind: "agent", id: "t3" }))).toEqual(["t1", "t2", "t3"]); // t3 is t2's sub-agent: t2 stays to hold it
-  expect(ids(tree({ kind: "space", id: "s2" }))).toEqual(["t1", "t2", "t3"]);
-  expect(ids(tree({ kind: "worktree", on: null, path: "/r/app" }))).toEqual(["t1"]);
 });

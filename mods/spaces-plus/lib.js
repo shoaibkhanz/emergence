@@ -85,3 +85,8 @@ export function cursorOf(r) {
   if (r?.kind === "wt") return { kind: "worktree", on: r.on, path: r.path };
   return r?.w ? { kind: "space", id: r.w.id } : null;
 }
+
+// Spaces' sizes (px): its header (shorter than the other sections': it tops the sidebar), a row (a worktree's or a
+// nested space's a little less), and the room under the list, which the inbox leaves under its cards too
+// (mods/sidebar.test.js holds the sections' copies together).
+export const HEADER_H = 31, ROW_H = 30, SUB_ROW_H = 28, LIST_PAD = 14;

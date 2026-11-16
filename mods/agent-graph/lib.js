@@ -43,21 +43,30 @@ const repoName = (common) => (common.endsWith("/.git") ? tail(common.slice(0, -5
  * items: [{ id, parent, machine, cwd, status, agent, name, ... }]
  * git: (machine, cwd) -> { top, common, branch, ahead, behind } | null (not a repo)
  * prs: (machine, common) -> Map branch -> PR, or undefined while unknown
- * -> repos [{ id, kind, name, machine, rank, worktrees: [{ id, kind, top, branch, path, ahead, behind, pr, rank, agents: [item + rank + children] }] }]
+ * cursor: where the sidebar's keyboard is (sidebarCursor): { kind: "agent", id } an Inbox card, { kind: "space", id },
+ *   { kind: "worktree", on, path } a worktree no space has open; null: the focused terminal (focused) is where you are.
+ * -> repos [{ id, kind, name, machine, rank, worktrees: [{ id, kind, top, branch, path, ahead, behind, pr, rank, here, agents: [item + rank + here + children] }] }]
+ * here marks where you are (the graph rings it): an agent for an Inbox card or the focused terminal, the worktrees of a
+ * space's agents, an unopened worktree's own. Active only still draws what's here, so the ring has a card.
  */
-export function buildTree(items, git, prs, { activeOnly = false, keep = () => false } = {}) {
+export function buildTree(items, git, prs, { activeOnly = false, cursor = null, focused = null } = {}) {
   const ids = new Set(items.map((i) => i.id));
   const kids = new Map();
   const nodes = items.map((i) => ({ ...i, children: [] }));
   for (const n of nodes) if (n.parent && ids.has(n.parent) && n.parent !== n.id) (kids.get(n.parent) ?? kids.set(n.parent, []).get(n.parent)).push(n);
-  // Most urgent status in a subtree; filtered children drop out, unless kept (keep: the sidebar cursor's, cursorKeeps)
-  // or holding a kept one.
+  const inSpace = (n) => cursor?.kind === "space" && n.space === cursor.id;
+  // Most urgent status in a subtree; Active only drops idle ones, but not what's here, a space's agents, or one
+  // holding them (an idle child that survived was kept).
   const settle = (n) => {
     n.children = (kids.get(n.id) ?? []).map(settle).filter(Boolean).sort(byRank);
     n.rank = Math.min(rank(n.status), ...n.children.map((c) => c.rank));
-    const kept = keep(n) || n.children.some((c) => c.rank === RANK.idle);
+    n.here = cursor ? cursor.kind === "agent" && n.id === cursor.id : n.id === focused;
+    const kept = n.here || inSpace(n) || n.children.some((c) => c.rank === RANK.idle);
     return activeOnly && n.rank === RANK.idle && !kept ? null : n;
   };
+  const spaceIn = (a) => inSpace(a) || a.children.some(spaceIn);
+  const worktreeHere = (w) => cursor?.kind === "space" ? w.agents.some(spaceIn)
+    : cursor?.kind === "worktree" && w.top != null && w.top === cursor.path && (w.machine || null) === (cursor.on || null);
   const roots = nodes.filter((n) => !(n.parent && ids.has(n.parent) && n.parent !== n.id)).map(settle).filter(Boolean);
 
   const repos = new Map();
@@ -80,6 +89,7 @@ export function buildTree(items, git, prs, { activeOnly = false, keep = () => fa
     const worktrees = [...r.worktrees.values()].map((w) => {
       w.agents.sort(byRank);
       w.rank = Math.min(...w.agents.map((a) => a.rank));
+      w.here = worktreeHere(w);
       return w;
     }).sort(byRank);
     return { ...r, worktrees, rank: Math.min(...worktrees.map((w) => w.rank)) };
@@ -124,17 +134,6 @@ export function layout(repos) {
 export const mix = (a, b, k) => "#" + [1, 3, 5].map((i) =>
   Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - k) + parseInt(b.slice(i, i + 2), 16) * k).toString(16).padStart(2, "0")).join("");
 
-// The cards the graph rings (node ids): where the sidebar's cursor is (cursor: { kind: "agent", id } an Inbox card,
-// { kind: "space", id } a space -> the worktrees its agents work in, { kind: "worktree", on, path } an unopened one),
-// else the focused terminal's agent (foc).
-export function ringed(repos, cursor, foc) {
-  if (!cursor) return new Set(foc ? [`a:${foc}`] : []);
-  if (cursor.kind === "agent") return new Set([`a:${cursor.id}`]);
-  if (cursor.kind === "worktree") return new Set([`w:${cursor.on ?? ""}|${cursor.path}`]);
-  const inSpace = (a) => a.space === cursor.id || a.children.some(inSpace);
-  return new Set(repos.flatMap((r) => r.worktrees).filter((w) => w.agents.some(inSpace)).map((w) => `w:${w.id}`));
-}
-
 // Inbox and Spaces each share their cursor (null without the keyboard); while it moves between them both can be
 // set for a moment, and the newer one is where it went.
 export const sidebarCursor = (inbox, spaces) => (inbox && spaces ? (inbox.at > spaces.at ? inbox : spaces) : inbox ?? spaces ?? null);
@@ -155,7 +154,3 @@ export function filterCounts(items) {
   return { active: agents.filter((i) => i.status !== "idle").length, all: agents.length };
 }
 
-// What Active only keeps although idle: the agent the sidebar's cursor is on, or a space's agents. The ring points
-// there (ringed), so the card it points at must be drawn.
-export const cursorKeeps = (cursor) => (n) =>
-  cursor?.kind === "agent" ? n.id === cursor.id : cursor?.kind === "space" ? n.space === cursor.id : false;

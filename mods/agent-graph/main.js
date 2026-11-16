@@ -5,7 +5,7 @@
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout } from "herdr";
-import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, ringed, sidebarCursor, openOnActive, filterCounts, activeNudge, cursorKeeps } from "./lib.js";
+import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000;
 const ZMIN = 0.3, ZMAX = 2, ZFIT = 1, PAD = 48;
@@ -230,15 +230,14 @@ export default class AgentGraph extends View {
     if (opening || !openOnActive(items)) this.nudge = true; // the Active count may light again (lib activeNudge)
     if (shown && !this.busy && items.some((i) => i.cwd && !this.git.has(key(i.machine, i.cwd)))) this.refresh(cx);
     const cursor = sidebarCursor(shared("inbox.cursor"), shared("spaces.cursor")); // where the sidebar's keyboard is
-    const tree = buildTree(items, (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined, { activeOnly: this.activeOnly, keep: cursorKeeps(cursor) });
+    const foc = focused()?.terminal ?? null;
+    const tree = buildTree(items, (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined, { activeOnly: this.activeOnly, cursor, focused: foc }); // marks here: lib
     const L = graphLayout(tree), M = this.moved(L); // M: with the person's dragged offsets
     const list = this.panel && this.loaded && !!this.size && (this.size.width - 2 * PANEL_PAD) / Math.max(1, L.width) < PANEL_Z;
     const walk = (a) => [{ data: a }, ...a.children.flatMap(walk)];
     const picks = list ? tree.flatMap((r) => r.worktrees.flatMap((w) => w.agents.flatMap(walk)))
       : M.nodes.filter((n) => n.kind === "agent").sort((a, b) => a.y - b.y || a.x - b.x);
-    const foc = focused()?.terminal ?? null;
-    const ring = ringed(tree, cursor, foc); // where you are: see lib
-    if (!picks.some((n) => n.data.id === this.sel)) this.sel = (picks.find((n) => n.data.id === foc) ?? picks[0])?.data.id ?? null;
+    if (!picks.some((n) => n.data.id === this.sel)) this.sel = (picks.find((n) => n.data.here) ?? picks.find((n) => n.data.id === foc) ?? picks[0])?.data.id ?? null;
 
     // A popup is as tall as its content (mod.json height is the cap): size to the window. A panel fills its block.
     const root = this.panel
@@ -262,7 +261,7 @@ export default class AgentGraph extends View {
         cx.notify();
       })
       .child(this.header(t, items))
-      .child(list ? this.list(t, tree, ring) : this.canvas(t, items, tree, M, ring));
+      .child(list ? this.list(t, tree) : this.canvas(t, items, tree, M));
   }
 
   // The body reports its size (logical px times zoom); fitting and the header's width breakpoints read it.
@@ -312,13 +311,13 @@ export default class AgentGraph extends View {
   }
 
   // Panel too narrow for a readable graph: the same tree as an indented list.
-  list(t, tree, ring) {
+  list(t, tree) {
     const rows = [];
     const row = (id, depth) => h_flex().id(id).h(28).flex_none().pl(8 + depth * 16).pr(8).gap(8).items_center().rounded(7);
     const agent = (a, depth) => {
       const loud = a.status === "blocked", tone = loud ? t.blocked : a.status === "working" ? t.working : null, sel = this.sel === a.id, p = a.program;
       const ic = p?.icon ? (p.tint ? svg(p.icon).size(14).flex_none().text_color(t.foreground) : image(p.icon).w(14).h(14).flex_none()) : null;
-      rows.push(row(`l:${a.id}`, depth).border_1().border_color(ring.has(`a:${a.id}`) ? t.accent : alpha(t.border, 0)).cursor_pointer()
+      rows.push(row(`l:${a.id}`, depth).border_1().border_color(a.here ? t.accent : alpha(t.border, 0)).cursor_pointer()
         .when(!!tone, (el) => el.bg(alpha(tone, 0.08))).when(sel && !tone, (el) => el.bg(t.selected))
         .hover((s) => s.bg(tone ? alpha(tone, 0.14) : t.hover))
         .when(!!a.tab, (el) => el.tooltip(a.tab))
@@ -340,7 +339,7 @@ export default class AgentGraph extends View {
       for (const w of r.worktrees) {
         const git = w.kind === "worktree";
         const ab = git && (w.ahead || w.behind) ? [w.ahead && `↑${w.ahead}`, w.behind && `↓${w.behind}`].filter(Boolean).join(" ") : "";
-        rows.push(row(`l:${w.id}`, 1).border_1().border_color(ring.has(`w:${w.id}`) ? t.accent : alpha(t.border, 0))
+        rows.push(row(`l:${w.id}`, 1).border_1().border_color(w.here ? t.accent : alpha(t.border, 0))
           .child(svg(ICON(git ? "branch" : "folder")).size(14).flex_none().text_color(t.muted))
           .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(git ? w.branch ?? "detached" : w.name))
           .when(!!ab, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(ab)))
@@ -358,7 +357,7 @@ export default class AgentGraph extends View {
       .when(s === "working", (el) => el.loop("opacity", BREATH)); // breathes; everything else is still
   }
 
-  canvas(t, items, tree, L, ring) {
+  canvas(t, items, tree, L) {
     const Z = this.Z;
     let el = this.measure(div().id("ag-canvas").flex_1().min_h(0).relative().overflow_hidden().bg(t.background))
       .map((el) => (this.drag?.moved ? el.cursor_grabbing() : el.cursor_grab()))
@@ -434,7 +433,7 @@ export default class AgentGraph extends View {
     }
     for (const st of [...STATUS].reverse()) if (paths.has(st)) els.push(layer(paths.get(st).build(), ink[st]));
 
-    for (const n of L.nodes) els.push(this.node(t, n, X(n.x), Y(n.y), z, ring.has(n.id)));
+    for (const n of L.nodes) els.push(this.node(t, n, X(n.x), Y(n.y), z));
     // Zoom controls (⌘/ctrl-scroll and - / = zoom too): − · the zoom (click: fit) · +.
     const zb = (id, tip, label, onClick) => h_flex().id(id).h(24).px(8).items_center().justify_center().text_size(12).text_color(t.muted)
       .cursor_pointer().tooltip(tip).hover((s) => s.bg(t.hover).text_color(t.foreground))
@@ -459,14 +458,14 @@ export default class AgentGraph extends View {
       });
   }
 
-  // Where you are (lib's ringed): an accent border and a soft halo.
+  // Where you are (lib's buildTree marks it here): an accent border and a soft halo.
   ring(t, el, n, z, on) {
     return !on ? el : el.border_color(t.accent).child(div().absolute().left(-4 * z).top(-4 * z).w(n.w * z + 8 * z).h(n.h * z + 8 * z)
       .rounded(13 * z).border(2).border_color(alpha(t.accent, 0.3)));
   }
 
-  node(t, n, x, y, z, isFoc) {
-    const d = n.data;
+  node(t, n, x, y, z) {
+    const d = n.data, isFoc = !!d.here;
     if (n.kind === "repo") {
       const none = d.kind === "none";
       const meta = d.machine ?? `${d.worktrees.length} ${none ? (d.worktrees.length > 1 ? "folders" : "folder") : d.worktrees.length > 1 ? "worktrees" : "worktree"}`;
