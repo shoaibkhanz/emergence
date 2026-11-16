@@ -324,6 +324,17 @@ class DetailTest(Base):
         d = sa.detail(self.req(), env(self.home, procs))["detail"]
         self.assertEqual((d["task"], d["result"]), ("Review the diff", "## Findings\nNone."))
 
+    def test_narration_before_more_work_is_no_result(self):
+        procs = self.claude()
+        jsonl(os.path.join(self.subs, "agent-a1.jsonl"), [
+            {"type": "user", "timestamp": iso(NOW - 2 * MIN), "message": {"content": "Run the suite"}},
+            {"type": "assistant", "timestamp": iso(NOW - MIN), "message": {"content": [{"type": "text", "text": "Looking."}]}},
+            use(NOW - MIN, "b1", "Bash", {"command": "pytest", "description": "Run the tests"}),
+        ])
+        d = sa.detail(self.req(), env(self.home, procs))["detail"]
+        self.assertTrue(d["running"])
+        self.assertIsNone(d["result"])  # "Looking." was on the way, not the outcome
+
     def test_long_text_is_cut(self):
         procs = self.claude()
         jsonl(os.path.join(self.subs, "agent-a1.jsonl"), [{"type": "user", "timestamp": iso(NOW), "message": {"content": "x" * (sa.TEXT_MAX + 50)}}])

@@ -225,7 +225,7 @@ export default class AgentGraph extends View {
     const req = detailRequest(n, this.items(), (i) => this.git.get(key(i.machine, i.cwd))?.v?.top ?? null);
     if (!req) return this.focusAgent(n);
     this.dismiss();
-    openOverlay({ mod: "agent-graph", kind: "dialog", width: 680, height: 0.9, props: { detail: req, owner: n.owner, name: n.name, sub: n.sub } });
+    openOverlay({ mod: "agent-graph", kind: "dialog", width: 680, height: 0.9, props: { detail: req, owner: n.owner, name: n.name, sub: n.sub, panel: this.panel } });
   }
 
   // Cross-mod deep link: pr-review picks this up (if < 30 s old) and selects the PR.

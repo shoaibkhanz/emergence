@@ -550,10 +550,13 @@ def detail(req, env: Env) -> dict:
                 task = _text(m.get("content"))
             elif o["type"] == "assistant":
                 model = m.get("model") if m.get("model") not in (None, "<synthetic>") else model
-                result = _text(m.get("content")) or result
-                for p in _parts(o):
-                    if p.get("type") == "tool_use" and p.get("name") == "SubagentHandback" and isinstance(p.get("input"), dict):
+                for p in _parts(o):  # its words count as the result only if no more work follows them
+                    if p.get("type") == "text" and isinstance(p.get("text"), str) and p["text"].strip():
+                        result = p["text"]
+                    elif p.get("type") == "tool_use" and p.get("name") == "SubagentHandback" and isinstance(p.get("input"), dict):
                         handback = p["input"].get("message") if isinstance(p["input"].get("message"), str) else handback
+                    elif p.get("type") == "tool_use":
+                        result = None
     kind = "api" if approved_key(env, pid) else "estimate"
     wt = meta.get("worktreePath") if isinstance(meta.get("worktreePath"), str) else None
     return {"v": V, "detail": {

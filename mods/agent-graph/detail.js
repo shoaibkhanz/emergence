@@ -1,4 +1,4 @@
-// A sub-agent's details: the dialog a sub-agent card opens (agent-graph's own mod, props { detail, owner, sub }), so
+// A sub-agent's details: the dialog a sub-agent card opens (agent-graph's own mod, props { detail, owner, name, sub, panel }), so
 // you can see what it did without going to its agent's terminal. subagents.py --detail reads its transcript once,
 // for this view only (nothing is cached). Task, then Result (the outcome before the evidence), then Files.
 // ↑/↓ pick a section, → shows all of it, ← folds it, ↵ goes to its agent (the one filled button), Esc closes.
@@ -8,7 +8,7 @@ import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { run, exec, props, closeOverlay, theme, setShared, appHome, home } from "herdr";
 import { detailHead, mdLines } from "./lib.js";
 
-const DIALOG = { pad: 24, gap: 16, title: 22, radius: 10, button: 32 }; // Emergence's frame (mods/dialogs.test.js)
+const DIALOG = { pad: 24, gap: 16, title: 22, radius: 10, button: 32 }; // Emergence's frame (RECIPE "Dialogs"); join mods/dialogs.test.js when this branch merges
 const FOLD = { task: 6, result: 14 }; // lines shown before → shows the rest
 const MAX_FILES = 12;
 const MONO = "Geist Mono"; // code blocks only (the font rule)
@@ -43,7 +43,9 @@ export class Detail {
 
   close() { closeOverlay(props().overlay); }
 
+  // From the side panel, the panel comes along to the agent's space (tabs-plus: shared "panel.carry"), as focusAgent.
   goToAgent() {
+    if (props().panel) setShared("panel.carry", { id: "graph", at: Date.now() });
     run("agent.focus", { terminal: props().owner });
     this.close();
   }
