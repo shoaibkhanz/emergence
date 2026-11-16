@@ -6,7 +6,7 @@
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout, appHome } from "herdr";
-import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge,
+import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
   subItems, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000, SUB_FAST = 5000;
@@ -104,7 +104,8 @@ export default class AgentGraph extends View {
     const ag = new Map(agents().map((a) => [a.address, a]));
     const pane = new Map(panes().filter((p) => p.terminal).map((p) => [p.terminal, p]));
     const tabs = new Map(spaces().flatMap((s) => s.tabs.map((t) => [t.id, { label: `${s.name} / ${t.name}`, space: s.id }])));
-    return terminals().filter((x) => x.state === "live").map((x) => {
+    const sideSlots = (find(layout(), "side-slots")?.children ?? []).map((c) => c.id);
+    return graphTerminals(terminals(), sideSlots).map((x) => {
       const a = ag.get(x.address), machine = x.address.includes("/") ? x.address.split("/")[0] : null;
       const lbl = x.labels?.["herdr.tab"];
       // A sub-agent without a pane reports to its parent: its done is the parent's news.

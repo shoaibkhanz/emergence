@@ -265,3 +265,7 @@ export const foldables = (repos) => repos.flatMap((r) => r.worktrees.flatMap(fun
   const kids = under(n);
   return kids.length ? [n.id, ...kids.flatMap(ids)] : [];
 }));
+
+// The graph's terminals: live ones, minus the side chat slots (layout block side-slots, mods/side). A side chat is in
+// the sidebar's Side chats; here, a click on it would swap the panel the graph is in for the Side view.
+export const graphTerminals = (terminals, sideSlots) => terminals.filter((x) => x.state === "live" && !sideSlots.includes(x.name));
