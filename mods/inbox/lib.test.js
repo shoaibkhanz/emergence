@@ -72,7 +72,7 @@ test("columnHeight: the column only once every section has drawn the size it was
   expect(columnHeight(300, [{ px: 200, shown: 201 }])).toBe(501); // a pixel of rounding (zoom) is drawn
   expect(columnHeight(300, [{ px: 200 }])).toBe(500); // not shared yet: as given
   expect(columnHeight(90, [{ px: 200, shown: 200 }, { px: 437, shown: 70 }])).toBe(null); // Ports' growth not drawn yet
-  expect(columnHeight(0, [{ px: 400, shown: 300 }, { px: 70, shown: 70 }])).toBe(370); // squeezed: what's drawn is the truth
+  expect(columnHeight(90, [{ px: 400, shown: 300 }, { px: 70, shown: 70 }], true)).toBe(460); // the same mismatch a while on: drawn is the truth
   expect(columnHeight(300, [{ px: 0, shown: 70 }])).toBe(300); // given nothing (folded): nothing, whatever it last shared
 });
 
@@ -92,4 +92,28 @@ test("the column settles instead of bouncing when the others report their height
   }
   expect(sizes.slice(-4)).toEqual([200, 200, 200, 200]);
   expect(px.spaces + px.side + px.ports + Math.max(need, 90)).toBeLessThanOrEqual(T);
+});
+
+// A column too short for what was asked (a smaller window, leaving fullscreen with Ports' old 548px): the inbox stays at
+// its layout minimum (90), Herdr draws Ports shorter than asked, and that mismatch never resolves. Waiting for it would
+// never refit, leaving Ports over the inbox; the same mismatch on a later pass (main.js: 300ms on) is taken as drawn.
+test("a column too short for what was asked refits instead of waiting forever", () => {
+  const T = 500, need = inboxHeight({ cards: 0, settled: 0 }), portsMin = 70, sideWant = 32, MIN = 90;
+  let px = { spaces: 200, side: 32, ports: 548 }, shown = { ...px }, last = null;
+  const layout = (px) => { // fixed sections drawn as asked, the last ones cut to leave the inbox its 90
+    let room = T - MIN; const out = {};
+    for (const k of ["spaces", "side", "ports"]) { out[k] = Math.max(0, Math.min(px[k], room)); room -= out[k]; }
+    return out;
+  };
+  for (let pass = 0; pass < 8; pass++) {
+    const drawnNow = layout(px), ownH = T - drawnNow.spaces - drawnNow.side - drawnNow.ports;
+    const blocks = ["spaces", "side", "ports"].map((k) => ({ px: px[k], shown: shown[k] }));
+    const sig = JSON.stringify(blocks);
+    const H = columnHeight(ownH, blocks, sig === last);
+    last = sig;
+    shown = drawnNow;
+    if (H !== null) px = splitColumn({ H, spacesWant: 200, need, portsMin, sideWant, collapsed: false });
+  }
+  expect(px.spaces + px.side + px.ports).toBeLessThanOrEqual(T - MIN);
+  expect(layout(px)).toEqual(px); // everything drawn as asked: settled
 });

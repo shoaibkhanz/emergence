@@ -47,6 +47,7 @@ function ago(ms) {
 
 const GLYPH = { cmd: "⌘", shift: "⇧", alt: "⌥", ctrl: "⌃" };
 const PORTS_FALLBACK = 64; // Ports' empty height ("Ports none" + Working) until it says what it needs
+const MISMATCH_MS = 300; // a section still not drawn at its size this long after: the column can't hold it (fitSpaces)
 const RANK = { blocked: 0, done: 1, idle: 2 };
 
 export default class Inbox extends View {
@@ -112,17 +113,25 @@ export default class Inbox extends View {
   // The column is shared by Spaces, this inbox, Side chats and Ports (lib.js splitColumn): Side chats exactly what its
   // rows need (side-chats.want); Spaces the height its rows ask for (spaces.want) while the inbox's content still fits;
   // Ports what its rows need (ports.want) plus the slack under the inbox's cards, so Working stays last.
-  fitSpaces(collapsed, need) {
+  fitSpaces(cx, collapsed, need) {
     const ms = machines().length, sp = find(layout(), "spaces"), po = find(layout(), "ports"), sc = find(layout(), "side-chats");
     if (!sp || sp.hidden) return;
     const spacesWant = shared("spaces.want") ?? 45 + (Math.max(spaces().length, 1) + (ms > 1 ? ms : 0)) * (collapsed ? 26 : 30);
     const portsMin = po ? shared("ports.want") ?? PORTS_FALLBACK : 0;
     const sideWant = sc ? shared("side-chats.want") ?? 0 : 0;
     // What they share: this block's height plus Spaces', Side chats' and Ports' as drawn (lib columnHeight); none while one
-    // of them hasn't drawn its new size yet: the next pass fits.
+    // of them hasn't drawn its new size yet: the next pass fits. The same mismatch MISMATCH_MS on isn't on its way (the
+    // column can't hold what was asked): it's taken as drawn. A look is booked then, as nothing else may redraw.
     const block = (n, key) => ({ px: n.size?.px ?? 0, shown: shared(key) ?? undefined });
-    const H = columnHeight(this.ownH, [[sp, "spaces.h"], [sc, "side-chats.h"], [po, "ports.h"]].filter(([n]) => n && !n.hidden).map(([n, k]) => block(n, k)));
-    if (H === null) return;
+    const blocks = [[sp, "spaces.h"], [sc, "side-chats.h"], [po, "ports.h"]].filter(([n]) => n && !n.hidden).map(([n, k]) => block(n, k));
+    const sig = JSON.stringify(blocks);
+    if (this.mismatch?.sig !== sig) this.mismatch = null;
+    const H = columnHeight(this.ownH, blocks, Boolean(this.mismatch) && Date.now() - this.mismatch.at >= MISMATCH_MS);
+    if (H === null) {
+      if (!this.mismatch) { this.mismatch = { sig, at: Date.now() }; cx.timer.after(MISMATCH_MS + 50, (cx) => cx.notify()); }
+      return;
+    }
+    this.mismatch = null;
     const { spaces: px, side, ports } = splitColumn({ H, spacesWant, need, portsMin, sideWant, collapsed });
     // Against the layout's own sizes, not the last ones sent: a size changed from elsewhere is put back.
     if (px !== sp.size?.px) run("layout.resize", { id: "spaces", px });
@@ -208,7 +217,7 @@ export default class Inbox extends View {
 
     // Folded (⌘B, ⌘⌥B): only how many need you, at the foot: a badge on the rail, the number on the dots size.
     if (collapsed) {
-      this.fitSpaces(collapsed, 40);
+      this.fitSpaces(cx, collapsed, 40);
       const dots = width() < 34;
       return this.measured(root.id("inbox-folded").justify_end().items_center().pb(12))
         .when(cards.length > 0, (el) => el.child(h_flex().id("inbox-badge").flex_none().justify_center().items_center().cursor_pointer()
@@ -218,7 +227,7 @@ export default class Inbox extends View {
           .child(String(cards.length))));
     }
     // Header, the list's content (cards are alike: one is measured), the feet and the open shelf.
-    this.fitSpaces(collapsed, inboxHeight({ cards: cards.length, cardH: this.cardH, settled: settled.length, shelf: this.shelf }));
+    this.fitSpaces(cx, collapsed, inboxHeight({ cards: cards.length, cardH: this.cardH, settled: settled.length, shelf: this.shelf }));
     const bound = keys().find((k) => k.action === "tabs-plus.attention")?.keys;
     // Header and inset line up with Herdr's Spaces list above (16px, 11.5px label).
     return this.measured(root.id("inbox").border_t(1).border_color(t.border)) // the id: on_size_change needs one
