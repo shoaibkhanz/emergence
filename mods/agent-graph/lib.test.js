@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, sidebarCursor, openOnActive, filterCounts, activeNudge,
-  RANK, subItems, subState, ago, harnessOf, subRequests, overlaps, conflictsOf } from "./lib.js";
+  RANK, subItems, subState, ago, harnessOf, subRequests, overlaps, conflictsOf, metered, own, addUp, money, tokens, costLabel, metricLine,
+  summary, fold, foldables, isFolded, CHIP } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -171,7 +172,8 @@ test("activeNudge: blocked beats working; nothing on Active, when disarmed, or w
 
 // In-process sub-agents (subagents.py's answer) hang off their agent as cards of their own.
 const MIN = 60000, NOW = 1_790_000_000_000;
-const SUB = (id, running, edited = [], extra = {}) => ({ id, title: `Task ${id}`, running, action: running ? "Run the tests" : null, edited, worktree: null, updatedAt: NOW - 4 * MIN, ...extra });
+const SUB = (id, running, edited = [], extra = {}) => ({ id, title: `Task ${id}`, running, action: running ? "Run the tests" : null, edited, worktree: null,
+  updatedAt: NOW - 4 * MIN, finishedAt: running ? null : NOW - 4 * MIN, tools: 0, tokens: 0, cost: null, costKind: null, ...extra });
 const ed = (rel, ago, dirty = true) => ({ path: `/r/app/${rel}`, rel, at: NOW - ago * MIN, dirty });
 const AGENTS = [
   { id: "t1", cwd: "/r/app", status: "idle", agent: true, name: "a", machine: null, program: { key: "claude" }, space: "s1" },
@@ -180,16 +182,18 @@ const AGENTS = [
 const SCAN = { t1: { edited: [], subagents: [SUB("x", false), SUB("y", true, [ed("a.js", 1), ed("b.js", 2, false)])] } };
 const subsOf = (tree, id) => tree.flatMap((r) => r.worktrees.flatMap((w) => w.agents)).find((a) => a.id === id)?.children ?? [];
 
-test("subItems: each sub-agent a child of its agent, running ones working, finished ones idle (never done)", () => {
+test("subItems: running sub-agents under their agent, finished ones under its history card (never done)", () => {
   const subs = subItems(AGENTS, SCAN);
-  expect(subs.map((s) => [s.id, s.parent, s.owner, s.status, s.name])).toEqual([["t1#x", "t1", "t1", "idle", "Task x"], ["t1#y", "t1", "t1", "working", "Task y"]]);
-  expect(subs[0]).toMatchObject({ cwd: "/r/app", agent: true, program: { key: "claude" }, space: "s1" });
+  expect(subs.map((s) => [s.id, s.parent, s.owner, s.status, s.name])).toEqual([["t1#y", "t1", "t1", "working", "Task y"],
+    ["t1#~earlier", "t1", "t1", "idle", "1 earlier sub-agent"], ["t1#x", "t1#~earlier", "t1", "idle", "Task x"]]);
+  expect(subs[2]).toMatchObject({ cwd: "/r/app", agent: true, program: { key: "claude" }, space: "s1" });
+  expect(subs[1].history).toBe(1);
   expect(subItems(AGENTS, { gone: SCAN.t1, t2: { error: "boom" } })).toEqual([]); // not a live agent, or a failed read
 });
 
-test("buildTree: sub-agents under their agent, running first; its working raises the agent's rank", () => {
+test("buildTree: sub-agents under their agent, running first, then history; its working raises the agent's rank", () => {
   const tree = buildTree(AGENTS, git, prs, { subs: subItems(AGENTS, SCAN) });
-  expect(subsOf(tree, "t1").map((c) => c.id)).toEqual(["t1#y", "t1#x"]);
+  expect(subsOf(tree, "t1").map((c) => c.id)).toEqual(["t1#y", "t1#~earlier"]);
   expect(tree[0].worktrees[0].agents.find((a) => a.id === "t1").rank).toBe(RANK.working);
 });
 
@@ -197,7 +201,8 @@ test("Active only: finished sub-agents stay under a shown agent but never keep a
   const finished = { t1: { edited: [], subagents: [SUB("x", false)] } };
   expect(subsOf(buildTree(AGENTS, git, prs, { activeOnly: true, subs: subItems(AGENTS, finished) }), "t1")).toEqual([]); // t1 dropped
   const both = buildTree(AGENTS, git, prs, { activeOnly: true, subs: subItems(AGENTS, SCAN) });
-  expect(subsOf(both, "t1").map((c) => c.id)).toEqual(["t1#y", "t1#x"]);
+  expect(subsOf(both, "t1").map((c) => c.id)).toEqual(["t1#y", "t1#~earlier"]);
+  expect(subsOf(both, "t1")[1].children.map((c) => c.id)).toEqual(["t1#x"]);
   expect(filterCounts(AGENTS)).toEqual({ active: 1, all: 2 }); // counts are terminals' only
 });
 
@@ -232,4 +237,73 @@ test("overlaps: two live agents or running sub-agents with the same uncommitted 
   expect(ov.get("/r/app/d.js").who).toEqual(["t2", "t2#w"]);
   expect(conflictsOf(ov, (id) => id === "t2#w")).toEqual(["d.js"]);
   expect(conflictsOf(ov, (id) => id.startsWith("t1"))).toEqual(["a.js"]);
+});
+
+// Tool calls and cost: formatting, sums up the tree, history, folding.
+test("money and tokens: short, and never more precise than they need to be", () => {
+  expect([0.42, 3.4, 9.1, 12.4, 999.4, 1234, 15400].map(money)).toEqual(["$0.42", "$3.40", "$9.10", "$12", "$999", "$1.2k", "$15k"]);
+  expect([980, 1234, 12000, 1_200_000, 42_564_925, 1_920_056_103].map(tokens)).toEqual(["980", "1.2k", "12k", "1.2M", "43M", "1.9B"]);
+});
+
+test("costLabel / metricLine: ≈ for an estimate anywhere in the sum, + when some had no price, tokens when none had", () => {
+  const api = own({ tools: 66, tokens: 9e5, cost: 1.2, costKind: "api" }), est = own({ tools: 4, tokens: 1e5, cost: 0.3, costKind: "estimate" });
+  const omp = own({ tools: 2, tokens: 10, cost: 0.05, costKind: "recorded" }), none = own({ tools: 3, tokens: 1_200_000, cost: null, costKind: null });
+  expect(metricLine(api)).toBe("⚒ 66 · $1.20");
+  expect(metricLine(addUp(api, est))).toBe("⚒ 70 · ≈ $1.50");
+  expect(metricLine(addUp(api, omp))).toBe("⚒ 68 · $1.25");
+  expect(metricLine(none)).toBe("⚒ 3 · 1.2M tok");
+  expect(costLabel(addUp(api, none))).toBe("$1.20+");
+  expect(metricLine(own({ tools: 0, tokens: 0, cost: null }))).toBe("");
+  expect(costLabel(own({ tools: 1, tokens: 5, cost: 0, costKind: "recorded" }))).toBe("$0.00"); // priced at nothing is still a price
+});
+
+const METERED = {
+  t1: { edited: [], tools: 10, tokens: 100, cost: 1, costKind: "estimate", subagents: [
+    SUB("y", true, [], { tools: 5, tokens: 50, cost: 0.5, costKind: "estimate" }),
+    SUB("old", false, [], { tools: 100, tokens: 10, cost: 4, costKind: "estimate", finishedAt: NOW - 60 * MIN }),
+    SUB("new", false, [], { tools: 200, tokens: 20, cost: 5, costKind: "estimate", finishedAt: NOW - 10 * MIN }),
+  ] },
+  t2: { edited: [], subagents: [], tools: 3, tokens: 7, cost: null, costKind: null },
+};
+const meteredTree = (choices) => fold(buildTree(metered(AGENTS, METERED), git, prs, { subs: subItems(AGENTS, METERED) }), choices);
+const agentOf = (tree, id) => tree[0].worktrees[0].agents.find((a) => a.id === id);
+
+test("history: finished sub-agents newest first under one card; it folds by default, live work stays open", () => {
+  const unfolded = buildTree(metered(AGENTS, METERED), git, prs, { subs: subItems(AGENTS, METERED) });
+  const hist = subsOf(unfolded, "t1")[1];
+  expect(hist.name).toBe("2 earlier sub-agents");
+  expect(hist.children.map((c) => c.id)).toEqual(["t1#new", "t1#old"]);
+  const t1 = agentOf(meteredTree({}), "t1");
+  expect([t1.folded, t1.children.map((c) => [c.id, c.folded])]).toEqual([false, [["t1#y", false], ["t1#~earlier", true]]]);
+  expect(t1.children[1].children).toEqual([]);
+  expect(metricLine(t1.children[1].total)).toBe("⚒ 300 · ≈ $9.00"); // the history card's own line
+  expect(isFolded({ id: "x", history: 2 }, { x: false })).toBe(false); // the person's choice wins
+});
+
+test("fold: totals sum each card and everything under it; worktrees count their agents and sub-agents", () => {
+  const tree = meteredTree({});
+  const t1 = agentOf(tree, "t1"), w = tree[0].worktrees[0];
+  expect(t1.m.cost).toBe(1); // its own, for the card
+  expect([t1.total.tools, t1.total.cost, t1.total.subs]).toEqual([315, 10.5, 3]); // with sub-agents, for the hover
+  expect([w.total.agents, w.total.subs, w.total.tools, w.total.unpriced]).toEqual([2, 3, 318, true]); // t2 had no price
+  expect(costLabel(w.total)).toBe("≈ $11+");
+  expect(summary(w.below)).toBe("2 agents · 3 sub-agents · ≈ $11+");
+  expect(summary(t1.below)).toBe("3 sub-agents · ≈ $9.50");
+});
+
+test("fold: a folded worktree or agent is a leaf with its summary; layout leaves room for the chip", () => {
+  const w = "|/r/app";
+  const tree = meteredTree({ [w]: true });
+  expect(tree[0].worktrees[0]).toMatchObject({ folded: true, foldable: true, agents: [] });
+  const L = layout(tree);
+  expect(L.nodes.map((n) => n.id)).toEqual([`w:${w}`, "r:|/r/app/.git"]);
+  expect(L.width).toBe(SIZE.repo.w + 72 + SIZE.worktree.w + CHIP.gap + CHIP.w);
+  const t1 = agentOf(meteredTree({ t1: true }), "t1");
+  expect([t1.folded, t1.children]).toEqual([true, []]);
+  expect(agentOf(meteredTree({ t1: true }), "t2").foldable).toBe(false); // nothing under it: no chevron
+});
+
+test("foldables: every card with something under it, inside folded ones too (expand all reaches them)", () => {
+  const unfolded = buildTree(metered(AGENTS, METERED), git, prs, { subs: subItems(AGENTS, METERED) });
+  expect(foldables(unfolded)).toEqual(["|/r/app", "t1", "t1#~earlier"]);
 });

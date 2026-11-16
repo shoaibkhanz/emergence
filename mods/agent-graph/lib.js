@@ -2,7 +2,8 @@
 
 export const RANK = { blocked: 0, done: 1, working: 2, idle: 3 };
 const rank = (s) => RANK[s] ?? 3;
-const byRank = (a, b) => a.rank - b.rank || a.name.localeCompare(b.name);
+// order: finished sub-agents newest first, the history card after the running ones.
+const byRank = (a, b) => a.rank - b.rank || (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name);
 const tail = (p, n = 1) => (p ?? "").split("/").filter(Boolean).slice(-n).join("/") || "/";
 
 // A terminal title without its harness marks: leading status glyphs and a short prompt or name before
@@ -58,14 +59,15 @@ export function buildTree(items, git, prs, { activeOnly = false, cursor = null, 
   const nodes = all.map((i) => ({ ...i, children: [] }));
   for (const n of nodes) if (n.parent && ids.has(n.parent) && n.parent !== n.id) (kids.get(n.parent) ?? kids.set(n.parent, []).get(n.parent)).push(n);
   const inSpace = (n) => cursor?.kind === "space" && n.space === cursor.id;
+  const inproc = (n) => n.sub || n.history; // in-process sub-agents and their history card
   // Most urgent status in a subtree; Active only drops idle ones, but not the sidebar cursor's, a space's agents, or one
   // holding them (an idle child that survived was kept).
   const settle = (n) => {
     n.children = (kids.get(n.id) ?? []).map(settle).filter(Boolean).sort(byRank);
     n.rank = Math.min(rank(n.status), ...n.children.map((c) => c.rank));
     n.here = cursor ? cursor.kind === "agent" && n.id === cursor.id : n.id === focused;
-    const kept = (cursor && n.here) || inSpace(n) || n.children.some((c) => c.rank === RANK.idle && !c.sub);
-    return activeOnly && n.rank === RANK.idle && !kept && !n.sub ? null : n;
+    const kept = (cursor && n.here) || inSpace(n) || n.children.some((c) => c.rank === RANK.idle && !inproc(c));
+    return activeOnly && n.rank === RANK.idle && !kept && !inproc(n) ? null : n;
   };
   const spaceIn = (a) => inSpace(a) || a.children.some(spaceIn);
   const worktreeHere = (w) => cursor?.kind === "space" ? w.agents.some(spaceIn)
@@ -102,6 +104,7 @@ export function buildTree(items, git, prs, { activeOnly = false, cursor = null, 
 
 export const SIZE = { repo: { w: 200, h: 64 }, worktree: { w: 252, h: 64 }, agent: { w: 268, h: 64 } };
 const GAP_X = 72, ROW = 76, REPO_GAP = 16;
+export const CHIP = { gap: 14, w: 150 }; // a folded card's summary chip, right of it where its children would be
 const statusOf = (r) => Object.keys(RANK)[r] ?? "idle";
 
 /**
@@ -122,7 +125,7 @@ export function layout(repos) {
     if (!placed.length) y += ROW;
     const n = { id: `${kind[0]}:${data.id}`, kind, x: colX(col), y: cy - s.h / 2, w: s.w, h: s.h, data };
     nodes.push(n);
-    right = Math.max(right, n.x + n.w);
+    right = Math.max(right, n.x + n.w + (data.folded ? CHIP.gap + CHIP.w : 0));
     for (const p of placed) edges.push({ from: n.id, to: p.id, status: statusOf(p.data.rank), a: { x: n.x + n.w, y: cy }, b: { x: p.x, y: mid(p) } });
     return n;
   };
@@ -169,12 +172,22 @@ const READ = ["claude", "omp"]; // pi, Codex, OpenCode: not read yet
 export const subRequests = (items, top) => items.filter((i) => !i.machine && i.agent && i.pid && READ.includes(i.harness))
   .map((i) => ({ address: i.id, pid: i.pid, harness: i.harness, top: top(i) }));
 
-// subagents.py's agents (address -> { edited, subagents } | { error }) -> items for buildTree's subs: running ones
-// work, finished ones are idle (never done: that's news only a terminal brings).
-export const subItems = (items, scan) => items.flatMap((i) => (scan?.[i.id]?.subagents ?? []).map((s) => ({
-  id: `${i.id}#${s.id}`, parent: i.id, owner: i.id, machine: i.machine, cwd: i.cwd, agent: true, program: i.program,
-  status: s.running ? "working" : "idle", name: s.title, tab: null, space: i.space ?? null, sub: s,
-})));
+// subagents.py's agents (address -> { edited, subagents, ...metrics } | { error }) -> items for buildTree's subs:
+// running ones work under their agent; finished ones are idle (never done: that's news only a terminal brings), under
+// one history card per agent, newest first.
+export const subItems = (items, scan) => items.flatMap((i) => {
+  const all = scan?.[i.id]?.subagents ?? [], done = all.filter((s) => !s.running), hid = `${i.id}#~earlier`;
+  const base = { owner: i.id, machine: i.machine, cwd: i.cwd, agent: true, program: i.program, tab: null, space: i.space ?? null };
+  const card = (s, parent) => ({ ...base, id: `${i.id}#${s.id}`, parent, status: s.running ? "working" : "idle", name: s.title, sub: s,
+    m: own(s), order: s.running ? 0 : -(s.finishedAt ?? s.updatedAt ?? 0) });
+  return [...all.filter((s) => s.running).map((s) => card(s, i.id)),
+    ...(done.length ? [{ ...base, id: hid, parent: i.id, status: "idle", name: `${done.length} earlier sub-agent${done.length > 1 ? "s" : ""}`,
+      history: done.length, order: 1 }] : []),
+    ...done.map((s) => card(s, hid))];
+});
+
+// The agents' own metrics from subagents.py, as m on their items.
+export const metered = (items, scan) => items.map((i) => (scan?.[i.id] && !scan[i.id].error ? { ...i, m: own(scan[i.id]) } : i));
 
 export const ago = (at, now) => { const m = Math.floor((now - at) / 60000); return m < 1 ? "now" : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h`; };
 
@@ -200,3 +213,55 @@ export function overlaps(scan, now, window = OVERLAP) {
 
 // The overlapping files any of `mine` (an id test) is writing.
 export const conflictsOf = (ov, mine) => [...ov.values()].filter((o) => o.who.some(mine)).map((o) => o.rel);
+
+
+// ---- Metrics: tool calls and cost, summed up the tree, and folding ----
+
+// subagents.py's {tools, tokens, cost, costKind} -> a total that adds up: cost sums what has a price; unpriced: some
+// tokens had none (the sum is then a floor); estimate: some of it is Claude at API prices on a subscription.
+export const own = (x) => ({ tools: x?.tools ?? 0, tokens: x?.tokens ?? 0, cost: x?.cost ?? 0,
+  unpriced: x?.cost == null && (x?.tokens ?? 0) > 0, estimate: x?.costKind === "estimate", agents: 0, subs: 0 });
+const NONE = own(null);
+export const addUp = (a, b) => ({ tools: a.tools + b.tools, tokens: a.tokens + b.tokens, cost: a.cost + b.cost,
+  unpriced: a.unpriced || b.unpriced, estimate: a.estimate || b.estimate, agents: a.agents + b.agents, subs: a.subs + b.subs });
+
+// "$0.42", "$12", "$1.2k", "$15k".
+export const money = (x) => (x < 9.995 ? `$${x.toFixed(2)}` : x < 999.5 ? `$${Math.round(x)}` : x < 9950 ? `$${(x / 1000).toFixed(1)}k` : `$${Math.round(x / 1000)}k`);
+// "980", "1.2k", "12k", "1.2M", "12M", "1.2B".
+export const tokens = (n) => (n < 1000 ? String(n) : n < 9950 ? `${(n / 1e3).toFixed(1)}k` : n < 999500 ? `${Math.round(n / 1e3)}k`
+  : n < 9.95e6 ? `${(n / 1e6).toFixed(1)}M` : n < 999.5e6 ? `${Math.round(n / 1e6)}M` : `${(n / 1e9).toFixed(1)}B`);
+// "≈ $1.20" (an estimate), "$1.20", "$1.20+" (some had no price), "1.2M tok" (none had), "" (nothing yet).
+export const costLabel = (t) => (t.cost > 0 || (!t.unpriced && t.tokens > 0)
+  ? `${t.estimate ? "≈ " : ""}${money(t.cost)}${t.unpriced ? "+" : ""}` : t.tokens > 0 ? `${tokens(t.tokens)} tok` : "");
+// A card's metrics: "⚒ 66 · ≈ $1.20".
+export const metricLine = (t) => [t.tools ? `⚒ ${t.tools}` : "", costLabel(t)].filter(Boolean).join(" · ");
+// What a folded card hides: "3 agents · 5 sub-agents · ≈ $14".
+export const summary = (t) => [t.agents && `${t.agents} agent${t.agents > 1 ? "s" : ""}`, t.subs && `${t.subs} sub-agent${t.subs > 1 ? "s" : ""}`,
+  costLabel(t)].filter(Boolean).join(" · ");
+
+const under = (n) => n.agents ?? n.children ?? [];
+// Folded or not: the person's choice (id -> true folded / false open), else history folds and live work stays open.
+export const isFolded = (n, choices) => choices?.[n.id] ?? Boolean(n.history);
+
+/**
+ * repos (buildTree) -> the same tree with, on every worktree and agent card: total (its own metrics plus everything
+ * under it, with agents and sub-agents counted), below (what's under it alone), foldable (something is), folded. A
+ * folded card's subtree is gone, so layout and the list draw it as a leaf with below on its chip.
+ */
+export function fold(repos, choices) {
+  const walk = (n) => {
+    const kids = under(n).map(walk);
+    const self = { ...(n.m ?? NONE), agents: n.agent && !n.sub && !n.history ? 1 : 0, subs: n.sub ? 1 : 0 };
+    const below = kids.reduce((t, k) => addUp(t, k.total), NONE);
+    const foldable = kids.length > 0, folded = foldable && isFolded(n, choices);
+    const shown = folded ? [] : kids;
+    return { ...n, ...(n.agents ? { agents: shown } : { children: shown }), total: addUp(self, below), below, foldable, folded };
+  };
+  return repos.map((r) => ({ ...r, worktrees: r.worktrees.map(walk) }));
+}
+
+// Every card that folds, folded or not, from buildTree's tree (expand all / collapse all set them all).
+export const foldables = (repos) => repos.flatMap((r) => r.worktrees.flatMap(function ids(n) {
+  const kids = under(n);
+  return kids.length ? [n.id, ...kids.flatMap(ids)] : [];
+}));
