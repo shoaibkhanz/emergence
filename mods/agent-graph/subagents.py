@@ -460,18 +460,22 @@ def claude(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
     return out
 
 
-def omp(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
-    """An omp agent: its tty -> ~/.omp/agent/terminal-sessions/<tty> (line 2: the session file) -> task sub-agents
-    as <session without .jsonl>/<Task>.jsonl, nested ones a level down (<Task>/<Task.Sub>.jsonl); __* are omp's own."""
-    session = None
+def omp_session(a: dict, env: Env) -> str | None:
+    """The session file of the omp under a's foreground pid (its tty's terminal-sessions pointer, line 2)."""
     for p in env.procs(int(a["pid"])):
         ptr = os.path.join(env.home, ".omp", "agent", "terminal-sessions", p.tty or "")
         if p.tty and os.path.isfile(ptr):
             with open(ptr, encoding="utf-8") as f:
                 lines = f.read().splitlines()
             if len(lines) > 1 and lines[1].endswith(".jsonl") and os.path.isfile(lines[1]):
-                session = lines[1]
-                break
+                return lines[1]
+    return None
+
+
+def omp(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
+    """An omp agent: its tty -> ~/.omp/agent/terminal-sessions/<tty> (line 2: the session file) -> task sub-agents
+    as <session without .jsonl>/<Task>.jsonl, nested ones a level down (<Task>/<Task.Sub>.jsonl); __* are omp's own."""
+    session = omp_session(a, env)
     out = {"edited": [], "subagents": [], **metrics(None, None)}
     if not session:
         return out
@@ -498,7 +502,8 @@ def omp(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
 HARNESSES = {"claude": claude, "omp": omp}
 
 TEXT_MAX = 20_000  # a task or result longer than this is cut (…): the dialog shows the start; the transcript has it all
-SUB_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+SUB_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}(/[A-Za-z0-9_.-]{1,64}){0,3}$")  # claude: agent-<id>; omp: Task[/Task.Sub]
+STEP_LINES, STEP_CHARS = 40, 4000  # an opened step's output: its start
 
 
 def _cut(t):
@@ -513,19 +518,12 @@ def _text(content) -> str | None:
     return "\n\n".join(texts) if texts else None
 
 
-def _sub_log(req, env: Env) -> dict:
-    """{log, pid}: one Claude sub-agent's transcript, else an error (a bad request, another harness, gone)."""
-    if not isinstance(req, dict) or not SUB_ID.match(str(req.get("id") or "")):
-        return error("bad-request", "expected {pid, harness, top, id}")
-    if req.get("harness") != "claude":
-        return error("unsupported", "Details for this harness's sub-agents aren't read yet.")
-    sid, pid = claude_session(req, env)
-    if not sid:
-        return error("no-session", "Its agent's session isn't running any more.")
-    logs = glob.glob(os.path.join(env.home, ".claude", "projects", "*", sid, "subagents", f"agent-{req['id']}.jsonl"))
-    if not logs:
-        return error("gone", "Its transcript is gone: Claude Code keeps them about 30 days.")
-    return {"log": logs[0], "pid": pid}
+def _result_text(content) -> str | None:
+    if isinstance(content, str):
+        return content
+    parts = [p.get("text") if p.get("type") == "text" else "[image]" if p.get("type") == "image" else None
+             for p in content or [] if isinstance(p, dict)]
+    return "\n".join(x for x in parts if isinstance(x, str)) or None
 
 
 def _rel(path, top) -> str | None:
@@ -538,7 +536,8 @@ def _rel(path, top) -> str | None:
 
 
 def bash_target(cmd) -> str | None:
-    """A command's program and its subcommand ("git status", "bun test"), never its arguments: VAR=value prefixes go."""
+    """A command's program and its subcommand ("git status", "bun test"), never its arguments: VAR=value prefixes
+    and a leading cd go."""
     if not isinstance(cmd, str):
         return None
     parts = [x for x in re.split(r"&&|;|\|\|", cmd) if x.strip()]
@@ -552,122 +551,181 @@ def bash_target(cmd) -> str | None:
     return f"{prog} {sub}" if sub else prog
 
 
-def claude_target(name: str, inp: dict, top) -> str | None:
-    """What a step acts on, short: a file (worktree-relative), a search pattern, a URL or query, a sub-agent's task."""
-    if name in CLAUDE_EDITS or name == "Read":
-        return _rel(inp.get("file_path") or inp.get("notebook_path"), top)
-    if name in ("Grep", "Glob"):
+FILE_TOOLS = set(CLAUDE_EDITS) | {"Read", "read", "edit", "write"}
+
+
+def step_target(name: str, inp: dict, top, path=None) -> str | None:
+    """What a step acts on, short: a file (worktree-relative), a search pattern, a URL or query, a sub-agent's task,
+    a command's program. Never a command's arguments."""
+    if name in FILE_TOOLS:
+        return _rel(path or inp.get("file_path") or inp.get("notebook_path") or inp.get("path"), top)
+    if name in ("Grep", "Glob", "grep", "find", "glob"):
         return first_line(inp.get("pattern"))
-    if name.startswith("Web"):
+    if name.lower().startswith("web") or name == "fetch":
         return first_line(inp.get("url") or inp.get("query"), 120)
-    if name in ("Task", "Agent"):
+    if name in ("Task", "Agent", "task"):
         return first_line(inp.get("description"))
-    if name == "Bash":
+    if name.lower() == "bash":
         return bash_target(inp.get("command"))
     return None
 
 
-def _result_text(content) -> str | None:
-    if isinstance(content, str):
-        return content
-    parts = [p.get("text") if p.get("type") == "text" else "[image]" if p.get("type") == "image" else None
-             for p in content or [] if isinstance(p, dict)]
-    return "\n".join(x for x in parts if isinstance(x, str)) or None
 
 
-STEP_LINES, STEP_CHARS = 40, 4000  # an opened step's output: its start
+# Each harness's transcript lines as the same events: ("task", text), ("say", text), ("call", id, name, input,
+# label, path), ("result", id, ok, content), ("handback", text), ("model", name).
+def claude_events(o: dict) -> list:
+    t, m = o.get("type"), o.get("message") if isinstance(o.get("message"), dict) else {}
+    if t == "user":
+        out = [("task", _text(m.get("content")))] if not o.get("isMeta") else []
+        return out + [("result", p.get("tool_use_id"), not p.get("is_error"), p.get("content")) for p in _parts(o) if p.get("type") == "tool_result"]
+    if t != "assistant":
+        return []
+    out = [("model", m.get("model"))] if m.get("model") not in (None, "<synthetic>") else []
+    for p in _parts(o):
+        inp = p.get("input") if isinstance(p.get("input"), dict) else {}
+        if p.get("type") == "text" and isinstance(p.get("text"), str) and p["text"].strip():
+            out.append(("say", p["text"]))
+        elif p.get("type") == "tool_use" and p.get("name") == "SubagentHandback":
+            out.append(("handback", inp.get("message") if isinstance(inp.get("message"), str) else None))
+        elif p.get("type") == "tool_use":
+            name = str(p.get("name") or "")
+            out.append(("call", p.get("id"), name, inp, claude_label(name, inp), None))
+    return out
+
+
+def omp_events(o: dict) -> list:
+    t, m = o.get("type"), o.get("message") if isinstance(o.get("message"), dict) else {}
+    if t == "model_change":
+        return [("model", o.get("model"))]
+    if t != "message":
+        return []
+    role = m.get("role")
+    if role == "user":
+        return [("task", _text(m.get("content")))]
+    if role == "toolResult":
+        return [("result", m.get("toolCallId"), not m.get("isError"), m.get("content"))]
+    if role != "assistant":
+        return []
+    out = []
+    for p in _parts(o):
+        args = p.get("arguments") if isinstance(p.get("arguments"), dict) else {}
+        if p.get("type") == "text" and isinstance(p.get("text"), str) and p["text"].strip():
+            out.append(("say", p["text"]))
+        elif p.get("type") == "toolCall":
+            name = str(p.get("name") or "")
+            out.append(("call", p.get("id"), name, args, omp_label(name, args, p.get("intent") or args.get("i")), omp_path(name, args)))
+    return out
+
+
+def _sub_log(req, env: Env) -> dict:
+    """{log, pid, events, parse, kind, meta}: one sub-agent's transcript and how to read it, else an error."""
+    sid = str(req.get("id") or "") if isinstance(req, dict) else ""
+    if not SUB_ID.match(sid) or ".." in sid.split("/"):
+        return error("bad-request", "expected {pid, harness, top, id}")
+    if req.get("harness") == "claude":
+        session, pid = claude_session(req, env)
+        if not session:
+            return error("no-session", "Its agent's session isn't running any more.")
+        logs = glob.glob(os.path.join(env.home, ".claude", "projects", "*", session, "subagents", f"agent-{sid}.jsonl"))
+        meta_f = logs[0][:-6] + ".meta.json" if logs else ""
+        meta = load(meta_f) if meta_f and os.path.isfile(meta_f) else {}
+        found = {"log": logs[0] if logs else None, "events": claude_events, "parse": parse_claude,
+                 "kind": "api" if approved_key(env, pid) else "estimate", "meta": meta if isinstance(meta, dict) else {}}
+    elif req.get("harness") == "omp":
+        session = omp_session(req, env)
+        if not session:
+            return error("no-session", "Its agent's session isn't running any more.")
+        log = os.path.join(session[:-6], sid + ".jsonl")
+        found = {"log": log if os.path.isfile(log) else None, "events": omp_events, "parse": parse_omp, "kind": "recorded",
+                 "meta": {"description": os.path.basename(sid)}}
+    else:
+        return error("unsupported", "Details for this harness's sub-agents aren't read yet.")
+    if not found["log"]:
+        return error("gone", "Its transcript is gone" + (": Claude Code keeps them about 30 days." if req.get("harness") == "claude" else "."))
+    return found
+
+
+def _lines(path: str):
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(o, dict):
+                yield o
 
 
 def step(req, env: Env) -> dict:
-    """One step opened in the dialog: {call, tool, input, output, ok}. input: the command, file, pattern or the call's
-    JSON (cut); output: the first STEP_LINES lines (None while it runs). Read on demand, printed, never cached."""
+    """One step opened in the dialog: {call, tool, input, output, ok}. input: the command, file, or the call's JSON
+    (cut); output: the first STEP_LINES lines (None while it runs). Read on demand, printed, never cached."""
     found = _sub_log(req, env)
     if "error" in found:
         return found
     call = req.get("call")
-    if not isinstance(call, str) or not SUB_ID.match(call.replace("toolu_", "", 1)[:64]):
+    if not isinstance(call, str) or not re.match(r"^[A-Za-z0-9_-]{1,80}$", call):
         return error("bad-request", "expected a call id")
     out = None
-    with open(found["log"], encoding="utf-8", errors="replace") as f:
-        for line in f:
-            if call not in line:
-                continue
-            try:
-                o = json.loads(line)
-            except ValueError:
-                continue
-            for p in _parts(o) if isinstance(o, dict) else []:
-                if p.get("type") == "tool_use" and p.get("id") == call:
-                    name, inp = str(p.get("name") or ""), p.get("input") if isinstance(p.get("input"), dict) else {}
-                    text = inp.get("command") if name == "Bash" else inp.get("file_path") or inp.get("notebook_path") if (
-                        name in CLAUDE_EDITS or name == "Read") else json.dumps(inp, ensure_ascii=False)
-                    out = {"call": call, "tool": name, "input": _cut(text) if isinstance(text, str) else None, "output": None, "ok": None}
-                elif out and p.get("type") == "tool_result" and p.get("tool_use_id") == call:
-                    lines = (_result_text(p.get("content")) or "")[:STEP_CHARS].split("\n")
-                    out = {**out, "ok": not p.get("is_error"),
-                           "output": "\n".join(lines[:STEP_LINES] + (["…"] if len(lines) > STEP_LINES else []))}
+    for o in _lines(found["log"]):
+        for e in found["events"](o):
+            if e[0] == "call" and e[1] == call:
+                name, inp = e[2], e[3]
+                text = inp.get("command") if name.lower() == "bash" else (e[5] or inp.get("file_path") or inp.get("notebook_path") or inp.get("path")) \
+                    if name in FILE_TOOLS else json.dumps(inp, ensure_ascii=False)
+                out = {"call": call, "tool": name, "input": _cut(text) if isinstance(text, str) else None, "output": None, "ok": None}
+            elif out and e[0] == "result" and e[1] == call:
+                lines = (_result_text(e[3]) or "")[:STEP_CHARS].split("\n")
+                out = {**out, "ok": e[2], "output": "\n".join(lines[:STEP_LINES] + (["…"] if len(lines) > STEP_LINES else []))}
     return {"v": V, "step": out} if out else error("gone", "That step isn't in its transcript.")
 
 
 def detail(req, env: Env) -> dict:
-    """One Claude sub-agent's details, for its dialog: {title, type, model, running, startedAt, endedAt, task, result,
-    edited, ...metrics}. task: the first message it was given; result: its handback (a background sub-agent's report),
-    else the last thing it said. Read whole, printed, never cached (the scan's cache keeps no prompts or output)."""
+    """One sub-agent's details, for its dialog: {title, type, model, running, startedAt, endedAt, task, result, steps,
+    read, edited, ...metrics}. task: the first message it was given; result: its handback (a background Claude
+    sub-agent's report), else the last thing it said with nothing after it. steps: [{call, at, tool, label, target, ok,
+    ms}], no inputs or outputs (step() reads one). Read whole, printed, never cached."""
     found = _sub_log(req, env)
     if "error" in found:
         return found
-    log, pid, top = found["log"], found["pid"], req.get("top")
-    meta_f = log[:-6] + ".meta.json"
-    meta = load(meta_f) if os.path.isfile(meta_f) else {}
-    meta = meta if isinstance(meta, dict) else {}
+    log, top, meta = found["log"], req.get("top"), found["meta"]
     mt, st = mtime_ms(log), blank()
-    task = result = handback = model = None
+    task = result = handback = model = first = last = None
     steps, calls, reads = [], {}, {}
-    first = last = None
-    with open(log, encoding="utf-8", errors="replace") as f:
-        for line in f:
-            try:
-                o = json.loads(line)
-            except ValueError:
-                continue
-            if not isinstance(o, dict) or o.get("type") not in ("user", "assistant"):
-                continue
-            at = ms(o.get("timestamp"), mt)
+    for o in _lines(log):
+        at = ms(o.get("timestamp"), mt)
+        found["parse"](o, st, at)
+        evs = found["events"](o)
+        if evs:
             first, last = first or at, at
-            parse_claude(o, st, at)
-            m = o.get("message") if isinstance(o.get("message"), dict) else {}
-            if o["type"] == "user":
-                task = _text(m.get("content")) if task is None and not o.get("isMeta") else task
-                for p in _parts(o):
-                    x = calls.get(p.get("tool_use_id")) if p.get("type") == "tool_result" else None
-                    if x is not None and x["ok"] is None:
-                        x.update(ok=not p.get("is_error"), ms=max(0, at - x["at"]))
-            elif o["type"] == "assistant":
-                model = m.get("model") if m.get("model") not in (None, "<synthetic>") else model
-                for p in _parts(o):  # its words count as the result only if no more work follows them
-                    if p.get("type") == "text" and isinstance(p.get("text"), str) and p["text"].strip():
-                        result = p["text"]
-                    elif p.get("type") == "tool_use" and p.get("name") == "SubagentHandback" and isinstance(p.get("input"), dict):
-                        handback = p["input"].get("message") if isinstance(p["input"].get("message"), str) else handback
-                    elif p.get("type") == "tool_use":
-                        result = None
-                        name, inp = str(p.get("name") or ""), p.get("input") if isinstance(p.get("input"), dict) else {}
-                        if p.get("id") in calls:  # Claude repeats a message per content block
-                            continue
-                        x = {"call": p.get("id"), "at": at, "tool": name, "label": claude_label(name, inp),
-                             "target": claude_target(name, inp, top), "ok": None, "ms": None}
-                        calls[p.get("id")] = x
-                        steps.append(x)
-                        if name == "Read" and x["target"]:
-                            reads[x["target"]] = at
-    kind = "api" if approved_key(env, pid) else "estimate"
+        for e in evs:
+            if e[0] == "task" and task is None:
+                task = e[1]
+            elif e[0] == "model" and e[1]:
+                model = e[1]
+            elif e[0] == "say":
+                result = e[1]
+            elif e[0] == "handback":
+                handback = e[1] or handback
+            elif e[0] == "result":
+                x = calls.get(e[1])
+                if x is not None and x["ok"] is None:
+                    x.update(ok=e[2], ms=max(0, at - x["at"]))
+            elif e[0] == "call" and e[1] not in calls:  # Claude repeats a message per content block
+                result = None  # its words count as the result only if no more work follows them
+                x = {"call": e[1], "at": at, "tool": e[2], "label": e[4], "target": step_target(e[2], e[3], top, e[5]), "ok": None, "ms": None}
+                calls[e[1]] = x
+                steps.append(x)
+                if e[2] in ("Read", "read") and x["target"]:
+                    reads[x["target"]] = at
     wt = meta.get("worktreePath") if isinstance(meta.get("worktreePath"), str) else None
+    running = not (meta.get("finished") or st.get("done")) and env.now - mt < STALE
     return {"v": V, "detail": {
         "id": req["id"], "title": first_line(meta.get("description")) or first_line(meta.get("agentType")) or "Sub-agent",
         "type": meta.get("agentType") if isinstance(meta.get("agentType"), str) else None, "model": model,
-        "running": not meta.get("finished") and env.now - mt < STALE, "startedAt": first, "endedAt": last,
+        "running": running, "startedAt": first, "endedAt": last,
         "task": _cut(task), "result": _cut(handback or result), "worktree": wt, "steps": steps, "read": list(reads),
-        "edited": edited(st, wt or top, Dirty(env)), **metrics(st, kind)}}
+        "edited": edited(st, wt or top, Dirty(env)), **metrics(st, found["kind"])}}
 
 
 def error(code: str, message: str) -> dict:

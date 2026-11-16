@@ -274,7 +274,8 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
     reads its input and the first 40 lines of its output), Files (Edited, uncommitted marked, and Read). ↑/↓ move,
     Space opens, ↵ "Go to agent", Esc closes. `subagents.py --detail` reads the transcript when it opens and every 5 s
     while it runs, `--step` one call when opened; nothing is cached, and a transcript past Claude Code's ~30 days says
-    so. Claude Code only: omp's, and a sub-agent on another machine, still focus their agent. The large popup closes
+    so. Claude Code and omp alike (one reader per harness turns its lines into the same events); a sub-agent on another
+    machine still focuses its agent. The large popup closes
     first. Read on each refresh and every 5 s while an agent or sub-agent
     works and the graph shows, in the refresh's task (no timer of its own); a redraw only when the answer changed.
     This computer only; pi, Codex and OpenCode aren't read yet.

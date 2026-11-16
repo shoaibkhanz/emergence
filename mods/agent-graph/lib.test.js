@@ -348,11 +348,11 @@ test("worktreeNote: where an isolated sub-agent worked, and whether that worktre
   expect(worktreeNote("/r/app/.wt/old", undefined)).toBe(" in old"); // not checked yet
 });
 
-test("detailRequest: a sub-agent card asks subagents.py about itself through its agent's pid; only local Claude for now", () => {
+test("detailRequest: a sub-agent card asks subagents.py about itself through its agent's pid; local Claude and omp", () => {
   const items = [{ id: "t1", pid: 42, harness: "claude", machine: null, cwd: "/r/app" }, { id: "t2", pid: 7, harness: "omp", machine: null, cwd: "/r/app" }];
   const card = (owner) => ({ id: `${owner}#a1`, owner, sub: { id: "a1" }, machine: null });
   expect(detailRequest(card("t1"), items, () => "/r/app")).toEqual({ pid: 42, harness: "claude", top: "/r/app", id: "a1" });
-  expect(detailRequest(card("t2"), items, () => "/r/app")).toBeNull();
+  expect(detailRequest(card("t2"), items, () => "/r/app")).toEqual({ pid: 7, harness: "omp", top: "/r/app", id: "a1" });
   expect(detailRequest({ id: "t1#~earlier", owner: "t1", history: 3 }, items, () => null)).toBeNull();
   expect(detailRequest(card("gone"), items, () => null)).toBeNull();
 });
@@ -362,6 +362,7 @@ test("took and detailHead: the dialog's header facts", () => {
   const d = { running: false, type: "Plan", model: "claude-fable-5-2", startedAt: 0, endedAt: 386_000, updatedAt: 386_000, tools: 15, tokens: 879_699, cost: 3.4177, costKind: "estimate" };
   expect(detailHead(d, 386_000 + 6 * 3_600_000)).toEqual({ state: "Finished 6h", facts: "Plan · fable-5-2 · ran 6m 26s", metrics: "⚒ 15 · 880k tokens · ≈ $3.42" });
   expect(detailHead({ ...d, running: true, model: null, type: null }, 400_000).facts).toBe("running 6m 40s");
+  expect(detailHead({ ...d, model: "anthropic/claude-opus-5-5" }, 386_000).facts).toBe("Plan · opus-5-5 · ran 6m 26s"); // omp names its provider
 });
 
 test("mdLines: a report's markdown as plain lines a dialog can style (no inline markup)", () => {
@@ -375,6 +376,8 @@ test("mdLines: a report's markdown as plain lines a dialog can style (no inline 
 test("stepKind, toolMix: what kind of work each call was, and the mix, most first", () => {
   expect(["Read", "Edit", "Write", "Bash", "Grep", "Glob", "WebFetch", "Agent", "mcp__x__y"].map(stepKind))
     .toEqual(["read", "edit", "edit", "run", "search", "search", "web", "agent", "other"]);
+  expect(["read", "edit", "write", "bash", "grep", "find", "fetch", "task"].map(stepKind)) // omp's names
+    .toEqual(["read", "edit", "edit", "run", "search", "search", "web", "agent"]);
   const st = ["Read", "Read", "Bash", "Edit", "Read"].map((tool) => ({ tool }));
   expect(toolMix(st)).toEqual([{ kind: "read", n: 3 }, { kind: "run", n: 1 }, { kind: "edit", n: 1 }]);
 });

@@ -10,7 +10,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { run, exec, props, closeOverlay, theme, setShared, appHome, home } from "herdr";
-import { detailHead, mdLines, groupSteps, toolMix, stepKind, stepTarget, groupTarget, offset, took, tokens, costLabel, own } from "./lib.js";
+import { detailHead, mdLines, groupSteps, toolMix, stepKind, stepTarget, groupTarget, offset, took, tokens, costLabel, own, modelName } from "./lib.js";
 
 const DIALOG = { pad: 24, gap: 16, title: 22, radius: 10, button: 32 }; // Emergence's frame (RECIPE "Dialogs"); join mods/dialogs.test.js when this branch merges
 const TABS = ["overview", "steps", "files"];
@@ -175,8 +175,8 @@ export class Detail {
     const tiles = h_flex().gap(8)
       .child(this.tile(t, "Tool calls", String(steps.length || m.tools), failed ? `${failed} failed` : steps.length ? "none failed" : "", failed ? t.blocked : null))
       .child(this.tile(t, d.running ? "Running for" : "Ran for", span != null ? took(span) : "–", d.startedAt ? `started ${clock(d.startedAt)}` : ""))
-      .child(this.tile(t, "Tokens", m.tokens ? tokens(m.tokens) : "–", d.model ? d.model.replace(/^claude-/, "") : ""))
-      .child(this.tile(t, "Cost", costLabel(m) || "–", m.estimate ? "at API prices" : d.costKind === "api" ? "API key" : ""));
+      .child(this.tile(t, "Tokens", m.tokens ? tokens(m.tokens) : "–", modelName(d.model) ?? ""))
+      .child(this.tile(t, "Cost", costLabel(m) || "–", m.estimate ? "at API prices" : d.costKind === "api" ? "API key" : d.costKind === "recorded" ? "omp's own figure" : ""));
     const bar = !mix.length ? null : v_flex().gap(8)
       .child(h_flex().h(6).w_full().rounded(3).overflow_hidden().gap(2)
         .children(mix.map((x) => div().h_full().flex_grow(x.n).flex_basis(0).min_w(4).bg(this.kindColor(t, x.kind)))))
@@ -194,7 +194,7 @@ export class Detail {
   // One timeline row: offset, kind dot, what it did, on what, how long, failed.
   stepRow(t, s, depth, d) {
     const id = s.group ? s.id : s.call, on = this.selected() === id, open = this.open.has(id), kind = s.group ? s.kind : stepKind(s.tool);
-    const bare = !s.group && s.tool === "Bash" && s.label === "Running a command" && s.target; // no description: the program says it
+    const bare = !s.group && s.tool?.toLowerCase() === "bash" && s.label === "Running a command" && s.target; // no description: the program says it
     const what = s.group ? `${WORD[kind]} · ${s.steps.length} calls` : bare ? s.target : s.label;
     const target = s.group ? groupTarget(s.steps) : bare ? "" : stepTarget(s);
     const row = h_flex().id(`st-${id}`).h(28).flex_none().px(8).gap(10).items_center().rounded(4).cursor_pointer()
@@ -219,7 +219,7 @@ export class Detail {
     return v_flex().id(`so-${s.call}`).flex_none().ml(62).mr(8).mb(6).gap(8)
       .child(info === "loading" ? div().text_size(12).text_color(t.dim).child("Reading…")
         : info.error ? div().text_size(12).text_color(t.muted).child(info.error)
-        : v_flex().gap(8).when(Boolean(info.input), (el) => el.child(box(s.tool === "Bash" ? "Command" : "Input", info.input)))
+        : v_flex().gap(8).when(Boolean(info.input), (el) => el.child(box(s.tool?.toLowerCase() === "bash" ? "Command" : "Input", info.input)))
           .child(info.output == null ? div().text_size(12).text_color(t.dim).child("No output yet.") : box(info.ok === false ? "Output · failed" : "Output", info.output)));
   }
 

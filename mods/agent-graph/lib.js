@@ -300,10 +300,10 @@ export const graphTerminals = (terminals, sideSlots) => terminals.filter((x) => 
 // ---- A sub-agent's details (the dialog a sub-agent card opens: detail.js) ----
 
 // What subagents.py --detail needs to find one sub-agent: its agent's pid and harness, the worktree top, its id.
-// null: not one it reads (a history card, another machine, a harness without details yet).
+// null: not one it reads (a history card, another machine, a harness it doesn't read).
 export function detailRequest(card, items, top) {
   const o = card?.sub && items.find((i) => i.id === card.owner);
-  return o && !o.machine && o.harness === "claude" && o.pid ? { pid: o.pid, harness: o.harness, top: top(o), id: card.sub.id } : null;
+  return o && !o.machine && ["claude", "omp"].includes(o.harness) && o.pid ? { pid: o.pid, harness: o.harness, top: top(o), id: card.sub.id } : null;
 }
 
 // "45s", "6m 26s", "1h 13m".
@@ -312,12 +312,15 @@ export function took(ms) {
   return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
+// "opus-5-5" from "claude-opus-5-5" or omp's "anthropic/claude-opus-5-5".
+export const modelName = (m) => m?.replace(/^.*\//, "").replace(/^claude-/, "") || null;
+
 // The header: its state chip, "Plan · fable-5-2 · ran 6m 26s", "⚒ 15 · 880k tokens · ≈ $3.42".
 export function detailHead(d, now) {
   const span = d.startedAt != null ? `${d.running ? "running" : "ran"} ${took((d.running ? now : d.endedAt ?? now) - d.startedAt)}` : "";
   const t = own(d);
   return { state: subState({ running: d.running, updatedAt: d.endedAt ?? now }, now),
-    facts: [d.type, d.model?.replace(/^claude-/, ""), span].filter(Boolean).join(" · "),
+    facts: [d.type, modelName(d.model), span].filter(Boolean).join(" · "),
     metrics: [t.tools ? `⚒ ${t.tools}` : "", t.tokens ? `${tokens(t.tokens)} tokens` : "", costLabel(t)].filter(Boolean).join(" · ") };
 }
 
@@ -338,9 +341,9 @@ export function mdLines(body) {
 
 // ---- A sub-agent's steps (its tool calls, the dialog's Steps tab) ----
 
-const KIND = { Read: "read", Edit: "edit", MultiEdit: "edit", Write: "edit", NotebookEdit: "edit", Bash: "run", Grep: "search", Glob: "search", LS: "search",
-  Agent: "agent", Task: "agent" };
-export const stepKind = (tool) => KIND[tool] ?? (tool?.startsWith("Web") ? "web" : "other");
+const KIND = { read: "read", edit: "edit", multiedit: "edit", write: "edit", notebookedit: "edit", bash: "run", grep: "search", glob: "search", ls: "search",
+  find: "search", agent: "agent", task: "agent", fetch: "web" }; // Claude's names and omp's, lower-cased
+export const stepKind = (tool) => KIND[tool?.toLowerCase()] ?? (tool?.toLowerCase().startsWith("web") ? "web" : "other");
 
 // [{ kind, n }], most first (ties as they first came).
 export function toolMix(steps) {

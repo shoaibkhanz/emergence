@@ -392,13 +392,61 @@ class DetailTest(Base):
         self.assertEqual(sa.detail(self.req("zz"), env(self.home, procs))["error"]["code"], "gone")
         self.assertEqual(sa.detail(self.req("../x"), env(self.home, procs))["error"]["code"], "bad-request")
         self.assertEqual(sa.detail("nope", env(self.home, procs))["error"]["code"], "bad-request")
-        self.assertEqual(sa.detail(self.req(harness="omp"), env(self.home, procs))["error"]["code"], "unsupported")
+        self.assertEqual(sa.detail(self.req(harness="codex"), env(self.home, procs))["error"]["code"], "unsupported")
 
     def test_cli_detail_always_json(self):
         r = subprocess.run([sys.executable, "-B", os.path.join(HERE, "subagents.py"), "--detail", json.dumps(self.req())],
                            capture_output=True, text=True, env={**os.environ, "HERDR_APP_HOME": self.home, "HOME": self.home})
         self.assertEqual(r.returncode, 0)
         self.assertIn(json.loads(r.stdout)["error"]["code"], ("gone", "no-session"))
+
+
+class OmpDetailTest(Base):
+    """omp task sub-agents get the same details as Claude's."""
+
+    def setup_omp(self):
+        sdir = os.path.join(self.home, ".omp", "agent", "sessions", "-repo")
+        session = os.path.join(sdir, "2026-11-11T23-07-55-093Z_01abc.jsonl")
+        jsonl(session, [{"type": "session", "cwd": self.wt}])
+        ptr = os.path.join(self.home, ".omp", "agent", "terminal-sessions", "ttys009")
+        os.makedirs(os.path.dirname(ptr))
+        with open(ptr, "w") as f:
+            f.write(f"{self.wt}\n{session}\n")
+        a = os.path.join(self.wt, "a.py")
+        msg = lambda at, role, content, **kw: {"type": "message", "timestamp": iso(at), "message": {"role": role, "content": content, **kw}}
+        jsonl(os.path.join(session[:-6], "Tests", "Tests.Unit.jsonl"), [
+            {"type": "title", "title": ""}, {"type": "session", "cwd": self.wt},
+            {"type": "model_change", "timestamp": iso(NOW - 6 * MIN), "model": "anthropic/claude-opus-5"},
+            msg(NOW - 6 * MIN, "user", [{"type": "text", "text": "Fix the edge case"}]),
+            call(NOW - 5 * MIN, "c1", "read", {"path": a}),
+            oresult(NOW - 5 * MIN + 1000, "c1", "read"),
+            call(NOW - 4 * MIN, "c2", "bash", {"command": "pytest -x SECRET_ARG"}, intent="Run the tests"),
+            {**oresult(NOW - 4 * MIN + 3000, "c2", "bash"), "message": {**oresult(NOW - 4 * MIN + 3000, "c2", "bash")["message"], "isError": True}},
+            call(NOW - 3 * MIN, "c3", "edit", {"input": f"[{a}#44AF]\nSECRET_EDIT", "i": "Fix the edge"}),
+            oresult(NOW - 3 * MIN + 500, "c3", "edit", {"path": a}),
+            msg(NOW - 2 * MIN, "assistant", [{"type": "thinking", "thinking": "x"}, {"type": "text", "text": "Fixed the edge in a.py."}]),
+            {"type": "custom", "customType": "session_exit", "timestamp": iso(NOW - 2 * MIN), "data": {}},
+        ], mtime=NOW - 2 * MIN)
+        return lambda pid: [sa.Proc(7, None), sa.Proc(8, "ttys009")] if pid == 7 else []
+
+    def req(self, sid="Tests/Tests.Unit"):
+        return {"pid": 7, "harness": "omp", "top": self.wt, "id": sid}
+
+    def test_task_result_steps_files(self):
+        procs = self.setup_omp()
+        d = sa.detail(self.req(), env(self.home, procs, lambda top: " M a.py\0"))["detail"]
+        self.assertEqual((d["title"], d["task"], d["result"], d["model"], d["running"]), ("Tests.Unit", "Fix the edge case", "Fixed the edge in a.py.", "anthropic/claude-opus-5", False))
+        self.assertEqual([(x["tool"], x["label"], x["target"], x["ok"], x["ms"]) for x in d["steps"]], [
+            ("read", "Read a.py", "a.py", True, 1000), ("bash", "Run the tests", "pytest", False, 3000), ("edit", "Fix the edge", "a.py", True, 500)])
+        self.assertEqual(([e["rel"] for e in d["edited"]], d["read"], d["tools"]), (["a.py"], ["a.py"], 3))
+        self.assertNotIn("SECRET", json.dumps(d))
+
+    def test_one_step_and_bad_ids(self):
+        procs = self.setup_omp()
+        s = sa.step({**self.req(), "call": "c2"}, env(self.home, procs))["step"]
+        self.assertEqual((s["input"], s["ok"], s["output"]), ("pytest -x SECRET_ARG", False, "SECRET_OUTPUT"))
+        self.assertEqual(sa.detail(self.req("../../x"), env(self.home, procs))["error"]["code"], "bad-request")
+        self.assertEqual(sa.detail(self.req("Nope"), env(self.home, procs))["error"]["code"], "gone")
 
 
 class PriceTest(unittest.TestCase):
