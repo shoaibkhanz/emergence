@@ -513,10 +513,8 @@ def _text(content) -> str | None:
     return "\n\n".join(texts) if texts else None
 
 
-def detail(req, env: Env) -> dict:
-    """One Claude sub-agent's details, for its dialog: {title, type, model, running, startedAt, endedAt, task, result,
-    edited, ...metrics}. task: the first message it was given; result: its handback (a background sub-agent's report),
-    else the last thing it said. Read whole, printed, never cached (the scan's cache keeps no prompts or output)."""
+def _sub_log(req, env: Env) -> dict:
+    """{log, pid}: one Claude sub-agent's transcript, else an error (a bad request, another harness, gone)."""
     if not isinstance(req, dict) or not SUB_ID.match(str(req.get("id") or "")):
         return error("bad-request", "expected {pid, harness, top, id}")
     if req.get("harness") != "claude":
@@ -527,12 +525,104 @@ def detail(req, env: Env) -> dict:
     logs = glob.glob(os.path.join(env.home, ".claude", "projects", "*", sid, "subagents", f"agent-{req['id']}.jsonl"))
     if not logs:
         return error("gone", "Its transcript is gone: Claude Code keeps them about 30 days.")
-    log, top = logs[0], req.get("top")
+    return {"log": logs[0], "pid": pid}
+
+
+def _rel(path, top) -> str | None:
+    if not isinstance(path, str) or not path:
+        return None
+    if top and (path == top or path.startswith(top.rstrip("/") + "/")):
+        return os.path.relpath(path, top)
+    home = os.path.expanduser("~")
+    return "~" + path[len(home):] if path.startswith(home + "/") else path
+
+
+def bash_target(cmd) -> str | None:
+    """A command's program and its subcommand ("git status", "bun test"), never its arguments: VAR=value prefixes go."""
+    if not isinstance(cmd, str):
+        return None
+    parts = [x for x in re.split(r"&&|;|\|\|", cmd) if x.strip()]
+    while len(parts) > 1 and parts[0].split()[0] == "cd":
+        parts = parts[1:]
+    words = [w for w in (parts[0] if parts else "").split() if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w)]
+    if not words:
+        return None
+    prog = os.path.basename(words[0])
+    sub = words[1] if len(words) > 1 and re.match(r"^[a-z][a-z0-9-]{1,20}$", words[1]) else None
+    return f"{prog} {sub}" if sub else prog
+
+
+def claude_target(name: str, inp: dict, top) -> str | None:
+    """What a step acts on, short: a file (worktree-relative), a search pattern, a URL or query, a sub-agent's task."""
+    if name in CLAUDE_EDITS or name == "Read":
+        return _rel(inp.get("file_path") or inp.get("notebook_path"), top)
+    if name in ("Grep", "Glob"):
+        return first_line(inp.get("pattern"))
+    if name.startswith("Web"):
+        return first_line(inp.get("url") or inp.get("query"), 120)
+    if name in ("Task", "Agent"):
+        return first_line(inp.get("description"))
+    if name == "Bash":
+        return bash_target(inp.get("command"))
+    return None
+
+
+def _result_text(content) -> str | None:
+    if isinstance(content, str):
+        return content
+    parts = [p.get("text") if p.get("type") == "text" else "[image]" if p.get("type") == "image" else None
+             for p in content or [] if isinstance(p, dict)]
+    return "\n".join(x for x in parts if isinstance(x, str)) or None
+
+
+STEP_LINES, STEP_CHARS = 40, 4000  # an opened step's output: its start
+
+
+def step(req, env: Env) -> dict:
+    """One step opened in the dialog: {call, tool, input, output, ok}. input: the command, file, pattern or the call's
+    JSON (cut); output: the first STEP_LINES lines (None while it runs). Read on demand, printed, never cached."""
+    found = _sub_log(req, env)
+    if "error" in found:
+        return found
+    call = req.get("call")
+    if not isinstance(call, str) or not SUB_ID.match(call.replace("toolu_", "", 1)[:64]):
+        return error("bad-request", "expected a call id")
+    out = None
+    with open(found["log"], encoding="utf-8", errors="replace") as f:
+        for line in f:
+            if call not in line:
+                continue
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            for p in _parts(o) if isinstance(o, dict) else []:
+                if p.get("type") == "tool_use" and p.get("id") == call:
+                    name, inp = str(p.get("name") or ""), p.get("input") if isinstance(p.get("input"), dict) else {}
+                    text = inp.get("command") if name == "Bash" else inp.get("file_path") or inp.get("notebook_path") if (
+                        name in CLAUDE_EDITS or name == "Read") else json.dumps(inp, ensure_ascii=False)
+                    out = {"call": call, "tool": name, "input": _cut(text) if isinstance(text, str) else None, "output": None, "ok": None}
+                elif out and p.get("type") == "tool_result" and p.get("tool_use_id") == call:
+                    lines = (_result_text(p.get("content")) or "")[:STEP_CHARS].split("\n")
+                    out = {**out, "ok": not p.get("is_error"),
+                           "output": "\n".join(lines[:STEP_LINES] + (["…"] if len(lines) > STEP_LINES else []))}
+    return {"v": V, "step": out} if out else error("gone", "That step isn't in its transcript.")
+
+
+def detail(req, env: Env) -> dict:
+    """One Claude sub-agent's details, for its dialog: {title, type, model, running, startedAt, endedAt, task, result,
+    edited, ...metrics}. task: the first message it was given; result: its handback (a background sub-agent's report),
+    else the last thing it said. Read whole, printed, never cached (the scan's cache keeps no prompts or output)."""
+    found = _sub_log(req, env)
+    if "error" in found:
+        return found
+    log, pid, top = found["log"], found["pid"], req.get("top")
     meta_f = log[:-6] + ".meta.json"
     meta = load(meta_f) if os.path.isfile(meta_f) else {}
     meta = meta if isinstance(meta, dict) else {}
     mt, st = mtime_ms(log), blank()
     task = result = handback = model = None
+    steps, calls, reads = [], {}, {}
     first = last = None
     with open(log, encoding="utf-8", errors="replace") as f:
         for line in f:
@@ -546,8 +636,12 @@ def detail(req, env: Env) -> dict:
             first, last = first or at, at
             parse_claude(o, st, at)
             m = o.get("message") if isinstance(o.get("message"), dict) else {}
-            if o["type"] == "user" and task is None and not o.get("isMeta"):
-                task = _text(m.get("content"))
+            if o["type"] == "user":
+                task = _text(m.get("content")) if task is None and not o.get("isMeta") else task
+                for p in _parts(o):
+                    x = calls.get(p.get("tool_use_id")) if p.get("type") == "tool_result" else None
+                    if x is not None and x["ok"] is None:
+                        x.update(ok=not p.get("is_error"), ms=max(0, at - x["at"]))
             elif o["type"] == "assistant":
                 model = m.get("model") if m.get("model") not in (None, "<synthetic>") else model
                 for p in _parts(o):  # its words count as the result only if no more work follows them
@@ -557,13 +651,22 @@ def detail(req, env: Env) -> dict:
                         handback = p["input"].get("message") if isinstance(p["input"].get("message"), str) else handback
                     elif p.get("type") == "tool_use":
                         result = None
+                        name, inp = str(p.get("name") or ""), p.get("input") if isinstance(p.get("input"), dict) else {}
+                        if p.get("id") in calls:  # Claude repeats a message per content block
+                            continue
+                        x = {"call": p.get("id"), "at": at, "tool": name, "label": claude_label(name, inp),
+                             "target": claude_target(name, inp, top), "ok": None, "ms": None}
+                        calls[p.get("id")] = x
+                        steps.append(x)
+                        if name == "Read" and x["target"]:
+                            reads[x["target"]] = at
     kind = "api" if approved_key(env, pid) else "estimate"
     wt = meta.get("worktreePath") if isinstance(meta.get("worktreePath"), str) else None
     return {"v": V, "detail": {
         "id": req["id"], "title": first_line(meta.get("description")) or first_line(meta.get("agentType")) or "Sub-agent",
         "type": meta.get("agentType") if isinstance(meta.get("agentType"), str) else None, "model": model,
         "running": not meta.get("finished") and env.now - mt < STALE, "startedAt": first, "endedAt": last,
-        "task": _cut(task), "result": _cut(handback or result), "worktree": wt,
+        "task": _cut(task), "result": _cut(handback or result), "worktree": wt, "steps": steps, "read": list(reads),
         "edited": edited(st, wt or top, Dirty(env)), **metrics(st, kind)}}
 
 
@@ -637,10 +740,12 @@ def real_env() -> Env:
 
 
 def main(argv: list) -> None:
-    if "--detail" in argv:
+    for flag, fn in (("--detail", detail), ("--step", step)):
+        if flag not in argv:
+            continue
         try:
-            req = json.loads(argv[argv.index("--detail") + 1])
-            print(json.dumps(detail(req, real_env())))
+            req = json.loads(argv[argv.index(flag) + 1])
+            print(json.dumps(fn(req, real_env())))
         except (ValueError, IndexError) as e:
             print(json.dumps(error("bad-request", str(e))))
         except Exception as e:  # always one JSON answer

@@ -329,3 +329,54 @@ export function mdLines(body) {
   }
   return out;
 }
+
+// ---- A sub-agent's steps (its tool calls, the dialog's Steps tab) ----
+
+const KIND = { Read: "read", Edit: "edit", MultiEdit: "edit", Write: "edit", NotebookEdit: "edit", Bash: "run", Grep: "search", Glob: "search", LS: "search",
+  Agent: "agent", Task: "agent" };
+export const stepKind = (tool) => KIND[tool] ?? (tool?.startsWith("Web") ? "web" : "other");
+
+// [{ kind, n }], most first (ties as they first came).
+export function toolMix(steps) {
+  const n = new Map();
+  for (const s of steps) n.set(stepKind(s.tool), (n.get(stepKind(s.tool)) ?? 0) + 1);
+  return [...n].map(([kind, k]) => ({ kind, n: k })).sort((a, b) => b.n - a.n);
+}
+
+// Rows for the timeline: a run of GROUP or more calls of one kind folds into { group, id, kind, steps, at, ms, ok }
+// (ok/ms null while one runs); a failed call is never folded away.
+const GROUP = 3;
+export function groupSteps(steps) {
+  const rows = [];
+  for (let i = 0; i < steps.length;) {
+    let j = i;
+    while (j < steps.length && steps[j].ok !== false && stepKind(steps[j].tool) === stepKind(steps[i].tool)) j++;
+    if (steps[i].ok !== false && j - i >= GROUP) {
+      const run = steps.slice(i, j), open = run.some((s) => s.ok == null);
+      rows.push({ group: true, id: `g:${run[0].call}`, kind: stepKind(run[0].tool), steps: run, at: run[0].at,
+        ms: open ? null : run.reduce((a, s) => a + (s.ms ?? 0), 0), ok: open ? null : true });
+      i = j;
+    } else rows.push(steps[i++]);
+  }
+  return rows;
+}
+
+// "+0:04", "+12:34", "+1:02:03".
+export function offset(ms) {
+  const s = Math.max(0, Math.round(ms / 1000)), p = (n) => String(n).padStart(2, "0");
+  return s < 3600 ? `+${Math.floor(s / 60)}:${p(s % 60)}` : `+${Math.floor(s / 3600)}:${p(Math.floor((s % 3600) / 60))}:${p(s % 60)}`;
+}
+
+// Beside a step's label: a file's folder (its name is in the label), the last two folders at most; else its target.
+export function stepTarget(s) {
+  const t = s.target ?? "";
+  if (!["read", "edit"].includes(stepKind(s.tool))) return t;
+  const dir = t.slice(0, Math.max(0, t.lastIndexOf("/"))), parts = dir.split("/").filter(Boolean);
+  return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : dir;
+}
+
+// Beside a folded run: what it touched, each once (files by name), four at most.
+export function groupTarget(steps) {
+  const seen = [...new Set(steps.map((s) => (["read", "edit"].includes(stepKind(s.tool)) ? s.target?.split("/").pop() : s.target)).filter(Boolean))];
+  return seen.slice(0, 4).join(", ") + (seen.length > 4 ? ` +${seen.length - 4}` : "");
+}

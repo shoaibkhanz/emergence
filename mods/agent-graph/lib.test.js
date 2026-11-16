@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
   RANK, subItems, subState, ago, harnessOf, subRequests, overlaps, conflictsOf, metered, own, addUp, money, tokens, costLabel, metricLine,
-  summary, fold, foldables, isFolded, refold, worktreeOwners, worktreeNote, GONE, detailRequest, detailHead, took, mdLines } from "./lib.js";
+  summary, fold, foldables, isFolded, refold, worktreeOwners, worktreeNote, GONE, detailRequest, detailHead, took, mdLines, stepKind, groupSteps, toolMix, offset, stepTarget, groupTarget } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -370,4 +370,35 @@ test("mdLines: a report's markdown as plain lines a dialog can style (no inline 
     { kind: "h", text: "What I found" }, { kind: "gap", text: "" }, { kind: "p", text: "The graph reads items()." },
     { kind: "li", text: "one", depth: 0 }, { kind: "li", text: "two", depth: 1 }, { kind: "p", text: "1. first" },
     { kind: "code", text: "const **x** = 1;" }, { kind: "p", text: "end" }]);
+});
+
+test("stepKind, toolMix: what kind of work each call was, and the mix, most first", () => {
+  expect(["Read", "Edit", "Write", "Bash", "Grep", "Glob", "WebFetch", "Agent", "mcp__x__y"].map(stepKind))
+    .toEqual(["read", "edit", "edit", "run", "search", "search", "web", "agent", "other"]);
+  const st = ["Read", "Read", "Bash", "Edit", "Read"].map((tool) => ({ tool }));
+  expect(toolMix(st)).toEqual([{ kind: "read", n: 3 }, { kind: "run", n: 1 }, { kind: "edit", n: 1 }]);
+});
+
+test("groupSteps: three or more of a kind in a row fold into one row; a failed call always stands alone", () => {
+  const s = (call, tool, ok = true, ms = 10) => ({ call, tool, ok, ms, at: Number(call.slice(1)) });
+  const rows = groupSteps([s("c1", "Read"), s("c2", "Read"), s("c3", "Grep"), s("c4", "Read"), s("c5", "Read"), s("c6", "Read"),
+    s("c7", "Read", false), s("c8", "Bash"), s("c9", "Read"), s("c10", "Read"), s("c11", "Read", null, null)]);
+  expect(rows.map((r) => (r.group ? `${r.kind}×${r.steps.length}` : r.call))).toEqual(["c1", "c2", "c3", "read×3", "c7", "c8", "read×3"]);
+  expect(rows[3]).toMatchObject({ id: "g:c4", at: 4, ms: 30, ok: true });
+  expect(rows[6]).toMatchObject({ ok: null, ms: null }); // still running inside
+});
+
+test("offset: a step's time from the start", () => {
+  expect([offset(4000), offset(754_000), offset(3_723_000)]).toEqual(["+0:04", "+12:34", "+1:02:03"]);
+});
+
+test("stepTarget, groupTarget: a step's target beside its label, short; a folded run's, each once", () => {
+  expect(stepTarget({ tool: "Read", target: "mods/agent-graph/main.js" })).toBe("mods/agent-graph");
+  expect(stepTarget({ tool: "Write", target: "/private/tmp/claude-501/x/scratchpad/patch.py" })).toBe("…/x/scratchpad");
+  expect(stepTarget({ tool: "Edit", target: "a.py" })).toBe("");
+  expect(stepTarget({ tool: "Bash", target: "bun test" })).toBe("bun test");
+  expect(stepTarget({ tool: "Grep", target: null })).toBe("");
+  const st = (tool, target) => ({ tool, target });
+  expect(groupTarget([st("Edit", "m/main.js"), st("Edit", "m/main.js"), st("Edit", "lib.js")])).toBe("main.js, lib.js");
+  expect(groupTarget(["git status", "bun test", "git status", "uv", "gh pr", "rg"].map((t) => st("Bash", t)))).toBe("git status, bun test, uv, gh pr +1");
 });

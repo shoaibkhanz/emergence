@@ -262,13 +262,18 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
     "Working · <what it's doing now>" (a Bash call's description, omp's intent, else "Edit <file>") or "Finished 4m";
     "✎ N" edited files and its metrics in the dim slot. Hovering lists the files; selecting it (↑/↓, a click) lists
     them under the card (the list view: under the row), worktree-relative, newest first, with a dot on those still
-    uncommitted. A click (or ↵) opens its details (`detail.js`, the mod's own dialog: 680 × 0.9): its title, state,
-    type · model · how long it ran, "⚒ 79 · 9.9M tokens · ≈ $8.27"; then Task (the first message it was given), Result
-    (its handback, else the last thing it said), Files (name first, its folder dimmed), each in a `surface` card; task
-    and result fold (6 and 14 lines; markdown drawn as headings, bullets and Geist Mono code) until → , ← folds, ↑/↓
-    pick the card, ↵ "Go to agent" (its agent's terminal), Esc closes. `subagents.py --detail` reads the transcript
-    once for this view and caches nothing; a transcript past Claude Code's ~30 days says so. Claude Code only: omp's,
-    and a sub-agent on another machine, still focus their agent. The large popup closes first. Read on each refresh and every 5 s while an agent or sub-agent
+    uncommitted. A click (or ↵) opens its details (`detail.js`, the mod's own dialog: 680 × 0.9): title and state
+    ("Working · <its newest step>" while it runs), type · "from <agent>" · its worktree, then three tabs (←/→):
+    Overview (stat tiles: tool calls and how many failed, how long it ran, tokens and model, cost; "What it did", a
+    bar of its calls by kind: Read, Edit, Run, Search, Web, Sub-agent; Task and Result, folded by length until Space,
+    markdown drawn as headings, bullets and Geist Mono code), Steps (every call on a timeline: offset, kind dot, its
+    label or a command's program ("git status", never its arguments), its target (a file's last two folders), duration
+    or a red "failed"; three or more of a kind in a row fold into "Run · 25 calls ▸", a failure never; Space on a call
+    reads its input and the first 40 lines of its output), Files (Edited, uncommitted marked, and Read). ↑/↓ move,
+    Space opens, ↵ "Go to agent", Esc closes. `subagents.py --detail` reads the transcript when it opens and every 5 s
+    while it runs, `--step` one call when opened; nothing is cached, and a transcript past Claude Code's ~30 days says
+    so. Claude Code only: omp's, and a sub-agent on another machine, still focus their agent. The large popup closes
+    first. Read on each refresh and every 5 s while an agent or sub-agent
     works and the graph shows, in the refresh's task (no timer of its own); a redraw only when the answer changed.
     This computer only; pi, Codex and OpenCode aren't read yet.
   - Tool calls and cost: every agent and sub-agent card ends its state line with its own "⚒ 66 · ≈ $1.20" (`lib.js`

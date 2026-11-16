@@ -335,6 +335,49 @@ class DetailTest(Base):
         self.assertTrue(d["running"])
         self.assertIsNone(d["result"])  # "Looking." was on the way, not the outcome
 
+    def steps_log(self):
+        procs = self.claude()
+        f = lambda n: os.path.join(self.wt, n)
+        err = {"type": "user", "timestamp": iso(NOW - 3 * MIN + 5000), "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "u2", "is_error": True, "content": "Exit code 1\nFAILED test_a\n" + "x\n" * 60}]}}
+        jsonl(os.path.join(self.subs, "agent-a1.jsonl"), [
+            {"type": "user", "timestamp": iso(NOW - 5 * MIN), "message": {"content": "Fix it"}},
+            use(NOW - 4 * MIN, "u1", "Read", {"file_path": f("a.py")}),
+            result(NOW - 4 * MIN + 2000, "u1"),
+            use(NOW - 3 * MIN, "u2", "Bash", {"command": "SECRET_CMD pytest -x", "description": "Run the tests"}),
+            err,
+            use(NOW - 2 * MIN, "u3", "Grep", {"pattern": "def a", "path": self.wt}),
+            use(NOW - MIN, "h1", "SubagentHandback", {"message": "done"}),
+        ])
+        return procs
+
+    def test_steps_light_with_outcomes_and_reads(self):
+        procs = self.steps_log()
+        d = sa.detail(self.req(), env(self.home, procs))["detail"]
+        self.assertEqual([(x["tool"], x["label"], x["target"], x["ok"], x["ms"]) for x in d["steps"]], [
+            ("Read", "Read a.py", "a.py", True, 2000), ("Bash", "Run the tests", "SECRET_CMD pytest", False, 5000), ("Grep", "Search", "def a", None, None)])
+        self.assertEqual([x["call"] for x in d["steps"]], ["u1", "u2", "u3"])  # the handback is the result, not a step
+        self.assertEqual(d["read"], ["a.py"])
+        self.assertNotIn("-x", json.dumps(d["steps"]))  # a command's program, never its arguments: those come when it's opened
+
+    def test_one_step_on_demand_capped(self):
+        procs = self.steps_log()
+        s = sa.step({**self.req(), "call": "u2"}, env(self.home, procs))["step"]
+        self.assertEqual((s["input"], s["ok"]), ("SECRET_CMD pytest -x", False))
+        self.assertTrue(s["output"].startswith("Exit code 1\nFAILED test_a"))
+        self.assertEqual(len(s["output"].split("\n")), sa.STEP_LINES + 1)  # cut, with "…" on its own line
+        self.assertEqual(sa.step({**self.req(), "call": "nope"}, env(self.home, procs))["error"]["code"], "gone")
+        self.assertEqual(sa.step({**self.req(), "call": "u3"}, env(self.home, procs))["step"]["output"], None)  # still running
+
+    def test_bash_target_is_its_program(self):
+        self.assertEqual(sa.bash_target("git -C /x status --short"), "git")  # -C isn't a subcommand
+        self.assertEqual(sa.bash_target("cd /w && bun test lib.test.js"), "bun test")  # a leading cd is where, not what
+        self.assertEqual(sa.bash_target("cd /w"), "cd")
+        self.assertEqual(sa.bash_target("ANTHROPIC_API_KEY=sk-SECRET python3 -m pytest"), "python3")
+        self.assertEqual(sa.bash_target("/usr/bin/gh pr list --json x"), "gh pr")
+        self.assertEqual(sa.bash_target("bun test"), "bun test")
+        self.assertIsNone(sa.bash_target(""))
+
     def test_long_text_is_cut(self):
         procs = self.claude()
         jsonl(os.path.join(self.subs, "agent-a1.jsonl"), [{"type": "user", "timestamp": iso(NOW), "message": {"content": "x" * (sa.TEXT_MAX + 50)}}])
