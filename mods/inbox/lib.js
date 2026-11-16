@@ -10,7 +10,7 @@ export const subAgents = (terminals, known) => terminals
 // inbox under 90px; Ports gets at least what its rows need (portsMin, from mods/ports), plus the slack under the
 // inbox's cards, so it sits right below them. Folded, Ports gets nothing. Before the first measure (H 0): Spaces at
 // most 285px.
-// Side chats (mods/side-chats, between the inbox and Ports) is taken out first, all of what it wants (sideWant); a long
+// Side chats (mods/side-chats, the last section, after Ports) is taken out first, all of what it wants (sideWant); a long
 // inbox never squeezes it (the cards scroll). A column that can't hold Spaces' 60, the inbox's 90 and Ports' minimum
 // besides shrinks it to what's left, down to nothing (its list scrolls): it never pushes a section past its floor.
 export const INBOX_MIN = 90, SPACES_MIN = 60, SPACES_FIRST = 285;

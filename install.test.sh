@@ -58,7 +58,8 @@ mkdir "$t/dotfiles"; rm "$keys"; ln -s "$t/dotfiles/keys.json" "$keys"
 cat > "$t/dotfiles/keys.json" <<'JSON'
 { "global": { "cmd-e": "app.palette", "cmd-shift-k": "tab.new", "cmd-b": "layout.toggle:sidebar", "ctrl-t": "tab.new",
               "cmd-shift-g": "tabs-plus.graph", "cmd-shift-u": "tabs-plus.prs", "cmd-shift-m": "tabs-plus.usage" },
-  "layout:emergence": { "cmd-shift-o": "space.next", "cmd-shift-j": "tabs-plus.attention" } }
+  "layout:emergence": { "cmd-shift-o": "space.next", "cmd-shift-j": "tabs-plus.attention" },
+  "mod:ports": { "ctrl-k": "side-chats.up" }, "mod:side-chats": { "ctrl-k": "inbox.focus", "ctrl-j": "ports.focus" } }
 JSON
 out="$(install)"
 [ -L "$keys" ] || fail "keys.json link replaced by a file"
@@ -70,6 +71,8 @@ is "$keys" global cmd-shift-g -;                  is "$keys" layout:emergence cm
 is "$keys" global cmd-shift-u -;                  is "$keys" layout:emergence cmd-shift-r tabs-plus.prs
 is "$keys" global cmd-shift-m -;                  is "$keys" layout:emergence cmd-shift-u tabs-plus.usage
 is "$keys" layout:emergence cmd-shift-j -;        is "$keys" layout:emergence cmd-shift-i tabs-plus.attention
+is "$keys" mod:ports ctrl-k inbox.focus;          is "$keys" mod:side-chats ctrl-k ports.up        # Side chats moved after Ports
+is "$keys" mod:side-chats ctrl-j -                                                                   # an action we no longer bind goes too
 echo "$out" | grep -q 'skip .*cmd-e' || fail "a skipped key isn't reported"
 
 # 5. A keys.json that isn't JSON stops the install with its name, untouched.

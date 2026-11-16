@@ -20,10 +20,10 @@ test("rows: bound keys from keys.json, unbound shows —, in-mod keys as written
 });
 
 test("rows: an action bound in several sections shows the binding from the section the row names", () => {
-  const b = [{ section: "mod:side-chats", action: "inbox.focus", keys: "ctrl-k" }, { section: "mod:spaces-plus", action: "inbox.focus", keys: "ctrl-j" }];
+  const b = [{ section: "mod:ports", action: "inbox.focus", keys: "ctrl-k" }, { section: "mod:spaces-plus", action: "inbox.focus", keys: "ctrl-j" }];
   const all = Object.fromEntries(rows(b).flatMap(([, list]) => list).map(([k, w]) => [w, k]));
   expect(all["Spaces → Inbox"]).toBe("⌃J");
-  expect(all["Side chats → Inbox"]).toBe("⌃K");
+  expect(all["Ports → Inbox"]).toBe("⌃K");
 });
 
 test("rows over the repo's keys.json: every sidebar move and the side chat key show their key", async () => {
@@ -31,11 +31,11 @@ test("rows over the repo's keys.json: every sidebar move and the side chat key s
   const b = Object.entries(keys).flatMap(([section, map]) => Object.entries(map).map(([k, action]) => ({ section, action, keys: k })));
   const all = Object.fromEntries(rows(b).flatMap(([, list]) => list).map(([k, w]) => [w, k]));
   expect(all["Spaces → Inbox"]).toBe("⌃J");
-  expect(all["Inbox → Side chats"]).toBe("⌃J");
-  expect(all["Side chats → Ports"]).toBe("⌃J");
-  expect(all["Ports → Side chats"]).toBe("⌃K");
-  expect(all["Side chats → Inbox"]).toBe("⌃K");
+  expect(all["Inbox → Ports"]).toBe("⌃J");
+  expect(all["Ports → Side chats"]).toBe("⌃J");
+  expect(all["Side chats → Ports"]).toBe("⌃K");
+  expect(all["Ports → Inbox"]).toBe("⌃K");
   expect(all["Inbox → Spaces"]).toBe("⌃K");
   expect(all["Side chat: ask the focused agent something, in a copy beside it"]).toBe("⌘⌥/");
-  expect(all["Inbox → Ports"]).toBeUndefined(); // Side chats sits between them now
+  expect(all["Inbox → Side chats"]).toBeUndefined(); // Side chats is last, after Ports
 });

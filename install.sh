@@ -55,7 +55,9 @@ RETIRED = {"keys.json": [("global", k, "tabs-plus." + a) for k, a in (
     ("cmd-shift-a", "graph"), ("cmd-shift-r", "prs"), ("cmd-shift-k", "skills"),  # global until they moved to layout:emergence
     ("cmd-shift-u", "usage"), ("cmd-shift-j", "attention"), ("cmd-shift-o", "worktrees"))]
     + [("layout:emergence", "cmd-shift-j", "tabs-plus.attention")]  # ⌘⇧J -> ⌘⇧I: Homerow's scroll mode holds ⌘⇧J
-    + [("mod:inbox", "ctrl-j", "ports.focus"), ("mod:ports", "ctrl-k", "inbox.focus")]}  # Side chats sits between them
+    + [("mod:inbox", "ctrl-j", "ports.focus")]  # Side chats sat between the inbox and Ports for a while
+    + [("mod:inbox", "ctrl-j", "side-chats.down"), ("mod:ports", "ctrl-k", "side-chats.up"),  # then moved after Ports
+       ("mod:side-chats", "ctrl-k", "inbox.focus"), ("mod:side-chats", "ctrl-j", "ports.focus")]}
 for name in ("keys.json", "programs.json"):
     ours = json.load(open(os.path.join(sys.argv[1], name)))
     path = os.path.realpath(os.path.join(sys.argv[2], name))  # may be a dotfiles symlink: write through it
@@ -68,9 +70,11 @@ for name in ("keys.json", "programs.json"):
     def free(section, key, value):
         held = theirs.get("global", {}).get(key) if section.startswith("layout:") else None
         return theirs.get(section, {}).get(key, value) == value and held in (None, value, SHADOWS.get(key))
-    # Again until nothing goes: one going can free another's new key (old ⌘⇧U -> prs holds usage's).
+    # Again until nothing goes: one going can free another's new key (old ⌘⇧U -> prs holds usage's). An action ours no
+    # longer binds anywhere goes at once: there's no key of ours to wait for.
+    bound = {v2 for e in ours.values() for v2 in e.values() if isinstance(v2, str)}  # programs.json values are objects
     while gone := [(s, k, v) for s, k, v in retired if theirs.get(s, {}).get(k) == v and ours.get(s, {}).get(k) != v
-                   and any(free(s2, k2, v) for s2, e in ours.items() for k2, v2 in e.items() if v2 == v)]:
+                   and (v not in bound or any(free(s2, k2, v) for s2, e in ours.items() for k2, v2 in e.items() if v2 == v))]:
         for section, key, value in gone:
             del theirs[section][key]; changed = True
             print(f"removed {section} {key} -> {value}")

@@ -22,15 +22,15 @@
   "mod:inbox": {
     "ctrl-k": "spaces-plus.focus",
     "ctrl-l": "inbox.back",
-    "ctrl-j": "side-chats.down"
+    "ctrl-j": "ports.down"
   },
   "mod:ports": {
-    "ctrl-k": "side-chats.up",
+    "ctrl-k": "inbox.focus",
+    "ctrl-j": "side-chats.down",
     "ctrl-l": "ports.back"
   },
   "mod:side-chats": {
-    "ctrl-k": "inbox.focus",
-    "ctrl-j": "ports.focus",
+    "ctrl-k": "ports.up",
     "ctrl-l": "side-chats.back"
   }
 }

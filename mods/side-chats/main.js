@@ -1,9 +1,9 @@
-// The sidebar's Side chats, between the inbox and Ports: a row per open side chat (mods/side): its harness's mark,
+// The sidebar's Side chats, the last section, after Ports: a row per open side chat (mods/side): its harness's mark,
 // its label, where it came from and its status, in the inbox's words. A click or Enter shows it in the right panel's
 // Side view and gives it the keyboard. lib.js decides; this file draws. It asks the inbox for its height (shared
 // side-chats.want, 0 with nothing to show or a folded sidebar) and shares what it got (side-chats.h).
 // The keyboard (mod.json focusable): Ctrl-J/K from the inbox and Ports arrive as down/up, and pass straight through
-// when there's nothing here; ⌘B's "is it here?" chain runs Spaces → Inbox → Side chats → Ports.
+// when there's nothing here; ⌘B's "is it here?" chain runs Spaces → Inbox → Ports → Side chats.
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
@@ -45,9 +45,8 @@ export default class SideChats extends View {
         const c = await nextCommand();
         if (c === "focus" || c === "down" || c === "up") {
           if (holdsKeys(this.rows.length, folded())) { this.cur ??= this.rows[0].slot; this.fh.focus(); }
-          else if (c === "down") run("ports.focus"); // nothing here: on to the next section
-          else if (c === "up") run("inbox.focus");
-        } else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "ports.toggle");
+          else if (c === "up") run("ports.up"); // nothing here: on to the section above (the last has none below)
+        } else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "spaces-plus.focus"); // ⌘B: the last
         else if (c === "back") back();
         cx.notify();
       }
