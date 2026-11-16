@@ -7,7 +7,7 @@ import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout, appHome } from "herdr";
 import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
-  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary } from "./lib.js";
+  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000, SUB_FAST = 5000;
 const MAX_FILES = 8; // a selected sub-agent's edited files listed under its card
@@ -80,7 +80,7 @@ export default class AgentGraph extends View {
     this.view = null; // { x, y, z } once the person pans or zooms; null = fitted
     this.offsets = new Map(JSON.parse(localStorage.getItem("offsets") || "[]")); // node id -> { x, y } the person dragged it by
     this.sel = null;
-    this.folds = JSON.parse(localStorage.getItem("folds") || "{}"); // card id -> folded (true) / open (false) the person chose
+    this.folds = refold(JSON.parse(localStorage.getItem("folds") || "{}")); // card id -> folded (true) / open (false) the person chose
     this.subs = {}; // subagents.py's last answer: address -> { edited, subagents }
     this.subsJSON = "{}";
     this.subsLoop = false;
@@ -292,6 +292,7 @@ export default class AgentGraph extends View {
     const shown = this.shown();
     const opening = shown && !this.wasShown; // a popup's first render, or a hidden panel shown again
     if (opening) this.refresh(cx);
+    if (opening) this.folds = refold(this.folds); // earlier sub-agents start folded every time (lib refold)
     const o = this.panel && shown && shared("emergence.opened"); // opened (⌘⇧A, the tab bar; tabs-plus says so): the keys are its own at once
     if (o?.id === "graph" && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.h.focus()); }
     const back = this.panel && shown && shared("emergence.back"); // a panel's window or popup closed: the keyboard comes back

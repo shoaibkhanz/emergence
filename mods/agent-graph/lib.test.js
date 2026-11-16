@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
   RANK, subItems, subState, ago, harnessOf, subRequests, overlaps, conflictsOf, metered, own, addUp, money, tokens, costLabel, metricLine,
-  summary, fold, foldables, isFolded } from "./lib.js";
+  summary, fold, foldables, isFolded, refold } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -316,4 +316,9 @@ test("side chat slots stay out of the graph: clicking one would swap the panel t
   const ts = [{ name: "side-1", state: "live" }, { name: null, state: "live", address: "t1" }, { name: "x", state: "finished" }];
   expect(graphTerminals(ts, ["side-1", "side-2"])).toEqual([{ name: null, state: "live", address: "t1" }]);
   expect(graphTerminals(ts, []).length).toBe(2); // a layout without the Side view: nothing to leave out
+});
+
+test("refold: earlier sub-agents fold again each time the panel opens; other choices stay", () => {
+  expect(refold({ "t1#~earlier": false, "t2#~earlier": true, t1: true, "|/r/app": false })).toEqual({ "t2#~earlier": true, t1: true, "|/r/app": false });
+  expect(isFolded({ id: "t1#~earlier", history: true }, refold({ "t1#~earlier": false }))).toBe(true);
 });

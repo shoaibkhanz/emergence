@@ -241,6 +241,8 @@ export const summary = (t) => [t.agents && `${t.agents} agent${t.agents > 1 ? "s
 const under = (n) => n.agents ?? n.children ?? [];
 // Folded or not: the person's choice (id -> true folded / false open), else history folds and live work stays open.
 export const isFolded = (n, choices) => choices?.[n.id] ?? Boolean(n.history);
+// Earlier sub-agents can be many: an opened history card folds again each time the panel opens. Other choices stay.
+export const refold = (choices) => Object.fromEntries(Object.entries(choices).filter(([id, v]) => !(v === false && id.endsWith("#~earlier"))));
 
 /**
  * repos (buildTree) -> the same tree with, on every worktree and agent card: total (its own metrics plus everything
