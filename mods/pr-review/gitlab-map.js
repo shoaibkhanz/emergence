@@ -7,7 +7,7 @@ const STATE = { opened: "OPEN", merged: "MERGED", closed: "CLOSED", locked: "CLO
 // GitLab's list carries no line counts: null, and the panel shows none.
 export const mapMR = (mr) => ({
   number: mr.iid, title: mr.title, state: STATE[mr.state] ?? "OPEN", isDraft: Boolean(mr.draft), author: { login: mr.author?.username },
-  additions: null, deletions: null, updatedAt: mr.updated_at, headRefName: mr.source_branch, baseRefName: mr.target_branch, headRefOid: mr.sha ?? null,
+  additions: null, deletions: null, updatedAt: mr.updated_at, headRefName: mr.source_branch, baseRefName: mr.target_branch, headRefOid: mr.diff_refs?.head_sha ?? mr.sha ?? null, // the head threads() reports (mapThreads), so the two match
 });
 
 // The panel's states are gh's; gh's "closed" includes merged, GitLab's doesn't.

@@ -6,6 +6,7 @@ test("mapMR: GitLab fields to the PR shape; counts unknown", () => {
   expect(mapMR({ iid: 7, title: "T", state: "opened", draft: false, author: { username: "sk" }, updated_at: "2026-11-01T00:00:00Z", source_branch: "feature/x", target_branch: "main" }))
     .toEqual({ number: 7, title: "T", state: "OPEN", isDraft: false, author: { login: "sk" }, additions: null, deletions: null, updatedAt: "2026-11-01T00:00:00Z", headRefName: "feature/x", baseRefName: "main", headRefOid: null });
   expect(mapMR({ iid: 1, state: "merged", author: {}, sha: "H" })).toMatchObject({ state: "MERGED", headRefOid: "H" });
+  expect(mapMR({ iid: 3, state: "opened", author: {}, sha: "S", diff_refs: { head_sha: "D" } }).headRefOid).toBe("D"); // as mapThreads reads it
   expect(mapMR({ iid: 2, state: "closed", author: {} }).state).toBe("CLOSED");
 });
 

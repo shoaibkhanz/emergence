@@ -169,6 +169,8 @@ test("carryThreads: outdated new-side threads carried through the compare from t
   const out = carryThreads([th("a"), th("now", { line: 3 }), th("left", { diffSide: "LEFT" }), th("forced", on("F")), th("big", on("B")), th("same", on("U")),
     th("unknown", on("X")), th("gl", { comments: [{}] })], (oid) => cmp[oid] ?? null);
   expect(out.map((t) => [t.id, t.carried])).toEqual([["a", 6], ["now", null], ["left", null], ["forced", null], ["big", null], ["same", 4], ["unknown", null], ["gl", null]]);
+  const capped = { status: "ahead", files: Array.from({ length: 300 }, (_, i) => ({ path: `x${i}`, oldPath: `x${i}`, patch: "" })) };
+  expect(carryThreads([th("past-cap")], () => capped)[0].carried).toBe(null); // the compare lists 300 files at most: one left out may have changed
   expect(toCarry(th("a"))).toBe("A");
   expect(toCarry(th("now", { line: 3 }))).toBe(null);
   expect(toCarry(th("gl", { comments: [{}] }))).toBe(null);

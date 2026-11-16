@@ -145,13 +145,13 @@ export const toCarry = (t) => (t.line == null && t.diffSide === "RIGHT" && t.com
 // Each thread with `carried`: the line its code sits on at the head, through cmp(oid), the compare from that commit to
 // the head ({ status, files: [{ path, oldPath, patch }] }, or null when unknown). Only a head ahead of the commit
 // carries (after a force-push the compare starts at a merge-base, not the commit); a file the compare leaves out
-// didn't change; one listed without a patch (too big) can't carry.
+// didn't change, unless it lists GitHub's most (300); one listed without a patch (too big) can't carry.
 export function carryThreads(threads, cmp) {
   return threads.map((t) => {
     const oid = toCarry(t), c = oid && cmp(oid);
     if (!c || c.status !== "ahead") return { ...t, carried: null };
     const f = c.files.find((x) => x.oldPath === t.path || x.path === t.path);
-    if (f && f.patch == null) return { ...t, carried: null };
+    if (f ? f.patch == null : c.files.length >= 300) return { ...t, carried: null };
     return { ...t, carried: carryLine(f ? parseDiff(`diff --git a/f b/f\n${f.patch}`)[0].rows : [], t.originalLine) };
   });
 }
