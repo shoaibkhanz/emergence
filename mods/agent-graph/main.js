@@ -12,7 +12,7 @@ import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs,
 const GIT_TTL = 30000, PR_TTL = 60000, SUB_FAST = 5000;
 const MAX_FILES = 8; // a selected sub-agent's edited files listed under its card
 const ZMIN = 0.3, ZMAX = 2, ZFIT = 1, PAD = 48;
-// A panel keeps graph text readable: narrower than this zoom it shows the tree as a list.
+// A panel fits the graph to its width; below this zoom it runs off the bottom rather than shrink the text.
 const PANEL_PAD = 24, PANEL_Z = 0.6;
 const STATUS = ["blocked", "done", "working", "idle"];
 const WORD = { blocked: "Blocked", done: "Done", working: "Working", idle: "Idle" };
@@ -76,6 +76,7 @@ export default class AgentGraph extends View {
     this.busy = false;
     this.loaded = false;
     this.activeOnly = null; // Active | All: decided each time the panel opens (lib openOnActive), then the person's
+    this.pick = localStorage.getItem("view"); // "graph" | "list": the person's pick, kept; a graph until they pick List
     this.view = null; // { x, y, z } once the person pans or zooms; null = fitted
     this.offsets = new Map(JSON.parse(localStorage.getItem("offsets") || "[]")); // node id -> { x, y } the person dragged it by
     this.sel = null;
@@ -308,7 +309,7 @@ export default class AgentGraph extends View {
       { activeOnly: this.activeOnly, cursor, focused: foc, subs: subItems(items, this.subs) }); // marks here: lib
     const tree = fold(whole, this.folds); // totals on every card; folded ones without their subtree (lib)
     const L = graphLayout(tree), M = this.moved(L); // M: with the person's dragged offsets
-    const list = this.panel && this.loaded && !!this.size && (this.size.width - 2 * PANEL_PAD) / Math.max(1, L.width) < PANEL_Z;
+    const list = this.pick === "list"; // never switched for them: opening a group in the graph used to flip it to a list
     const walk = (a) => [{ data: a }, ...a.children.flatMap(walk)];
     const picks = list ? tree.flatMap((r) => r.worktrees.flatMap((w) => [{ data: w }, ...w.agents.flatMap(walk)]))
       : M.nodes.filter((n) => n.kind !== "repo").sort((a, b) => a.y - b.y || a.x - b.x);
@@ -339,7 +340,7 @@ export default class AgentGraph extends View {
         cx.stop_propagation();
         cx.notify();
       })
-      .child(this.header(t, items))
+      .child(this.header(t, items, list))
       .child(list ? this.list(t, tree) : this.canvas(t, items, tree, M));
   }
 
@@ -353,7 +354,7 @@ export default class AgentGraph extends View {
     });
   }
 
-  header(t, items) {
+  header(t, items, list) {
     const W = this.panel ? this.size?.width ?? Infinity : Infinity;
     const n = filterCounts(items);
     const button = (id, tip, onClick) => h_flex().id(id).h(24).px(8).gap(6).items_center().rounded(6).flex_none()
@@ -368,9 +369,11 @@ export default class AgentGraph extends View {
     const pick = (active) => { if (this.activeOnly !== active) { this.activeOnly = active; this.view = null; this.nudge = false; } };
     // On All, a dot by the Active count says Active has something for you: amber when an agent needs you, else blue.
     const lit = activeNudge(items, { onAll: !this.activeOnly, armed: this.nudge }), tone = lit === "blocked" ? t.blocked : t.working;
-    const seg = (id, active, label, count, tip) => h_flex().id(id).h(20).px(8).gap(5).items_center().rounded(5).text_size(12).cursor_pointer()
-      .tooltip(tip).text_color(this.activeOnly === active ? t.foreground : t.muted).when(this.activeOnly === active, (el) => el.bg(t.background))
-      .hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => { pick(active); cx.notify(); })
+    const box = (id, on, tip, onClick) => h_flex().id(id).h(20).px(8).gap(5).items_center().rounded(5).text_size(12).cursor_pointer()
+      .tooltip(tip).text_color(on ? t.foreground : t.muted).when(on, (el) => el.bg(t.background))
+      .hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => { onClick(); cx.notify(); });
+    const group = (id) => h_flex().id(id).h(24).p(2).gap(2).flex_none().items_center().rounded(7).bg(t.raised);
+    const seg = (id, active, label, count, tip) => box(id, this.activeOnly === active, tip, () => pick(active))
       .child(label).when(active && !!lit, (el) => el.child(div().size(6).rounded_full().bg(tone)))
       .child(div().text_size(11).text_color(active && lit ? tone : t.dim).child(String(count)));
     return h_flex().flex_none().items_center().border_b(1).border_color(t.border)
@@ -379,10 +382,14 @@ export default class AgentGraph extends View {
       .child(div().flex_1())
       .when(!!hint, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(hint)))
       // The view's controls sit on the right, the filter first, by refresh and expand.
-      .child(h_flex().id("ag-filter").h(24).p(2).gap(2).flex_none().items_center().rounded(7).bg(t.raised)
+      .child(group("ag-filter")
         .child(seg("ag-active", true, "Active", n.active, lit === "blocked" ? "An agent needs you: Active shows only what's going on (A)"
           : lit ? "Agents are working: Active shows only what's going on (A)" : "Agents working, needing you or finished (A)"))
         .child(seg("ag-all", false, "All", n.all, "Every agent and terminal (A)")))
+      // Graph | List: the person's pick, kept.
+      .child(group("ag-view")
+        .child(box("ag-graph", !list, "Show the graph", () => this.setPick("graph")).child("Graph"))
+        .child(box("ag-list-pick", list, "Show a list", () => this.setPick("list")).child("List")))
       // Fold every card, or open every one (history included); ←/→ fold the selected card.
       .when(this.allFolds.length > 0, (el) => el.child(icon(button("ag-fold", this.anyOpen ? "Collapse all (←/→ one card)" : "Expand all (←/→ one card)",
         () => this.setFold(this.allFolds, this.anyOpen))).child(svg(ICON(this.anyOpen ? "collapse" : "unfold")).size(13))))
@@ -390,6 +397,12 @@ export default class AgentGraph extends View {
         .child(svg(ICON("refresh")).size(13).when(this.busy, (el) => el.spin(900))))
       .when(this.panel, (el) => el.child(icon(button("ag-expand", "Open in window", () => run("mod.open", { name: "agent-graph" })))
         .child(svg(ICON("expand")).size(13))));
+  }
+
+  setPick(v) {
+    this.pick = v;
+    localStorage.setItem("view", v);
+    this.view = null;
   }
 
   // Panel too narrow for a readable graph: the same tree as an indented list.
