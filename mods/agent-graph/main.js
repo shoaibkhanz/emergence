@@ -200,7 +200,9 @@ export default class AgentGraph extends View {
   }
 
   // A sub-agent has no terminal of its own: its agent's.
+  // From the panel, the panel comes along to the agent's space (tabs-plus: shared "panel.carry").
   focusAgent(n) {
+    if (this.panel) setShared("panel.carry", { id: "graph", at: Date.now() });
     run("agent.focus", { terminal: n.owner ?? n.id });
     this.dismiss();
   }
