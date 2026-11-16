@@ -162,8 +162,8 @@ with no commits of its own; otherwise pull yourself and rerun the install comman
 **Remove**: `herdr-app do layout.switch --name main`, delete the links
 (`find ~/.config/herdr-app/mods ~/.config/herdr-app/layouts -maxdepth 1 -lname "$HOME/code/emergence/*" -delete`, with
 your `EMERGENCE_DIR` if you moved it), then remove the `tabs-plus.*`, `mod.open:jump`, `mod.open:emergence-keys`,
-`mod:spaces-plus`, `mod:inbox` and `mod:ports` entries from `~/.config/herdr-app/keys.json` and `omp` from
-`programs.json`, and delete the clone.
+`mod.open:emergence-settings`, `mod:spaces-plus`, `mod:inbox` and `mod:ports` entries from
+`~/.config/herdr-app/keys.json` and `omp` from `programs.json`, and delete the clone.
 
 ## Optional: ctrl-h/j/k/l between panes
 
@@ -194,6 +194,7 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/edi
 | `mods/tabs-plus` | tab bar, panel buttons, tab names, updates |
 | `mods/jump` | ⌘E |
 | `mods/emergence-keys` | ⌘⇧/ |
+| `mods/emergence-settings` | ⌘⌥, |
 | `mods/confirm-safe`, `row-menu` | Cancel-first confirm; right-click menu |
 | `mods/nav-keys` | ctrl-h/j/k/l |
 | `layouts/emergence.json` | the layout |
