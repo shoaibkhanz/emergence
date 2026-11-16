@@ -5,7 +5,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { subAgents, splitColumn, inboxHeight, HEADER_H, ROW_H, EMPTY_H, LIST_PAD, CARD_GAP, FOOT_H, SHELF_MAX, SHELF_PAD } from "./lib.js";
+import { subAgents, columnHeight, splitColumn, inboxHeight, HEADER_H, ROW_H, EMPTY_H, LIST_PAD, CARD_GAP, FOOT_H, SHELF_MAX, SHELF_PAD } from "./lib.js";
 import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared, setShared, nextCommand, focused } from "herdr";
 
 function find(node, id) {
@@ -118,11 +118,11 @@ export default class Inbox extends View {
     const spacesWant = shared("spaces.want") ?? 45 + (Math.max(spaces().length, 1) + (ms > 1 ? ms : 0)) * (collapsed ? 26 : 30);
     const portsMin = po ? shared("ports.want") ?? PORTS_FALLBACK : 0;
     const sideWant = sc ? shared("side-chats.want") ?? 0 : 0;
-    // What they share: this block's height plus Spaces', Side chats' and Ports' as drawn (each shares its own), never more than
-    // asked. An asked size the column can't hold (a smaller window, a resize from elsewhere) would otherwise count as room and be handed
-    // straight back, leaving Ports over the inbox.
-    const drawn = (n, key) => Math.min(n?.size?.px ?? 0, shared(key) ?? Infinity);
-    const H = this.ownH == null ? 0 : this.ownH + drawn(sp, "spaces.h") + drawn(sc, "side-chats.h") + drawn(po, "ports.h");
+    // What they share: this block's height plus Spaces', Side chats' and Ports' as drawn (lib columnHeight); none while one
+    // of them hasn't drawn its new size yet: the next pass fits.
+    const block = (n, key) => ({ px: n.size?.px ?? 0, shown: shared(key) ?? undefined });
+    const H = columnHeight(this.ownH, [[sp, "spaces.h"], [sc, "side-chats.h"], [po, "ports.h"]].filter(([n]) => n && !n.hidden).map(([n, k]) => block(n, k)));
+    if (H === null) return;
     const { spaces: px, side, ports } = splitColumn({ H, spacesWant, need, portsMin, sideWant, collapsed });
     // Against the layout's own sizes, not the last ones sent: a size changed from elsewhere is put back.
     if (px !== sp.size?.px) run("layout.resize", { id: "spaces", px });
@@ -221,7 +221,7 @@ export default class Inbox extends View {
     this.fitSpaces(collapsed, inboxHeight({ cards: cards.length, cardH: this.cardH, settled: settled.length, shelf: this.shelf }));
     const bound = keys().find((k) => k.action === "tabs-plus.attention")?.keys;
     // Header and inset line up with Herdr's Spaces list above (16px, 11.5px label).
-    return this.measured(root.border_t(1).border_color(t.border))
+    return this.measured(root.id("inbox").border_t(1).border_color(t.border)) // the id: on_size_change needs one
       .child(h_flex().h(HEADER_H).pt(10).pl(16).pr(12).gap(6).flex_none().items_center().text_size(11.5).text_color(t.dim)
         .child(div().font_medium().child("Inbox"))
         .when(cards.length > 0, (el) => el.child(String(cards.length)))

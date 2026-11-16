@@ -24,6 +24,19 @@ export function splitColumn({ H, spacesWant, need, portsMin, sideWant = 0, colla
   return { spaces, side, ports };
 }
 
+// The column's height (splitColumn's H): the inbox's own (ownH, null before its first measure: 0) plus what each other
+// section drew (shown, from its shared ".h"; px, what the layout gives it, until it shares one). Null while a resize
+// is on its way, a section not yet drawn at the size it was given: the inbox measures itself in the same layout pass
+// but the others share theirs a pass later, and counting the stale one sized the column short, then right, forever
+// (the sidebar flickered). A pixel's difference is zoom's rounding. The inbox squeezed to nothing means the column
+// can't hold what was asked: what's drawn is the truth then.
+export function columnHeight(ownH, blocks) {
+  if (ownH == null) return 0;
+  const drawn = blocks.map(({ px = 0, shown }) => (px ? shown ?? px : 0)); // given nothing (folded): nothing, whatever it last shared
+  const settled = blocks.every(({ px = 0 }, i) => Math.abs(drawn[i] - px) <= 1);
+  return settled || ownH <= 1 ? ownH + drawn.reduce((a, b) => a + b, 0) : null;
+}
+
 // The inbox block's parts (px), drawn by main.js with these same numbers. HEADER_H, ROW_H and EMPTY_H are the
 // sidebar's section sizes (Ports, Side chats; lib.test.js checks they agree); LIST_PAD is the room under the last card,
 // as Spaces leaves under its last row.

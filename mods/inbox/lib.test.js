@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { subAgents } from "./lib.js";
+import { subAgents, columnHeight } from "./lib.js";
 
 test("subAgents: live agent sub-terminals agents() misses, blocked from error too; not tab agents, shells or the dead", () => {
   const terms = [
@@ -64,4 +64,32 @@ test("inboxHeight: header, the cards (or All caught up), room under them, then S
   expect(inboxHeight({ cards: 1, cardH: 50, settled: 3, shelf: false })).toBe(41 + 50 + 14 + 32);
   expect(inboxHeight({ cards: 1, cardH: 50, settled: 3, shelf: true })).toBe(41 + 50 + 14 + 32 + 3 * 30 + 6);
   expect(inboxHeight({ cards: 1, cardH: 50, settled: 10, shelf: true })).toBe(41 + 50 + 14 + 32 + 160 + 6); // the shelf scrolls past 160
+});
+
+test("columnHeight: the column only once every section has drawn the size it was given", () => {
+  expect(columnHeight(null, [{ px: 200, shown: 200 }])).toBe(0); // before the inbox's first measure
+  expect(columnHeight(300, [{ px: 200, shown: 200 }, { px: 70, shown: 70 }])).toBe(570);
+  expect(columnHeight(300, [{ px: 200, shown: 201 }])).toBe(501); // a pixel of rounding (zoom) is drawn
+  expect(columnHeight(300, [{ px: 200 }])).toBe(500); // not shared yet: as given
+  expect(columnHeight(90, [{ px: 200, shown: 200 }, { px: 437, shown: 70 }])).toBe(null); // Ports' growth not drawn yet
+  expect(columnHeight(0, [{ px: 400, shown: 300 }, { px: 70, shown: 70 }])).toBe(370); // squeezed: what's drawn is the truth
+  expect(columnHeight(300, [{ px: 0, shown: 70 }])).toBe(300); // given nothing (folded): nothing, whatever it last shared
+});
+
+// The sidebar flickered on another computer: Ports, handed an empty inbox's slack, grew 367px; the inbox shrank in the
+// same layout pass but Ports shared its new height a pass later, so the column counted 367px short, every section
+// shrank, then grew back, forever. Herdr's layout here: the inbox takes the rest, the others report a pass late.
+test("the column settles instead of bouncing when the others report their heights a pass late", () => {
+  const T = 800, need = inboxHeight({ cards: 0, settled: 0 }), portsMin = 70, sideWant = 73;
+  let px = { spaces: 285, side: 0, ports: portsMin }, shown = { ...px };
+  const sizes = [];
+  for (let pass = 0; pass < 8; pass++) {
+    const ownH = T - px.spaces - px.side - px.ports;
+    const H = columnHeight(ownH, ["spaces", "side", "ports"].map((k) => ({ px: px[k], shown: shown[k] })));
+    shown = { ...px };
+    if (H !== null) px = splitColumn({ H, spacesWant: 200, need, portsMin, sideWant, collapsed: false });
+    sizes.push(px.spaces);
+  }
+  expect(sizes.slice(-4)).toEqual([200, 200, 200, 200]);
+  expect(px.spaces + px.side + px.ports + Math.max(need, 90)).toBeLessThanOrEqual(T);
 });

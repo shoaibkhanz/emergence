@@ -733,7 +733,7 @@ export default class Spaces extends View {
     this.comeBack(cx, this.ringed, () => this.fh.focus());
     this.ringed = this.fh.is_focused();
     this.shareCursor("spaces.cursor", this.ringed && !narrow() ? cursorOf((this.rows ?? []).find((r) => r.key === this.cur)) : null);
-    return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13).on_size_change((size) => this.shown(size))
+    return v_flex().id("spaces").size_full().min_h(0).bg(t.chrome).text_size(13).on_size_change((size) => this.shown(size)) // the id: on_size_change needs one
       .track_focus(this.fh).on_key_down((e, cx) => this.key(e.keystroke, cx))
       .when(!dots, (el) => el.child(h_flex().h(HEADER_H + top).pt(top).pl(16).pr(10).flex_none().items_center().justify_between().text_size(11.5).text_color(t.dim)
         .when(collapsed, el => el.pl(0).pr(0).justify_center())
