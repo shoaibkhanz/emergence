@@ -102,16 +102,74 @@ function linePos(rows, i) {
 }
 
 // Review threads → { at: Map(rowIndex → threads), loose: threads without a row }.
-// A thread hangs under its last line; outdated ones (line null) are loose.
+// A thread hangs under its last line; an outdated one (line null) under the line its code was carried to, else loose.
 export function anchorThreads(rows, threads) {
   const at = new Map(), loose = [];
   for (const t of threads) {
-    const i = t.line == null ? -1 : rows.findIndex((r) => lineOf(r, t.diffSide) === t.line);
+    const line = t.line ?? t.carried;
+    const i = line == null ? -1 : rows.findIndex((r) => lineOf(r, t.diffSide) === line);
     if (i < 0) loose.push(t);
     else at.set(i, [...(at.get(i) ?? []), t]);
   }
   return { at, loose };
 }
+
+// Old-side line n through a diff to the new side: a context line's new number; a deleted line → the next new-side
+// line in its hunk (what replaced it), else null; outside every hunk, n moved by the lines added and removed above.
+export function carryLine(rows, n) {
+  if (n == null) return null;
+  let old = 0, nu = 0; // the last line seen on each side
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (r.kind === "hunk") {
+      const m = r.text.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))?/);
+      // "-18,0": nothing removed, after line 18; else the hunk starts at the line
+      const o = +m[1] - (m[2] === "0" ? 0 : 1), w = +m[3] - (m[4] === "0" ? 0 : 1);
+      if (o >= n) break; // n sits in the gap before this hunk
+      old = o; nu = w;
+      continue;
+    }
+    if (r.old === n) {
+      if (r.new != null) return r.new;
+      for (let j = i + 1; j < rows.length && rows[j].kind !== "hunk"; j++) if (rows[j].new != null) return rows[j].new;
+      return null;
+    }
+    old = r.old ?? old; nu = r.new ?? nu;
+  }
+  return nu + n - old;
+}
+
+// The commit an outdated new-side thread was written on, to carry it from; null for any other (GitLab's have none).
+export const toCarry = (t) => (t.line == null && t.diffSide === "RIGHT" && t.comments?.[0]?.originalCommit?.oid) || null;
+
+// Each thread with `carried`: the line its code sits on at the head, through cmp(oid), the compare from that commit to
+// the head ({ status, files: [{ path, oldPath, patch }] }, or null when unknown). Only a head ahead of the commit
+// carries (after a force-push the compare starts at a merge-base, not the commit); a file the compare leaves out
+// didn't change, unless it lists GitHub's most (300); one listed without a patch (too big) can't carry.
+export function carryThreads(threads, cmp) {
+  return threads.map((t) => {
+    const oid = toCarry(t), c = oid && cmp(oid);
+    if (!c || c.status !== "ahead") return { ...t, carried: null };
+    const f = c.files.find((x) => x.oldPath === t.path || x.path === t.path);
+    if (f ? f.patch == null : c.files.length >= 300) return { ...t, carried: null };
+    return { ...t, carried: carryLine(f ? parseDiff(`diff --git a/f b/f\n${f.patch}`)[0].rows : [], t.originalLine) };
+  });
+}
+
+// Threads fetched at a head (d.next: { at, threads }) go on the diff only once it was taken at that head (d.at): their
+// lines are that head's. → the fields to set on d.
+export const settle = (d) => (d.next && d.next.at === d.at ? { threads: d.next.threads, next: null } : {});
+
+// A thread's header: where it is now ({ at }, null when nowhere in the diff) and, outdated, where it was ({ was }).
+export function threadLines(th) {
+  const span = (a, b, word) => (a && a !== b ? `${word}s ${a}–${b}` : `${word} ${b}`);
+  const now = th.line ?? th.carried, at = now == null ? null : th.line != null ? span(th.startLine, th.line, "Line") : `Line ${now}`;
+  return { at, was: th.isOutdated && th.originalLine != null ? span(th.originalStartLine, th.originalLine, "was line") : null };
+}
+
+// The last n lines of a comment's diff hunk (GitHub's diffHunk: the lines up to the one commented on), as { kind, text }.
+export const hunkTail = (hunk, n = 4) => (hunk ?? "").split("\n").filter((l) => !l.startsWith("@@") && l).slice(-n)
+  .map((l) => ({ kind: { "+": "add", "-": "del" }[l[0]] ?? "context", text: l.slice(1) }));
 
 export function ago(iso, now = Date.now()) {
   const s = Math.max(0, (now - Date.parse(iso)) / 1000);

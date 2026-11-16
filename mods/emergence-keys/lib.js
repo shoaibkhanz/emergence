@@ -59,3 +59,6 @@ export function rows(bindings, filter = "") {
     return [text, what];
   }).filter(([text, what]) => !f || `${text} ${what}`.toLowerCase().includes(f))]).filter(([, list]) => list.length);
 }
+
+// Emergence's dialog frame (RECIPE "Dialogs"); mods/dialogs.test.js holds every dialog's copy to it.
+export const DIALOG = { pad: 24, gap: 16, title: 22, radius: 10, button: 32 };

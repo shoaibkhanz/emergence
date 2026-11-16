@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, tagBody, splitTag, findAll, mentions, gapBefore, hiddenRows, pairRows, tabArrows } from "./lib.js";
+import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, tagBody, splitTag, findAll, mentions, gapBefore, hiddenRows, pairRows, tabArrows, carryLine, carryThreads, toCarry, settle, threadLines, hunkTail } from "./lib.js";
 
 test("findAll: smart case, every match per line, tabs as shown, hunks skipped, given file order", () => {
   const files = parseDiff([
@@ -132,12 +132,70 @@ test("commentPayload: single and multi-line", () => {
   expect(commentPayload("a.js", { side: "LEFT", start: 2, end: 5 })).toEqual({ path: "a.js", line: 5, side: "LEFT", start_line: 2, start_side: "LEFT" });
 });
 
-test("anchorThreads: by side and line, outdated loose", () => {
+test("anchorThreads: by side and line; an outdated one on its carried line, else loose; resolved ones keep their line", () => {
   const rows = parseDiff(DIFF)[0].rows;
-  const t = (id, line, diffSide) => ({ id, line, diffSide });
-  const { at, loose } = anchorThreads(rows, [t("r", 3, "RIGHT"), t("l", 2, "LEFT"), t("c", 1, "LEFT"), t("o", null, "RIGHT"), t("gone", 99, "RIGHT")]);
-  expect([...at].map(([i, ts]) => [i, ts.map((x) => x.id)])).toEqual([[4, ["r"]], [2, ["l"]], [1, ["c"]]]);
-  expect(loose.map((x) => x.id)).toEqual(["o", "gone"]);
+  const t = (id, line, diffSide, more) => ({ id, line, diffSide, ...more });
+  const { at, loose } = anchorThreads(rows, [t("r", 3, "RIGHT"), t("l", 2, "LEFT"), t("c", 1, "LEFT"), t("o", null, "RIGHT"), t("gone", 99, "RIGHT"),
+    t("moved", null, "RIGHT", { isOutdated: true, carried: 12 }), t("res", 4, "RIGHT", { isResolved: true }), t("nowhere", null, "RIGHT", { carried: null })]);
+  expect([...at].map(([i, ts]) => [i, ts.map((x) => x.id)])).toEqual([[4, ["r"]], [2, ["l"]], [1, ["c"]], [9, ["moved"]], [5, ["res"]]]);
+  expect(loose.map((x) => x.id)).toEqual(["o", "gone", "nowhere"]);
+});
+
+// Old file 1..20; the new one adds two lines after 3, turns 8 and 9 into 8a, 8b, and adds one after 18.
+const CARRY = parseDiff(["diff --git a/f b/f", "@@ -2,3 +2,5 @@", " l2", " l3", "+n1", "+n2", " l4", "@@ -7,4 +9,4 @@", " l7", "-l8", "-l9", "+l8a", "+l8b", " l10",
+  "@@ -18,0 +21 @@", "+tail"].join("\n"))[0].rows;
+
+test("carryLine: an old-side line through a diff to the line holding it now", () => {
+  expect(carryLine(CARRY, 1)).toBe(1); // above every hunk
+  expect(carryLine(CARRY, 3)).toBe(3); // context
+  expect(carryLine(CARRY, 4)).toBe(6); // shifted by the two lines added above
+  expect(carryLine(CARRY, 6)).toBe(8); // between hunks: the running offset
+  expect(carryLine(CARRY, 8)).toBe(10); // deleted: the next new-side line in its hunk (what replaced it)
+  expect(carryLine(CARRY, 9)).toBe(10);
+  expect(carryLine(CARRY, 18)).toBe(20); // an addition after 18 (-18,0) leaves 18 above it
+  expect(carryLine(CARRY, 19)).toBe(22); // past the last hunk: the offset after it
+  expect(carryLine([], 7)).toBe(7); // the file didn't change
+  expect(carryLine(CARRY, null)).toBe(null);
+  const end = parseDiff(["diff --git a/f b/f", "@@ -4,2 +4 @@", " a", "-gone"].join("\n"))[0].rows;
+  expect(carryLine(end, 5)).toBe(null); // deleted with nothing after it in the hunk
+});
+
+test("carryThreads: outdated new-side threads carried through the compare from the commit they were written on", () => {
+  const th = (id, more) => ({ id, path: "f", line: null, diffSide: "RIGHT", isOutdated: true, originalLine: 4, comments: [{ originalCommit: { oid: "A" } }], ...more });
+  const on = (oid) => ({ comments: [{ originalCommit: { oid } }] });
+  const patch = ["@@ -2,3 +2,5 @@", " l2", " l3", "+n1", "+n2", " l4"].join("\n");
+  const cmp = { A: { status: "ahead", files: [{ path: "f", oldPath: "f", patch }] }, F: { status: "diverged", files: [] },
+    B: { status: "ahead", files: [{ path: "f", oldPath: "f", patch: null }] }, U: { status: "ahead", files: [] } };
+  const out = carryThreads([th("a"), th("now", { line: 3 }), th("left", { diffSide: "LEFT" }), th("forced", on("F")), th("big", on("B")), th("same", on("U")),
+    th("unknown", on("X")), th("gl", { comments: [{}] })], (oid) => cmp[oid] ?? null);
+  expect(out.map((t) => [t.id, t.carried])).toEqual([["a", 6], ["now", null], ["left", null], ["forced", null], ["big", null], ["same", 4], ["unknown", null], ["gl", null]]);
+  const capped = { status: "ahead", files: Array.from({ length: 300 }, (_, i) => ({ path: `x${i}`, oldPath: `x${i}`, patch: "" })) };
+  expect(carryThreads([th("past-cap")], () => capped)[0].carried).toBe(null); // the compare lists 300 files at most: one left out may have changed
+  expect(toCarry(th("a"))).toBe("A");
+  expect(toCarry(th("now", { line: 3 }))).toBe(null);
+  expect(toCarry(th("gl", { comments: [{}] }))).toBe(null);
+});
+
+test("settle: threads fetched at a head go on the diff only once it was taken at that head", () => {
+  const next = { at: "H2", threads: ["new"] };
+  expect(settle({ at: "H1", next })).toEqual({}); // the diff shown is older: the threads wait
+  expect(settle({ at: null, next })).toEqual({}); // the diff is still loading
+  expect(settle({ at: "H2", next })).toEqual({ threads: ["new"], next: null });
+  expect(settle({ at: "H2", next: null })).toEqual({});
+});
+
+test("threadLines: where a thread is now and, outdated, where it was", () => {
+  expect(threadLines({ line: 5, startLine: null })).toEqual({ at: "Line 5", was: null });
+  expect(threadLines({ line: 7, startLine: 5 })).toEqual({ at: "Lines 5–7", was: null });
+  expect(threadLines({ line: null, carried: 22, isOutdated: true, originalLine: 13 })).toEqual({ at: "Line 22", was: "was line 13" });
+  expect(threadLines({ line: null, carried: null, isOutdated: true, originalLine: 13, originalStartLine: 11 })).toEqual({ at: null, was: "was lines 11–13" });
+  expect(threadLines({ line: null, isOutdated: true })).toEqual({ at: null, was: null });
+});
+
+test("hunkTail: the last lines of a comment's diff hunk, header dropped, by kind", () => {
+  expect(hunkTail("@@ -0,0 +1,5 @@\n+a\n+b\n c\n-d\n+e", 3)).toEqual([{ kind: "context", text: "c" }, { kind: "del", text: "d" }, { kind: "add", text: "e" }]);
+  expect(hunkTail("@@ -1 +1 @@\n x")).toEqual([{ kind: "context", text: "x" }]);
+  expect(hunkTail(undefined)).toEqual([]);
 });
 
 test("ago and firstVisible", () => {

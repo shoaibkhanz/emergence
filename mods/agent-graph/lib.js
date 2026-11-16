@@ -365,3 +365,6 @@ export function groupTarget(steps) {
   const seen = [...new Set(steps.map((s) => (["read", "edit"].includes(stepKind(s.tool)) ? s.target?.split("/").pop() : s.target)).filter(Boolean))];
   return seen.slice(0, 4).join(", ") + (seen.length > 4 ? ` +${seen.length - 4}` : "");
 }
+
+// Emergence's dialog frame (RECIPE "Dialogs"), for the details dialog; mods/dialogs.test.js holds every dialog's copy to it.
+export const DIALOG = { pad: 24, gap: 16, title: 22, radius: 10, button: 32 };

@@ -1,11 +1,12 @@
 import { test, expect } from "bun:test";
 import { forgeOrder, mapMR, glStates, mapThreads, commitDiffText, position, versionFor } from "./gitlab-map.js";
-import { parseDiff } from "./lib.js";
+import { parseDiff, carryThreads, anchorThreads } from "./lib.js";
 
 test("mapMR: GitLab fields to the PR shape; counts unknown", () => {
   expect(mapMR({ iid: 7, title: "T", state: "opened", draft: false, author: { username: "sk" }, updated_at: "2026-11-01T00:00:00Z", source_branch: "feature/x", target_branch: "main" }))
-    .toEqual({ number: 7, title: "T", state: "OPEN", isDraft: false, author: { login: "sk" }, additions: null, deletions: null, updatedAt: "2026-11-01T00:00:00Z", headRefName: "feature/x", baseRefName: "main" });
-  expect(mapMR({ iid: 1, state: "merged", author: {} }).state).toBe("MERGED");
+    .toEqual({ number: 7, title: "T", state: "OPEN", isDraft: false, author: { login: "sk" }, additions: null, deletions: null, updatedAt: "2026-11-01T00:00:00Z", headRefName: "feature/x", baseRefName: "main", headRefOid: null });
+  expect(mapMR({ iid: 1, state: "merged", author: {}, sha: "H" })).toMatchObject({ state: "MERGED", headRefOid: "H" });
+  expect(mapMR({ iid: 3, state: "opened", author: {}, sha: "S", diff_refs: { head_sha: "D" } }).headRefOid).toBe("D"); // as mapThreads reads it
   expect(mapMR({ iid: 2, state: "closed", author: {} }).state).toBe("CLOSED");
 });
 
@@ -30,7 +31,7 @@ test("mapThreads: diff notes become threads, other notes the talk, system notes 
   const r = mapThreads(discussions, MR, "sk");
   expect(r.headOid).toBe("H2");
   expect(r.threads).toHaveLength(1);
-  expect(r.threads[0]).toMatchObject({ id: "d1", isResolved: true, isOutdated: true, path: "src/a.py", line: null, diffSide: "RIGHT", startLine: null }); // outdated: shown apart, as GitHub (line null)
+  expect(r.threads[0]).toMatchObject({ id: "d1", isResolved: true, isOutdated: true, path: "src/a.py", line: null, diffSide: "RIGHT", startLine: null, originalLine: 12 }); // outdated: line null, as GitHub; was line 12
   expect(r.threads[0].comments[0]).toEqual({ id: 1, databaseId: 1, body: "note 1", author: { login: "sk" }, createdAt: "2026-11-01T11:00:00Z", viewerCanUpdate: true, viewerCanDelete: true });
   expect(r.threads[0].comments[1]).toMatchObject({ author: { login: "bob" }, viewerCanUpdate: false, viewerCanDelete: false });
   expect(r.talk.map((t) => t.kind)).toEqual(["body", "comment"]);
@@ -44,6 +45,14 @@ test("mapThreads: a removed-line note is LEFT on old_line; a ranged note has sta
   const [left, ranged] = mapThreads([d("x", { old_line: 5, new_line: null }), d("y", { new_line: 12, old_line: null, line_range: { start: { new_line: 10, old_line: null }, end: { new_line: 12, old_line: null } } })], MR, "sk").threads;
   expect(left).toMatchObject({ diffSide: "LEFT", line: 5, isOutdated: false, isResolved: false });
   expect(ranged).toMatchObject({ diffSide: "RIGHT", line: 12, startLine: 10 });
+});
+
+test("mapThreads: an outdated note has no commit to carry from, so it stays loose (shown apart)", () => {
+  const d = { id: "o", individual_note: false, notes: [note(1, { type: "DiffNote", resolvable: true, resolved: false, position: { head_sha: "H1", new_path: "a.py", old_path: "a.py", new_line: 3, old_line: null } })] };
+  const threads = carryThreads(mapThreads([d], MR, "sk").threads, () => { throw new Error("no compare for GitLab"); });
+  expect(threads[0]).toMatchObject({ isOutdated: true, line: null, originalLine: 3, carried: null });
+  const rows = parseDiff(["diff --git a/a.py b/a.py", "@@ -1,2 +1,3 @@", " x", "+y", " z"].join("\n"))[0].rows;
+  expect(anchorThreads(rows, threads).loose.map((t) => t.id)).toEqual(["o"]);
 });
 
 test("commitDiffText: modified, new, deleted and renamed files parse back", () => {

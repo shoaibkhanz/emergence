@@ -10,9 +10,8 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, TextView } from "gpui-base";
 import { run, exec, props, closeOverlay, theme, setShared, appHome, home } from "herdr";
-import { subState, groupSteps, toolMix, stepKind, stepTarget, groupTarget, offset, took, tokens, costLabel, own, modelName } from "./lib.js";
+import { subState, groupSteps, toolMix, stepKind, stepTarget, groupTarget, offset, took, tokens, costLabel, own, modelName, DIALOG } from "./lib.js";
 
-const DIALOG = { pad: 24, gap: 16, title: 22, radius: 10, button: 32 }; // Emergence's frame (RECIPE "Dialogs"); join mods/dialogs.test.js when this branch merges
 const TABS = ["overview", "steps", "files"];
 const FOLD = { task: 360, result: 1600 }; // characters shown (whole lines) until Space shows the rest
 const LIVE_MS = 5000;

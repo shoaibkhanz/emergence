@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, settings, shared, setShared, watchFolder, window, layout, nextCommand, focused, notify } from "herdr";
-import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn, repoName, sweepItems, sweepReport, HEADER_H, ROW_H, SUB_ROW_H, LIST_PAD } from "./lib.js";
+import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn, repoName, sweepItems, sweepReport, onlyHereArgs, keptNote, HEADER_H, ROW_H, SUB_ROW_H, LIST_PAD } from "./lib.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -302,8 +302,11 @@ export default class Spaces extends View {
   // also offers Delete permanently (red, at its left, never selected first): `git worktree remove --force`, which
   // loses the folder's uncommitted changes and untracked files, still never the branch.
   async ask(kind, target, cx) {
-    const { on, path, label, space } = target;
-    const st = await exec("git", ["-C", path, "status", "--porcelain"], { on }).catch((e) => ({ code: 1, stderr: String(e) })); // a machine away
+    const { on, path, label, space, branch } = target;
+    const [st, only] = await Promise.all([
+      exec("git", ["-C", path, "status", "--porcelain"], { on }).catch((e) => ({ code: 1, stderr: String(e) })), // a machine away
+      exec("git", ["-C", path, ...onlyHereArgs(branch)], { on }).catch(() => ({ code: 1 }))]);
+    const note = keptNote(only.code === 0 ? Number(only.stdout.trim()) : null, branch); // where unshared commits stay
     if (kind === "delete") {
       if (st.code !== 0) return notify({ title: `Couldn't check ${label}`, body: st.stderr.trim(), level: "error" });
       if (st.stdout.trim()) return notify({ title: `${label} has uncommitted changes`, body: "Not deleted. → archives it, or deletes it permanently.", level: "warning" });
@@ -311,10 +314,10 @@ export default class Spaces extends View {
     this.asked = { kind, target, keys: this.resume || this.ringed }; // asked from the keyboard (or its menu), not a click from the terminal
     const del = kind === "delete";
     // Every close (Confirm, Cancel, Esc) gives the keyboard back to Spaces if it was here (comeBack).
-    openOverlay({ mod: "confirm-safe", kind: "dialog", width: 440, height: (space ? 270 : 242) + (del ? 0 : 50), props: {
+    openOverlay({ mod: "confirm-safe", kind: "dialog", width: 440, height: (space ? 270 : 242) + (del ? 0 : 50) + (note ? 40 : 0), props: {
       title: `${del ? "Delete" : "Archive"} worktree?`, name: label,
       detail: del ? "Removes this folder from disk. Its branch stays." : "Hides it from the sidebar; the folder stays. Reopen it from ⌘E Jump.",
-      path, warn: space ? "Its open space and terminals close." : null, action: del ? "Delete" : "Archive", danger: del,
+      path, warn: space ? "Its open space and terminals close." : null, note, action: del ? "Delete" : "Archive", danger: del,
       command: { name: `spaces-plus.${kind}` },
       extra: del ? null : { action: "Delete permanently", warn: forceWarn(changeCount(st)), command: { name: "spaces-plus.force-delete" } } } });
   }

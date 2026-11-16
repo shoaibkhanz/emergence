@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { sections, toggles } from "./lib.js";
+import { sections, toggles, choose, DIALOG } from "./lib.js";
 import { decide, withoutStale } from "../side/lib.js";
 
 const OFFER = { names: { claude: "Claude Code", opencode: "OpenCode", codex: "Codex" }, supported: ["claude", "opencode"] };
@@ -25,7 +25,7 @@ test("side chats: a row per harness the side mod names; only installed, supporte
   expect(row(secs, "side.codex").writes).toBeUndefined();
   const missing = sections(of({ "side.supported": OFFER }), { claude: false });
   expect(row(missing, "side.claude")).toMatchObject({ on: false, note: "not installed" });
-  expect(row(sections(of({ "side.supported": OFFER }), null), "side.claude").note).toBe("…");
+  expect(row(sections(of({ "side.supported": OFFER }), null), "side.claude").note).toBe("checking…");
 });
 
 test("side chats: before the side mod has said what it supports, a line instead of rows", () => {
@@ -49,4 +49,29 @@ test("side chats: a flip writes only supported harnesses, and side's decide foll
 test("toggles: the rows the keyboard walks, in drawn order", () => {
   const secs = sections(of({ "side.supported": OFFER }), { claude: true, opencode: true });
   expect(toggles(secs).map((r) => r.id)).toEqual(["sidebar.dots", "prs.split", "skills.big", "side.claude", "side.opencode"]);
+});
+
+test("sub-agent history: shown only once the Agents graph offers it; 1 day, 1 week or 30 days, 30 unless chosen", () => {
+  expect(row(sections(of({}), null), "agents.history")).toBeUndefined();
+  const r = row(sections(of({ "agent-graph.historyOffered": true }), null), "agents.history");
+  expect(r).toMatchObject({ kind: "choice", value: 30 });
+  expect(r.options.map((o) => o.label)).toEqual(["1 day", "1 week", "30 days"]);
+  expect(r.options[1].writes).toEqual([["agent-graph.history", 7]]);
+  expect(row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.history": 7 }), null), "agents.history").value).toBe(7);
+  expect(row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.history": 90 }), null), "agents.history").value).toBe(30); // past what's kept
+  expect(toggles(sections(of({ "agent-graph.historyOffered": true }), null)).map((x) => x.id)).toContain("agents.history");
+});
+
+test("choose: ←/→ step a choice, stopping at its ends; ↵ (0) goes round; a switch just flips", () => {
+  const r = row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.history": 7 }), null), "agents.history");
+  expect(choose(r, -1)).toEqual([["agent-graph.history", 1]]);
+  expect(choose(r, 1)).toEqual([["agent-graph.history", 30]]);
+  expect(choose({ ...r, value: 30 }, 1)).toEqual([]);
+  expect(choose({ ...r, value: 30 }, 0)).toEqual([["agent-graph.history", 1]]);
+  const sw = row(sections(of({}), null), "prs.split");
+  expect(choose(sw, 0)).toEqual(sw.writes);
+});
+
+test("the dialog frame: RECIPE's numbers", () => {
+  expect(DIALOG).toEqual({ pad: 24, gap: 16, title: 22, radius: 10, button: 32 });
 });

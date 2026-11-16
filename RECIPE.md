@@ -107,6 +107,13 @@ fill; the others are `raised` with an `input` border, Stop and Delete in `blocke
 at most), so asking never changes a dialog's height. A boxed subject is `surface` with a `border`. Widths: 440 (a
 question), 560 (a card), 680 (a list or palette). Centred (`kind: "dialog"`), as tall as their content where it's known
 up front, else a fixed height (or a share of the window, as the keys list's 0.9) whose lists scroll inside.
+Grouped rows (settings, the keys list) sit in one card per section: `surface`, a 1px `border`, radius 6, the header
+6px above it, 18px between sections; rows divided by 1px `border` hairlines (settings: 36px, or 52px with a one-line
+12 `muted` about, its whole text on hover) or a `p(4)` card of 28px rows (keys). The keyboard's row has the `hover`
+fill, never a ring, and starts on the first row. A switch is `accent` when on, `raised` with an `input` border when off;
+a choice is segments in a `raised` track, the chosen one `background`. Keys are 11px chips: `raised`, `input` border,
+`foreground`. A list that scrolls keeps an 18px 12 `muted` footer of its keys. Each dialog's lib exports `DIALOG`
+(pad, gap, title, radius, button); `mods/dialogs.test.js` fails when the copies disagree.
 
 ## How it behaves
 
@@ -232,19 +239,22 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
 - **Tab names.** tabs-plus renames an unnamed tab after its first terminal's branch, or its repo (else folder, `~` at
   home) when the branch is main, master, trunk or develop. It remembers the names it gave in `shared("tabs.auto")`,
   so a given name keeps following the branch while a name you give (`tab.rename`) stays yours.
-- **Jump (`mods/jump`, ⌘E, a 680×520 dialog).**
-  - Rows (`lib.js` `jumpRows`, tested): each space as a 30px heading (name; branch · repo · machine; ↵ selects it) with
-    its tabs indented under it. Where you are first, then spaces by their tab shown last (`shared("jump.recent")`:
-    tabs-plus puts each focused tab first, 100 kept), never-shown ones in space order; tabs in a space by the same. Each
-    repo's checkouts no session's terminal is inside (`git worktree list` once per repo, newest commit first) sit under
-    the space you were in last in that repo; a repo no space is in heads its own.
-  - The tab shown last that isn't where you are is picked (never a heading), so ⌘E ↵ goes back.
-  - A tab row (48px, indented): program icon, tab name, branch; under it the agent's terminal title (what it's on), else
-    the folder; on the right its state with how long ("working 12m", "needs you 3m") and its agents.
-  - Typing filters on every word (tab, space, branch, folder, agent, title; a leading `/` is ignored) and keeps the
-    spaces with a match. A single
-    branch-like word no checkout has adds "New worktree <name>" (Herdr's worktree dialog, action `new`), when the
-    tab you're on is in a repo. ↑/↓, ↵ (a worktree opens with `space.new`), Esc.
+- **Jump (`mods/jump`, ⌘E, a 680×640 dialog).**
+  - Rows (`lib.js` `jumpRows`, tested), 28px, one line each. Untyped, "Recent" first: the last 3 tabs shown
+    (`shared("jump.recent")`: tabs-plus puts each focused tab first, 100 kept), not where you are; the first is picked,
+    so ⌘E ↵ goes back. Then "Spaces": every space as the sidebar nests them, from `spaces()` (already in the
+    sidebar's order: spaces-plus moves them): a repo's main checkout, its worktree spaces under it, then its checkouts
+    no space has open (`git worktree list` per repo, read in parallel, newest commit first; past 2, "N worktrees not
+    open" and ↵ shows them; archived ones only while typing). A repo no space is in heads its own worktrees.
+  - A space with one tab is one row (↵ selects the tab); with more, a row (↵ `space.select`) and its tabs under it.
+    A row: mark (program icon, else folder or branch), name, dim branch, what the agent is on, and its state with how
+    long ("working 12m", "needs you 3m"). The header counts spaces ("8 spaces", "2 of 8 spaces" while typing).
+  - Typing filters on every word: names and branch, agent, title, state words ("needs you"), the folder counting
+    least. Matches keep their parents (dimmed) and a matching space keeps all it holds; groups go by best match (a word
+    starting a name first), else sidebar order; nothing reorders inside a group. A single branch-like word no checkout
+    has adds "New worktree <name>" (Herdr's worktree dialog, action `new`), when the tab you're on is in a repo.
+  - The highlight is the row's key (`rowKey`), so worktrees arriving late don't move it; ↑/↓ (`step`) pass the section
+    labels. ↵ goes (a worktree opens with `space.new`), Esc leaves.
 - **Agents panel.**
   - Cards for repos (15px semibold), worktrees (branch, ahead/behind, a PR chip) and agents (program
     icon, title without harness marks, state).
@@ -304,8 +314,9 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
     base/start SHAs from the MR version its head belongs to (`versions`), and a range as `line_range` whose ends carry
     `old_line`/`new_line`, the line's type and its line code (`sha1(path)_<old>_<new>`, each number the line's place on
     that side: lib.js `linePos`); codes alone collapse to the last line after the next push. Read back, both ends are
-    on one side. MR lists are one page of 100 per state, last updated first, and carry no +/- counts (blank). An outdated thread (written at an older head) gets no line, so it shows apart from the diff as on
-    GitHub (GitLab keeps the old version's numbers). Verified live on a throwaway MR: every line kind, range, reply, edit, delete, resolve, MR comment,
+    on one side. MR lists are one page of 100 per state, last updated first, and carry no +/- counts (blank). An outdated thread (written at an older head) gets no line, as on
+    GitHub; GitLab's old version's numbers only label it ("was line N"), and with no commit to carry it from it stays
+    apart from the diff. Verified live on a throwaway MR: every line kind, range, reply, edit, delete, resolve, MR comment,
     tag badge.
   - Shows the focused repo's PRs (Open, Closed, All, search) and, first in the sidebar, the compare: `[head ▾] vs [base ▾]` on
     one line (the head shortens first), with "Includes uncommitted changes" under it (this branch) or "Committed changes
@@ -325,6 +336,14 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
   - Select lines by click, shift-click or drag. The comment box then docks under the diff with tag chips: Statement
     (green), Question (blue), Nit (purple), Minor (yellow), Major (red). A tag posts as
     `![tag](https://img.shields.io/badge/<tag>-<color>)` on its own line, then the comment.
+  - Outdated threads (a later push changed their line; GitHub gives `line: null`) are carried to the head: once per
+    commit and head, `GET repos/<nwo>/compare/<originalCommit>...<head>` (`github.js` `compare`), and `lib.js`
+    `carryLine` takes `originalLine` through that file's patch: an unchanged line to its new number, a deleted one to
+    the next new line in its hunk (what replaced it), else moved by the lines added and removed above (`carryThreads`;
+    a compare that isn't `ahead`, as after a force-push, carries nothing). The card hangs under that line with an
+    "Outdated · was line N" chip (never on whatever code now has the old number). One with nowhere to go stacks above
+    the file's first row and shows the last 4 lines of the hunk it was written on (`diffHunk`), drawn as diff lines. A
+    resolved outdated thread folds to one row with both chips, like any resolved one.
   - Reply, edit, delete and resolve threads. Esc steps back out. Comment authors are in accent; @mentions (users,
     org/teams, not in code) render as profile links (`mentions` in lib.js).
   - Conversation: "N comments" in the header swaps the changes for the description, the comments on the PR itself and
@@ -337,7 +356,10 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
     either.
   - Live: every 5 s while it shows, the threads and conversation refetch; the diff follows when the PR's head has moved
     past the one shown (this branch: every 5 s, from the working tree), unless a commit, a selection or a draft is open
-    (it catches up after). The PR list refreshes every 30 s. A hidden panel doesn't poll, nor does the panel while the
+    (it catches up after). The diff's head (`d.at`, the `commit_id` a new comment is posted at) is read with `viewPR`
+    (`headRefOid`; GitLab's MR `sha`) just before the diff, so a push in between only makes the diff newer and the next poll refetches it.
+    Threads fetched at a head wait (`d.next`) until the diff shown is that head's (`lib.js` `settle`), so a newer
+    head's line numbers never land on an older diff's rows; the conversation shows at once. The PR list refreshes every 30 s. A hidden panel doesn't poll, nor does the panel while the
     window is open (one set of GitHub calls: about 840 GraphQL points an hour of the 5,000).
   - Find (⌘F, or the search button on the file's header): a bar over the diff, All files (the default) or This file,
     smart case (an upper-case letter makes it exact); ⌘F again selects the query. It matches diff lines (each hit
