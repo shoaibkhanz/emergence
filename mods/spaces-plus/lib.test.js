@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn, sweepItems, sweepReport } from "./lib.js";
+import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn, sweepItems, sweepReport, onlyHereArgs, keptNote } from "./lib.js";
 
 const PORCELAIN = ["worktree /r", "HEAD a", "branch refs/heads/main", "",
   "worktree /w/feat", "HEAD b", "branch refs/heads/feat/x", "",
@@ -37,7 +37,7 @@ test("addWorktrees: open worktree once, greyed after nested, main not repeated, 
   const [T, F, det, D] = out;
   expect([T.kind, T.kids, T.parent]).toEqual(["space", 2, null]);
   expect([F.kind, F.parent]).toEqual(["space", "s:T"]);
-  expect(det).toEqual({ kind: "wt", key: 'p:[null,"/w/det"]', parent: "s:T", on: null, path: "/w/det", label: "det", ahead: 0, behind: 0 });
+  expect(det).toEqual({ kind: "wt", key: 'p:[null,"/w/det"]', parent: "s:T", on: null, path: "/w/det", label: "det", branch: null, ahead: 0, behind: 0 }); // detached: no branch
   expect([D.kids, D.parent]).toEqual([0, null]);
 });
 
@@ -101,8 +101,8 @@ test("addWorktrees: an archived worktree isn't listed", () => {
 
 test("actionTarget: greyed worktree and open linked space; not the main checkout or a plain folder", () => {
   const [T, F, det, D] = addWorktrees(fixture(), TREES, new Set());
-  expect(actionTarget(det)).toEqual({ on: null, path: "/w/det", label: "det", space: null });
-  expect(actionTarget(F)).toEqual({ on: null, path: "/w/feat", label: "feat/x", space: "F" });
+  expect(actionTarget(det)).toEqual({ on: null, path: "/w/det", label: "det", branch: null, space: null });
+  expect(actionTarget(F)).toEqual({ on: null, path: "/w/feat", label: "feat/x", branch: "feat/x", space: "F" });
   expect(actionTarget(T)).toBe(null);
   expect(actionTarget(D)).toBe(null);
 });
@@ -141,13 +141,26 @@ test("sweepItems: every linked worktree, never a main, bare or prunable one; arc
   const opens = [{ repo: JSON.stringify([null, "/r/.git"]), top: "/private/w/feat", branch: "feat/x", id: "s9" }];
   const archived = { [JSON.stringify([null, "/w/det"])]: null };
   expect(sweepItems(trees, opens, archived)).toEqual([
-    { key: JSON.stringify([null, "/w/feat"]), on: null, path: "/w/feat", label: "feat/x", repo: "r", space: "s9", archived: false },
-    { key: JSON.stringify([null, "/w/det"]), on: null, path: "/w/det", label: "det", repo: "r", space: null, archived: true },
-    { key: JSON.stringify(["box", "/b/x"]), on: "box", path: "/b/x", label: "x", repo: "b", space: null, archived: false }]);
+    { key: JSON.stringify([null, "/w/feat"]), on: null, path: "/w/feat", label: "feat/x", branch: "feat/x", repo: "r", space: "s9", archived: false },
+    { key: JSON.stringify([null, "/w/det"]), on: null, path: "/w/det", label: "det", branch: null, repo: "r", space: null, archived: true },
+    { key: JSON.stringify(["box", "/b/x"]), on: "box", path: "/b/x", label: "x", branch: "x", repo: "b", space: null, archived: false }]);
 });
 
 test("sweepReport: what went, what was skipped for its changes, what git refused", () => {
   expect(sweepReport(["a", "b"], [], [])).toEqual({ title: "Deleted 2 worktrees", body: "Branches stay.", level: "success" });
   expect(sweepReport(["a"], ["c", "d"], [])).toEqual({ title: "Deleted 1 worktree", body: "Skipped 2 with uncommitted changes: c, d.", level: "warning" });
   expect(sweepReport([], [], [["e", "fatal: locked"]])).toEqual({ title: "No worktrees deleted", body: "Couldn't delete e: fatal: locked.", level: "error" });
+});
+
+test("onlyHereArgs: commits on HEAD that no remote and no other local branch has (git's --exclude takes the bare name)", () => {
+  expect(onlyHereArgs("feat/x")).toEqual(["rev-list", "--count", "HEAD", "--not", "--remotes", "--exclude=feat/x", "--branches"]);
+  expect(onlyHereArgs(null)).toEqual(["rev-list", "--count", "HEAD", "--not", "--remotes", "--branches"]);
+});
+
+test("keptNote: the amber line saying where a clean worktree's unshared commits stay", () => {
+  expect(keptNote(0, "feat/x")).toBeNull();
+  expect(keptNote(null, "feat/x")).toBeNull();
+  expect(keptNote(1, "feat/x")).toBe("1 commit is only on feat/x: not pushed or merged. The branch keeps it.");
+  expect(keptNote(3, "feat/x")).toBe("3 commits are only on feat/x: not pushed or merged. The branch keeps them.");
+  expect(keptNote(2, null)).toBe("2 commits here are on no branch or remote: deleting leaves them behind.");
 });

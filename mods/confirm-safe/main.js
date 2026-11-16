@@ -3,7 +3,8 @@
 // Props: { title, detail, command: { name, args } } as confirm's, plus
 //   name, path: what it acts on (a branch) and where, in a mono box (the path with home as ~, shortened in the middle);
 //   action: the button's verb ("Delete"); danger: draw it in the blocked colour;
-//   warn (optional): a second consequence, on its own line with an amber dot;
+//   warn (optional): a second consequence, on its own line with an amber dot; note (optional): another such line
+//   (Spaces: commits only on the branch, which keeps them);
 //   extra (optional): { action, warn, command }, a destructive third choice: a red button at the far left, reached by
 //   ← from Cancel (Tab wraps to it too), never selected when the dialog opens; its warn is a red line under the box.
 // Every close (Confirm, Cancel, Esc) gives the keyboard back to where it was (shared emergence.over).
@@ -72,8 +73,8 @@ export default class ConfirmSafe extends View {
           .tooltip(`${p.name}\n${p.path}`)
           .child(div().truncate().font_medium().text_color(t.foreground).child(p.name))
           .child(div().truncate().text_size(12).text_color(t.dim).child(shortPath(p.path, home()))))
-        .when(Boolean(p.warn), (el) => el.child(h_flex().gap(8).items_center().text_color(t.muted)
-          .child(div().size(6).flex_none().rounded(3).bg(t.working)).child(div().flex_1().min_w(0).child(p.warn))))
+        .children([p.warn, p.note].filter(Boolean).map((w) => h_flex().gap(8).items_center().text_color(t.muted)
+          .child(div().size(6).flex_none().rounded(3).bg(t.working)).child(div().flex_1().min_w(0).child(w))))
         .when(Boolean(p.extra?.warn), (el) => el.child(h_flex().gap(8).items_center().text_color(t.blocked)
           .child(div().size(6).flex_none().rounded(3).bg(t.blocked)).child(div().flex_1().min_w(0).child(p.extra?.warn ?? "")))))
       .child(h_flex().gap(8).children(row));

@@ -31,17 +31,22 @@ export function plan(items, ticked, counts, force) {
   };
 }
 
-// The line under the list.
-export function tally(items, ticked, counts) {
+// Spaces' git question for commits only on a worktree's branch (spaces-plus lib onlyHereArgs; a test keeps them equal).
+export const onlyHereArgs = (branch) => ["rev-list", "--count", "HEAD", "--not", "--remotes", ...(branch ? [`--exclude=${branch}`] : []), "--branches"];
+
+// The line under the list. `only`: key -> commits only on its branch (onlyHereArgs).
+export function tally(items, ticked, counts, only = {}) {
   const picked = items.filter((it) => ticked.has(it.key)), d = picked.filter((it) => changed(counts, it.key)).length;
+  const c = picked.filter((it) => only[it.key] > 0).length;
   if (!picked.length) return "Nothing ticked";
-  return `${picked.length} ticked` + (d ? ` · ${d} with uncommitted changes` : "");
+  return `${picked.length} ticked` + (d ? ` · ${d} with uncommitted changes` : "") + (c ? ` · ${c} with commits only on ${c === 1 ? "its branch" : "their branches"}` : "");
 }
 
-// The confirm's question: `n` ticked, `d` of them with changes.
-export function question(n, d) {
+// The confirm's question: `n` ticked, `d` of them with changes, `c` with commits only on their branch.
+export function question(n, d, c = 0) {
   const head = `Delete ${n} worktree${s(n)}?`;
-  if (!d) return `${head} Their folders go; their branches stay.`;
+  const kept = !c ? "" : ` ${c === n && n === 1 ? "It has" : `${c} ${c === 1 ? "has" : "have"}`} commits only there.`; // one line at 680
+  if (!d) return `${head} Their folders go; their branches stay.${kept}`;
   if (d === n) return `${head} ${n === 1 ? "It has" : "All have"} uncommitted changes.`;
   return `${head} ${d} ${d === 1 ? "has" : "have"} uncommitted changes: Delete skips ${d === 1 ? "it" : "them"}.`;
 }

@@ -50,7 +50,7 @@ export function addWorktrees(rows, trees, folded, archived = {}) {
       if (wt.bare || wt.prunable || tops.has(wt.path) || (wt.branch && branches.has(wt.branch))) continue;
       if (JSON.stringify([on, wt.path]) in archived) continue;
       const track = (wt.branch && tree.track[wt.branch]) || { ahead: 0, behind: 0 };
-      kids.push({ kind: "wt", key: `p:${JSON.stringify([on, wt.path])}`, parent: row.key, on, path: wt.path, label: wt.branch ?? base(wt.path), ahead: track.ahead, behind: track.behind });
+      kids.push({ kind: "wt", key: `p:${JSON.stringify([on, wt.path])}`, parent: row.key, on, path: wt.path, label: wt.branch ?? base(wt.path), branch: wt.branch ?? null, ahead: track.ahead, behind: track.behind });
     }
     row.kids = kids.length;
     if (!folded.has(r.w.id)) out.push(...kids);
@@ -68,9 +68,9 @@ export function nearest(keys, old, cur) {
 // The worktree a row stands for, for archive and delete: a greyed worktree, or an open space in a linked worktree.
 // null for a main checkout (git can't remove it) or a folder outside git.
 export function actionTarget(r) {
-  if (r.kind === "wt") return { on: r.on, path: r.path, label: r.label, space: null };
+  if (r.kind === "wt") return { on: r.on, path: r.path, label: r.label, branch: r.branch ?? null, space: null };
   if (!r.g?.linked) return null;
-  return { on: JSON.parse(r.g.repo)[0], path: r.g.top, label: r.g.branch, space: r.w.id };
+  return { on: JSON.parse(r.g.repo)[0], path: r.g.top, label: r.g.branch, branch: r.g.branch ?? null, space: r.w.id };
 }
 
 // Archived worktrees open again in a space (from ⌘E Jump): not the space the archive closed, which can still be
@@ -98,6 +98,19 @@ export function forceWarn(n) {
   return `Delete permanently loses ${what}. Can't be undone.`;
 }
 
+// git's args for commits on a worktree's HEAD that no remote and no other local branch has: what lives only there.
+// --exclude takes the bare branch name under --branches. (A worktree's own branch is kept on delete; detached, they'd
+// be left behind.)
+export const onlyHereArgs = (branch) => ["rev-list", "--count", "HEAD", "--not", "--remotes", ...(branch ? [`--exclude=${branch}`] : []), "--branches"];
+
+// The amber line on a delete or archive confirm for those commits (n from onlyHereArgs; null: none or unknown).
+export function keptNote(n, branch) {
+  if (!n) return null;
+  const c = `${n} commit${n === 1 ? "" : "s"}`;
+  return branch ? `${c} ${n === 1 ? "is" : "are"} only on ${branch}: not pushed or merged. The branch keeps ${n === 1 ? "it" : "them"}.`
+    : `${c} here are on no branch or remote: deleting leaves them behind.`;
+}
+
 // A repo's name from its git folder: /x/app/.git -> app, /x/app.git (bare) -> app.
 export const repoName = (repo) => repo.endsWith("/.git") ? base(repo.slice(0, -5)) : base(repo).replace(/\.git$/, "");
 
@@ -110,7 +123,7 @@ export function sweepItems(trees, opens, archived = {}) {
     return list.slice(1).filter((wt) => !wt.bare && !wt.prunable).map((wt) => {
       const key = JSON.stringify([on, wt.path]);
       const open = opens.find((o) => o.repo === repo && (o.top === wt.path || (wt.branch && o.branch === wt.branch)));
-      return { key, on, path: wt.path, label: wt.branch ?? base(wt.path), repo: repoName(dir), space: open?.id ?? null, archived: key in archived };
+      return { key, on, path: wt.path, label: wt.branch ?? base(wt.path), branch: wt.branch ?? null, repo: repoName(dir), space: open?.id ?? null, archived: key in archived };
     });
   });
 }

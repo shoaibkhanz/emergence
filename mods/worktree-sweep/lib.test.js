@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
-import { step, tick, plan, tally, question, choices } from "./lib.js";
+import { step, tick, plan, tally, question, choices, onlyHereArgs } from "./lib.js";
+import * as spaces from "../spaces-plus/lib.js";
 
 const items = [{ key: "a", label: "a" }, { key: "b", label: "b" }, { key: "c", label: "c" }, { key: "d", label: "d" }];
 const counts = { a: 0, b: 3, c: null }; // c: git couldn't tell; d: not known yet
@@ -45,4 +46,18 @@ test("choices: the confirm's buttons, the red one first and only with changes; B
   expect(choices(2, 0)).toEqual({ list: [["Back", "back"], ["Delete 2", "delete"]], sel: 0 });
   expect(choices(3, 1)).toEqual({ list: [["Delete permanently, including 1 with changes", "force"], ["Back", "back"], ["Delete 2 clean", "delete"]], sel: 1 });
   expect(choices(2, 2)).toEqual({ list: [["Delete permanently, including 2 with changes", "force"], ["Back", "back"]], sel: 1 });
+});
+
+test("commits only on a branch: the tally and the question say the branches keep them", () => {
+  const items = [{ key: "a" }, { key: "b" }, { key: "c" }], counts = { a: 0, b: 0, c: 2 }, only = { a: 1, b: 0, c: 3 };
+  expect(tally(items, new Set(["a", "b"]), counts, only)).toBe("2 ticked · 1 with commits only on its branch");
+  expect(tally(items, new Set(["b"]), counts, only)).toBe("1 ticked");
+  expect(question(2, 0, 1)).toBe("Delete 2 worktrees? Their folders go; their branches stay. 1 has commits only there.");
+  expect(question(1, 0, 1)).toBe("Delete 1 worktree? Their folders go; their branches stay. It has commits only there.");
+  expect(question(2, 0, 0)).toBe("Delete 2 worktrees? Their folders go; their branches stay.");
+});
+
+test("onlyHereArgs: the same git question as Spaces' (mods can't import each other)", () => {
+  expect(onlyHereArgs("feat/x")).toEqual(spaces.onlyHereArgs("feat/x"));
+  expect(onlyHereArgs(null)).toEqual(spaces.onlyHereArgs(null));
 });

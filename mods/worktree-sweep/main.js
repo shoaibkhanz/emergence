@@ -10,7 +10,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex, ScrollHandle } from "gpui-base";
 import { run, props, closeOverlay, theme, exec, setShared } from "herdr";
-import { step, tick, plan, tally, question, choices, DIALOG } from "./lib.js";
+import { step, tick, plan, tally, question, choices, onlyHereArgs, DIALOG } from "./lib.js";
 
 const alpha = (c, a) => c.slice(0, 7) + Math.round(a * 255).toString(16).padStart(2, "0");
 
@@ -23,12 +23,15 @@ export default class WorktreeSweep extends View {
     const keys = new Set((props()?.items ?? []).map((it) => it.key));
     this.ticked = new Set((props()?.ticked ?? []).filter((k) => keys.has(k)));
     this.counts = {};
+    this.only = {}; // key -> commits only on its branch (the branch keeps them)
     this.cur = Math.max(0, (props()?.items ?? []).findIndex((it) => this.ticked.has(it.key))); // on the row it was opened from
     this.asking = null; // the confirm's { list, sel } while it asks
     for (const it of props()?.items ?? []) cx.spawn(async (cx) => {
       const st = await exec("git", ["-C", it.path, "status", "--porcelain"], { on: it.on }).catch(() => ({ code: 1 }));
       this.counts = { ...this.counts, [it.key]: st.code === 0 ? st.stdout.split("\n").filter(Boolean).length : null };
       cx.notify();
+      const only = await exec("git", ["-C", it.path, ...onlyHereArgs(it.branch)], { on: it.on }).catch(() => ({ code: 1 }));
+      if (only.code === 0) { this.only = { ...this.only, [it.key]: Number(only.stdout.trim()) }; cx.notify(); }
     });
   }
 
@@ -37,7 +40,7 @@ export default class WorktreeSweep extends View {
   picked() {
     const items = props()?.items ?? [];
     const p = plan(items, this.ticked, this.counts, false);
-    return { n: p.remove.length + p.skip.length, d: p.skip.length };
+    return { n: p.remove.length + p.skip.length, d: p.skip.length, c: items.filter((it) => this.ticked.has(it.key) && this.only[it.key] > 0).length };
   }
 
   // ↵ on the list: ask, once every ticked count is known.
@@ -73,6 +76,9 @@ export default class WorktreeSweep extends View {
     const on = this.ticked.has(it.key), n = this.counts[it.key], cur = i === this.cur && !this.asking;
     const tag = [it.repo, it.space ? "open" : "", it.archived ? "archived" : ""].filter(Boolean).join(" · ");
     const changes = n === undefined ? div().text_color(t.dim).child("…")
+      : n === 0 && this.only[it.key] > 0 ? h_flex().id(`wo-${i}`).gap(6).items_center().text_color(t.muted) // the branch keeps them
+        .tooltip(`${this.only[it.key]} commit${this.only[it.key] === 1 ? "" : "s"} only on ${it.branch ?? "no branch"}: not pushed or merged.`)
+        .child(div().size(6).rounded(3).bg(t.working)).child(`${this.only[it.key]} not merged`)
       : n === 0 ? div().text_color(t.dim).child("clean")
       : h_flex().gap(6).items_center().text_color(t.blocked) // the caution: Delete skips it unless forced
         .child(div().size(6).rounded(3).bg(t.blocked)).child(n === null ? "couldn't check" : `${n} change${n === 1 ? "" : "s"}`);
@@ -88,7 +94,7 @@ export default class WorktreeSweep extends View {
   }
 
   render() {
-    const t = theme(), items = props()?.items ?? [], a = this.asking, { n, d } = this.picked();
+    const t = theme(), items = props()?.items ?? [], a = this.asking, { n, d, c } = this.picked();
     const button = (id, label, on, danger, onClick) => h_flex().id(id).h(DIALOG.button).px(14).gap(6).items_center().rounded(8).cursor_pointer()
       .border_1().text_size(12).font_medium()
       .map((el) => on && danger ? el.bg(alpha(t.blocked, 0.18)).border_color(alpha(t.blocked, 0.5)).text_color(t.blocked)
@@ -114,7 +120,7 @@ export default class WorktreeSweep extends View {
           .when(!items.length, (el) => el.child(div().p(8).text_color(t.dim).child("No worktrees to delete.")))
           .children(items.map((it, i) => this.row(it, i, t)))))
       .child(v_flex().flex_none().gap(10)
-        .child(div().h(18).truncate().text_size(12).text_color(a && d ? t.blocked : t.muted).child(a ? question(n, d) : tally(items, this.ticked, this.counts)))
+        .child(div().h(18).truncate().text_size(12).text_color(a && d ? t.blocked : t.muted).child(a ? question(n, d, c) : tally(items, this.ticked, this.counts, this.only)))
         .child(h_flex().gap(8).children(row)));
   }
 }
