@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
-import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, sidebarCursor, openOnActive, filterCounts, activeNudge } from "./lib.js";
+import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, sidebarCursor, openOnActive, filterCounts, activeNudge,
+  RANK, subItems, subState, ago, harnessOf, subRequests, overlaps, conflictsOf } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -166,4 +167,69 @@ test("activeNudge: blocked beats working; nothing on Active, when disarmed, or w
   expect(activeNudge(FILTER_ITEMS, { onAll: false, armed: true })).toBe(null);
   expect(activeNudge(FILTER_ITEMS, { onAll: true, armed: false })).toBe(null);
   expect(activeNudge([{ agent: true, status: "done" }, { agent: false, status: "working" }], { onAll: true, armed: true })).toBe(null);
+});
+
+// In-process sub-agents (subagents.py's answer) hang off their agent as cards of their own.
+const MIN = 60000, NOW = 1_790_000_000_000;
+const SUB = (id, running, edited = [], extra = {}) => ({ id, title: `Task ${id}`, running, action: running ? "Run the tests" : null, edited, worktree: null, updatedAt: NOW - 4 * MIN, ...extra });
+const ed = (rel, ago, dirty = true) => ({ path: `/r/app/${rel}`, rel, at: NOW - ago * MIN, dirty });
+const AGENTS = [
+  { id: "t1", cwd: "/r/app", status: "idle", agent: true, name: "a", machine: null, program: { key: "claude" }, space: "s1" },
+  { id: "t2", cwd: "/r/app", status: "working", agent: true, name: "b", machine: null },
+];
+const SCAN = { t1: { edited: [], subagents: [SUB("x", false), SUB("y", true, [ed("a.js", 1), ed("b.js", 2, false)])] } };
+const subsOf = (tree, id) => tree.flatMap((r) => r.worktrees.flatMap((w) => w.agents)).find((a) => a.id === id)?.children ?? [];
+
+test("subItems: each sub-agent a child of its agent, running ones working, finished ones idle (never done)", () => {
+  const subs = subItems(AGENTS, SCAN);
+  expect(subs.map((s) => [s.id, s.parent, s.owner, s.status, s.name])).toEqual([["t1#x", "t1", "t1", "idle", "Task x"], ["t1#y", "t1", "t1", "working", "Task y"]]);
+  expect(subs[0]).toMatchObject({ cwd: "/r/app", agent: true, program: { key: "claude" }, space: "s1" });
+  expect(subItems(AGENTS, { gone: SCAN.t1, t2: { error: "boom" } })).toEqual([]); // not a live agent, or a failed read
+});
+
+test("buildTree: sub-agents under their agent, running first; its working raises the agent's rank", () => {
+  const tree = buildTree(AGENTS, git, prs, { subs: subItems(AGENTS, SCAN) });
+  expect(subsOf(tree, "t1").map((c) => c.id)).toEqual(["t1#y", "t1#x"]);
+  expect(tree[0].worktrees[0].agents.find((a) => a.id === "t1").rank).toBe(RANK.working);
+});
+
+test("Active only: finished sub-agents stay under a shown agent but never keep an idle one", () => {
+  const finished = { t1: { edited: [], subagents: [SUB("x", false)] } };
+  expect(subsOf(buildTree(AGENTS, git, prs, { activeOnly: true, subs: subItems(AGENTS, finished) }), "t1")).toEqual([]); // t1 dropped
+  const both = buildTree(AGENTS, git, prs, { activeOnly: true, subs: subItems(AGENTS, SCAN) });
+  expect(subsOf(both, "t1").map((c) => c.id)).toEqual(["t1#y", "t1#x"]);
+  expect(filterCounts(AGENTS)).toEqual({ active: 1, all: 2 }); // counts are terminals' only
+});
+
+test("subState: what a sub-agent card's state line says", () => {
+  expect(subState(SUB("y", true), NOW)).toBe("Working · Run the tests");
+  expect(subState({ ...SUB("y", true), action: null }, NOW)).toBe("Working");
+  expect(subState(SUB("x", false), NOW)).toBe("Finished 4m");
+  expect(ago(NOW - 30000, NOW)).toBe("now");
+  expect(ago(NOW - 2 * 3600000, NOW)).toBe("2h");
+});
+
+test("harnessOf / subRequests: local claude and omp agents with a pid, with their git top", () => {
+  expect([harnessOf("claude-code", null), harnessOf(null, "omp"), harnessOf(null, "nvim")]).toEqual(["claude", "omp", null]);
+  const items = [
+    { id: "t1", machine: null, agent: true, pid: 10, harness: "claude", cwd: "/r/app/src" },
+    { id: "mini/t2", machine: "mini", agent: true, pid: 11, harness: "claude", cwd: "/r/app" }, // another machine: v1 skips
+    { id: "t3", machine: null, agent: true, pid: 12, harness: "codex", cwd: "/r/app" },
+    { id: "t4", machine: null, agent: true, pid: null, harness: "omp", cwd: "/r/app" },
+  ];
+  expect(subRequests(items, (i) => GIT[i.cwd]?.top ?? null)).toEqual([{ address: "t1", pid: 10, harness: "claude", top: "/r/app" }]);
+});
+
+test("overlaps: two live agents or running sub-agents with the same uncommitted file in 15 min", () => {
+  const scan = {
+    t1: { edited: [ed("a.js", 3)], subagents: [SUB("y", true, [ed("a.js", 1), ed("b.js", 2)]), SUB("z", true, [ed("c.js", 1, false)]), SUB("old", false, [ed("b.js", 1)])] },
+    t2: { edited: [ed("b.js", 20), ed("c.js", 1, false), ed("d.js", 1)], subagents: [SUB("w", true, [ed("d.js", 5)])] },
+    t3: { error: "boom" },
+  };
+  const ov = overlaps(scan, NOW);
+  expect([...ov.keys()]).toEqual(["/r/app/a.js", "/r/app/d.js"]); // b.js: t2's edit is old, "old" finished; c.js committed
+  expect(ov.get("/r/app/a.js")).toEqual({ rel: "a.js", who: ["t1", "t1#y"] });
+  expect(ov.get("/r/app/d.js").who).toEqual(["t2", "t2#w"]);
+  expect(conflictsOf(ov, (id) => id === "t2#w")).toEqual(["d.js"]);
+  expect(conflictsOf(ov, (id) => id.startsWith("t1"))).toEqual(["a.js"]);
 });

@@ -1,13 +1,16 @@
 // Agent graph: every live terminal as repo -> worktree (branch + PR) -> agent -> sub-agent.
-// Live data re-renders; git facts (30 s) and `gh pr list` (60 s) are cached per cwd / repo.
+// Live data re-renders; git facts (30 s) and `gh pr list` (60 s) are cached per cwd / repo. In-process sub-agents
+// (Claude Code's Task/Agent, omp's task) come from subagents.py: with each refresh, and every 5 s while one works.
 // props().panel: lives in the emergence layout's right panel (block "graph") instead of a popup.
 
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
-import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout } from "herdr";
-import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge } from "./lib.js";
+import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout, appHome } from "herdr";
+import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge,
+  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf } from "./lib.js";
 
-const GIT_TTL = 30000, PR_TTL = 60000;
+const GIT_TTL = 30000, PR_TTL = 60000, SUB_FAST = 5000;
+const MAX_FILES = 8; // a selected sub-agent's edited files listed under its card
 const ZMIN = 0.3, ZMAX = 2, ZFIT = 1, PAD = 48;
 // A panel keeps graph text readable: narrower than this zoom it shows the tree as a list.
 const PANEL_PAD = 24, PANEL_Z = 0.6;
@@ -74,6 +77,9 @@ export default class AgentGraph extends View {
     this.view = null; // { x, y, z } once the person pans or zooms; null = fitted
     this.offsets = new Map(JSON.parse(localStorage.getItem("offsets") || "[]")); // node id -> { x, y } the person dragged it by
     this.sel = null;
+    this.subs = {}; // subagents.py's last answer: address -> { edited, subagents }
+    this.subsJSON = "{}";
+    this.subsLoop = false;
     this.h = cx.focus_handle();
     if (this.panel) cx.timer.every(250, (cx) => { if (this.h.is_focused() !== this.held) cx.notify(); }); // no blur event (comeBack)
     if (!this.panel) {
@@ -105,6 +111,7 @@ export default class AgentGraph extends View {
       const tab = tabs.get(a?.tab ?? (lbl && machine ? `${machine}/${lbl}` : lbl));
       return {
         id: x.address, parent: x.parent ?? null, machine, cwd, agent, program,
+        pid: x.foreground?.pid ?? x.pid ?? null, harness: harnessOf(a?.app, program?.key),
         status: s in RANK ? s : "idle",
         name: cleanTitle(a?.title || x.title || x.name) || (agent ? program?.name : cwd?.split("/").filter(Boolean).pop()) || x.address,
         kind: agent ? null : x.foreground?.name ?? program?.name ?? "terminal",
@@ -118,6 +125,7 @@ export default class AgentGraph extends View {
     if (this.busy && Date.now() - this.busy < 60000) return;
     const me = this.busy = Date.now();
     const items = this.items();
+    this.pollSubs(cx);
     cx.spawn(async (cx) => {
       try {
         await cx.sleep(16); // host calls made before a copy's first frame never resolve
@@ -141,12 +149,59 @@ export default class AgentGraph extends View {
     });
   }
 
+  // In-process sub-agents: read once per refresh, then every 5 s while something works and the graph shows; one loop
+  // at a time, never spinning ↻ (busy). No timer of its own: it lives in the refresh's task.
+  pollSubs(cx) {
+    if (this.subsLoop) return;
+    this.subsLoop = true;
+    cx.spawn(async (cx) => {
+      try {
+        for (let i = 0; i < 100 && !this.loaded; i++) await cx.sleep(50); // git tops first: files show worktree-relative
+        for (;;) {
+          await this.readSubs(cx);
+          if (!this.shown() || !this.lively()) break;
+          await cx.sleep(SUB_FAST);
+          if (!this.shown()) break;
+        }
+      } finally {
+        this.subsLoop = false;
+      }
+    });
+  }
+
+  lively() {
+    return this.items().some((i) => i.status === "working") || Object.values(this.subs).some((a) => a.subagents?.some((s) => s.running));
+  }
+
+  // One subagents.py run for this computer's claude and omp agents; redraws only when its answer changed. A failed run
+  // keeps the last answer.
+  async readSubs(cx) {
+    const req = subRequests(this.items(), (i) => this.git.get(key(i.machine, i.cwd))?.v?.top ?? null);
+    let agents = {};
+    if (req.length) {
+      try {
+        const r = await exec("python3", ["-B", `${appHome()}/mods/agent-graph/subagents.py`, "--json", JSON.stringify(req)], { timeout: 20000 });
+        const o = r.code === 0 ? JSON.parse(r.stdout) : null;
+        if (!o?.agents) return;
+        agents = o.agents;
+      } catch {
+        return;
+      }
+    }
+    const json = JSON.stringify(agents);
+    if (json === this.subsJSON) return;
+    this.subsJSON = json;
+    this.subs = agents;
+    cx.notify();
+  }
+
   dismiss() {
     if (!this.panel) closeOverlay(props().overlay);
   }
 
+  // A sub-agent has no terminal of its own: its agent's.
   focusAgent(n) {
-    run("agent.focus", { terminal: n.id });
+    run("agent.focus", { terminal: n.owner ?? n.id });
     this.dismiss();
   }
 
@@ -231,7 +286,10 @@ export default class AgentGraph extends View {
     if (shown && !this.busy && items.some((i) => i.cwd && !this.git.has(key(i.machine, i.cwd)))) this.refresh(cx);
     const cursor = sidebarCursor(shared("inbox.cursor"), shared("spaces.cursor")); // where the sidebar's keyboard is
     const foc = focused()?.terminal ?? null;
-    const tree = buildTree(items, (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined, { activeOnly: this.activeOnly, cursor, focused: foc }); // marks here: lib
+    this.now = Date.now();
+    this.ov = overlaps(this.subs, this.now); // files two live writers both have uncommitted (lib)
+    const tree = buildTree(items, (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined,
+      { activeOnly: this.activeOnly, cursor, focused: foc, subs: subItems(items, this.subs) }); // marks here: lib
     const L = graphLayout(tree), M = this.moved(L); // M: with the person's dragged offsets
     const list = this.panel && this.loaded && !!this.size && (this.size.width - 2 * PANEL_PAD) / Math.max(1, L.width) < PANEL_Z;
     const walk = (a) => [{ data: a }, ...a.children.flatMap(walk)];
@@ -317,16 +375,20 @@ export default class AgentGraph extends View {
     const agent = (a, depth) => {
       const loud = a.status === "blocked", tone = loud ? t.blocked : a.status === "working" ? t.working : null, sel = this.sel === a.id, p = a.program;
       const ic = p?.icon ? (p.tint ? svg(p.icon).size(14).flex_none().text_color(t.foreground) : image(p.icon).w(14).h(14).flex_none()) : null;
+      const sub = a.sub, warn = conflictsOf(this.ov, (id) => id === a.id), tip = sub ? this.fileTip(sub) : a.tab;
       rows.push(row(`l:${a.id}`, depth).border_1().border_color(a.here ? t.accent : alpha(t.border, 0)).cursor_pointer()
         .when(!!tone, (el) => el.bg(alpha(tone, 0.08))).when(sel && !tone, (el) => el.bg(t.selected))
         .hover((s) => s.bg(tone ? alpha(tone, 0.14) : t.hover))
-        .when(!!a.tab, (el) => el.tooltip(a.tab))
-        .on_click(() => this.focusAgent(a))
+        .when(!!tip, (el) => el.tooltip(tip))
+        .on_click(() => { if (sub) this.sel = a.id; this.focusAgent(a); })
         .child(this.dot(t, a.status, 8))
         .when(!!ic, (el) => el.child(ic))
         .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(a.name))
+        .when(warn.length > 0, (el) => el.child(this.warn(t, `w-${a.id}`, warn, 1, false)))
         .child(div().flex_none().text_size(11).text_color(loud ? t.blocked : t.dim).when(loud, (el) => el.font_semibold())
-          .child(a.agent ? WORD[a.status] : a.kind)));
+          .child(sub ? (sub.running ? WORD.working : subState(sub, this.now)) : a.agent ? WORD[a.status] : a.kind))
+        .when(!!sub?.edited.length, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(`✎ ${sub.edited.length}`))));
+      if (sub && sel) for (const e of sub.edited.slice(0, MAX_FILES)) rows.push(row(`l:${a.id}|${e.path}`, depth + 1).h(22).child(this.file(t, e, 1)));
       for (const c of a.children) agent(c, depth + 1);
     };
     for (const r of tree) {
@@ -343,6 +405,7 @@ export default class AgentGraph extends View {
           .child(svg(ICON(git ? "branch" : "folder")).size(14).flex_none().text_color(t.muted))
           .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(git ? w.branch ?? "detached" : w.name))
           .when(!!ab, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(ab)))
+          .map((el) => { const f = this.worktreeConflicts(w); return f.length ? el.child(this.warn(t, `w-${w.id}`, f, 1, true)) : el; })
           .when(!!w.pr, (el) => el.child(this.chip(t, w, 1))));
         for (const a of w.agents) agent(a, 2);
       }
@@ -404,7 +467,7 @@ export default class AgentGraph extends View {
       .when(!!action, (el) => el.child(h_flex().id("ag-empty-action").mt(4).h(24).px(10).items_center().rounded(6).border(1).border_color(t.input)
         .text_size(12).text_color(t.foreground).cursor_pointer().hover((s) => s.bg(t.hover))
         .on_click((_e, cx) => { action[1](); cx.notify(); }).child(action[0]))));
-    if (!items.some((i) => i.agent)) return quiet("No agents running.", "Start an agent (Claude Code, Codex, pi…) in any terminal and it appears here. Sub-agents started with hc run hang off their parent.");
+    if (!items.some((i) => i.agent)) return quiet("No agents running.", "Start an agent (Claude Code, Codex, pi…) in any terminal and it appears here. Sub-agents (hc run, Claude Code's Task, omp's task) hang off their parent.");
     if (!this.loaded) return quiet("Reading repositories…");
     if (!tree.length) return quiet("Nothing active right now.", null, ["Show all", () => { this.activeOnly = false; }]);
 
@@ -434,6 +497,8 @@ export default class AgentGraph extends View {
     for (const st of [...STATUS].reverse()) if (paths.has(st)) els.push(layer(paths.get(st).build(), ink[st]));
 
     for (const n of L.nodes) els.push(this.node(t, n, X(n.x), Y(n.y), z));
+    const open = L.nodes.find((n) => n.data.id === this.sel && n.data.sub?.edited.length);
+    if (open) els.push(this.files(t, open, X(open.x), Y(open.y), z));
     // Zoom controls (⌘/ctrl-scroll and - / = zoom too): − · the zoom (click: fit) · +.
     const zb = (id, tip, label, onClick) => h_flex().id(id).h(24).px(8).items_center().justify_center().text_size(12).text_color(t.muted)
       .cursor_pointer().tooltip(tip).hover((s) => s.bg(t.hover).text_color(t.foreground))
@@ -489,26 +554,81 @@ export default class AgentGraph extends View {
           .when(!!ab, (el) => el.child(div().flex_none().text_size(11 * z).text_color(t.dim).child(ab))))
         .child(h_flex().gap(8 * z).items_center()
           .child(div().flex_1().min_w(0).truncate().text_size(11 * z).text_color(t.dim).child(path))
+          .map((el) => { const f = this.worktreeConflicts(d); return f.length ? el.child(this.warn(t, `w-${d.id}`, f, z, true)) : el; })
           .when(!!d.pr, (el) => el.child(this.chip(t, d, z))));
     }
     const loud = d.status === "blocked", tone = loud ? t.blocked : d.status === "working" ? t.working : null; // working stands out too
     const sel = this.sel === d.id;
+    const sub = d.sub, warn = conflictsOf(this.ov, (id) => id === d.id); // sub: an in-process sub-agent (lib subItems)
     const p = d.program;
     const icon = p?.icon ? (p.tint ? svg(p.icon).size(16 * z).flex_none().text_color(t.foreground) : image(p.icon).w(16 * z).h(16 * z).flex_none()) : null;
     return this.card(t, n, x, y, z, tone)
       .when(sel && !tone, (el) => el.bg(t.selected))
       .cursor_pointer()
       .hover((s) => s.bg(tone ? mix(t.background, tone, 0.14) : sel ? t.selected : t.raised).border_color(isFoc ? t.accent : tone ?? t.input).shadow_sm())
-      .on_click(() => { if (!this.drag?.moved) this.focusAgent(d); }) // a pan that started on the card isn't a click
+      .on_click(() => { if (this.drag?.moved) return; if (sub) this.sel = d.id; this.focusAgent(d); }) // a pan that started on the card isn't a click
+      .when(!!sub, (el) => el.tooltip(this.fileTip(sub)))
       .map((el) => this.ring(t, el, n, z, isFoc))
       .child(h_flex().gap(8 * z).items_center()
         .when(!!icon, (el) => el.child(icon))
         .child(div().flex_1().min_w(0).truncate().text_size(13 * z).font_semibold().text_color(t.foreground).child(d.name)))
       .child(h_flex().gap(6 * z).items_center()
         .child(this.dot(t, d.status, 8 * z))
-        .child(div().flex_none().text_size(12 * z).text_color(loud ? t.blocked : t.muted).when(loud, (el) => el.font_semibold())
-          .child(d.agent ? WORD[d.status] : d.kind))
-        .child(div().flex_1().min_w(0).truncate().text_right().text_size(11 * z).text_color(t.dim).child(d.tab ?? (d.parent ? "sub-agent" : ""))));
+        .child(sub // "Working · Run the tests" / "Finished 4m", and its edited files' count in the dim slot
+          ? div().flex_1().min_w(0).truncate().text_size(12 * z).text_color(t.muted).child(subState(sub, this.now))
+          : div().flex_none().text_size(12 * z).text_color(loud ? t.blocked : t.muted).when(loud, (el) => el.font_semibold())
+            .child(d.agent ? WORD[d.status] : d.kind))
+        .when(warn.length > 0, (el) => el.child(this.warn(t, `w-${d.id}`, warn, z, false)))
+        .child(sub ? div().flex_none().text_size(11 * z).text_color(t.dim).child(sub.edited.length ? `✎ ${sub.edited.length}` : "")
+          : div().flex_1().min_w(0).truncate().text_right().text_size(11 * z).text_color(t.dim).child(d.tab ?? (d.parent ? "sub-agent" : ""))));
+  }
+
+  // ---- What sub-agents touch ----
+
+  fileName(e) {
+    return e.rel ?? e.path.replace(home(), "~");
+  }
+
+  // The hover label: tooltips take plain text.
+  fileTip(s) {
+    if (!s.edited.length) return s.running ? subState(s, this.now) : "No files edited";
+    const more = s.edited.length - MAX_FILES;
+    const where = s.worktree ? ` in ${s.worktree.split("/").pop()}` : ""; // an isolated sub-agent's own worktree
+    return [`${s.edited.length} edited${where} · ● uncommitted`, ...s.edited.slice(0, MAX_FILES).map((e) => `${e.dirty ? "●" : "  "} ${this.fileName(e)}`),
+      ...(more > 0 ? [`+${more} more`] : [])].join("\n");
+  }
+
+  // One edited file: a dot while it's still uncommitted, worktree-relative, newest first (subagents.py's order).
+  file(t, e, z) {
+    return h_flex().gap(6 * z).items_center().min_w(0).flex_1()
+      .child(div().size(6 * z).flex_none().rounded(6 * z).when(e.dirty, (el) => el.bg(t.accent)))
+      .child(div().flex_1().min_w(0).truncate().text_size(11 * z).text_color(e.dirty ? t.foreground : t.muted).child(this.fileName(e)));
+  }
+
+  // The selected sub-agent's edited files, under its card.
+  files(t, n, x, y, z) {
+    const s = n.data.sub, more = s.edited.length - MAX_FILES;
+    return v_flex().absolute().left(x).top(y + (n.h + 6) * z).w(n.w * z).p(8 * z).gap(3 * z).rounded(8 * z)
+      .border(1).border_color(t.border).bg(t.surface).shadow_lg()
+      .child(h_flex().gap(6 * z).items_center().text_size(11 * z).text_color(t.dim)
+        .child(div().flex_1().child(`${s.edited.length} edited`))
+        .child(div().size(6 * z).flex_none().rounded(6 * z).bg(t.accent)).child("uncommitted"))
+      .children(s.edited.slice(0, MAX_FILES).map((e) => h_flex().h(18 * z).child(this.file(t, e, z))))
+      .when(more > 0, (el) => el.child(div().text_size(11 * z).text_color(t.dim).child(`+${more} more`)));
+  }
+
+  // Files two agents or sub-agents in a worktree's tree both edited and haven't committed (lib overlaps).
+  worktreeConflicts(w) {
+    const ids = new Set(w.agents.flatMap(function walk(a) { return [a.id, ...a.children.flatMap(walk)]; }));
+    return conflictsOf(this.ov, (id) => ids.has(id));
+  }
+
+  // ⚠ in the blocked tone: on a card alone, on a worktree with the file (+N).
+  warn(t, id, files, z, named) {
+    const label = named ? `⚠ ${files[0].split("/").pop()}${files.length > 1 ? ` +${files.length - 1}` : ""}` : "⚠";
+    return h_flex().id(id).flex_none().h(18 * z).px(6 * z).items_center().rounded(5 * z).border(1).border_color(alpha(t.blocked, 0.35))
+      .bg(alpha(t.blocked, 0.12)).text_size(11 * z).text_color(t.blocked)
+      .tooltip(`Edited by two agents and not committed:\n${files.join("\n")}`).child(label);
   }
 
   // Beautiful UI "tool chip": icon + state, tinted by what it means.

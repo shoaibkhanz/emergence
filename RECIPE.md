@@ -252,6 +252,18 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
   - Drag a card to move it; drag empty space to pan; R resets the layout.
   - The wheel zooms, a trackpad scroll pans, ⌘-scroll zooms. The − / % / + control sits bottom-right, and the % fits.
   - A narrow panel shows the same tree as a list.
+  - In-process sub-agents (Claude Code's Task/Agent, omp's `task`; Herdr sees only terminals, so these come from their
+    logs through `subagents.py`) are cards under their agent, beside `hc run` ones: running first, finished ones for
+    30 min, in both views (Active never drops one by itself, and a finished one never keeps its agent there). The
+    card: the task's title; its state line "Working · <what it's doing now>" (a Bash call's description, omp's intent,
+    else "Edit <file>") or "Finished 4m"; "✎ N" edited files in the dim slot. Hovering lists the files; selecting it
+    (↑/↓, a click) lists them under the card (the list view: under the row), worktree-relative, newest first, with a
+    dot on those still uncommitted. A click focuses its agent's terminal. Read on each refresh and every 5 s while an
+    agent or sub-agent works and the graph shows, in the refresh's task (no timer of its own); a redraw only when
+    the answer changed. This computer only; pi, Codex and OpenCode aren't read yet.
+  - Overlap: a file two live writers (agents, running sub-agents) in a worktree both edited in the last 15 min and
+    haven't committed puts a ⚠ chip (`t.blocked`) on both cards and the file (+N) on the worktree card's chip row
+    (`lib.js` `overlaps`).
   - Behind the graph, a fine film grain gives the canvas depth (`mods/agent-graph/grain.png`, 512px, light and dark
     specks, tiled at 256px at 10% (`GRAIN_OPACITY`), fixed to the viewport); working and blocked cards are an opaque
     blend (`lib.js` `mix`), so nothing shows through them. Header icon buttons have no box, as in every panel.
@@ -419,7 +431,13 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
   --porcelain` per row), `setShared("spaces.sweep" | "emergence.over")`, `run("spaces-plus.sweep")`. `lib.js`
   (`plan`, `tally`, `question`, `choices`, `tick`, `step`) is pure and tested.
 - **`mods/agent-graph`**: `lib.js` builds the tree and lays it out. It runs `git rev-parse` per folder (30s cache) and
-  `gh pr list` per repo (60s), and draws edges with `PathBuilder` + `window.paint_path`.
+  `gh pr list` per repo (60s), and draws edges with `PathBuilder` + `window.paint_path`. `subagents.py` (python3
+  stdlib, tested by `test_subagents.py`) takes the local claude and omp agents (`{address, pid, harness, top}`) and
+  prints their sub-agents and recent edits: Claude by pid → `~/.claude/sessions/<pid>.json` → `~/.claude/projects/*/
+  <sessionId>/subagents/agent-<id>.jsonl` + `.meta.json`; omp by tty → `~/.omp/agent/terminal-sessions/<tty>` → the
+  session's `<session>/<Task>.jsonl` (nested a level down; `__*` skipped). Edited = Edit/Write paths plus the files a
+  Bash call changed (`bashEditDiff`), omp's edit/write paths; uncommitted from `git status --porcelain -z`. Each log
+  is read from a byte offset kept in `data/agent-graph/subagents.json`.
 - **`mods/pr-review`**: `github.js` (gh api) and `gitlab.js` (glab api), the same functions and shapes; `gitlab-map.js`
   maps GitLab's JSON to them (pure, tested); `lib.js` parses diffs, builds the file tree and handles tag bodies.
 - **`mods/skills`**: finds skills with `find` and reads `~/.claude/plugins/installed_plugins.json`.
@@ -453,7 +471,9 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
   `mods/agent-graph/branch.svg` and reads tabs-plus's `jump.recent`. Inbox and the graph call `tabs-plus.*` commands.
   If a name clashes and you rename a mod, rename these references too.
 - **Programs and files outside each mod's folder.**
-  - `agent-graph`, `pr-review`: run `git` and `gh`, and post to GitHub on comment actions.
+  - `agent-graph`, `pr-review`: run `git` and `gh`, and post to GitHub on comment actions. `agent-graph` also runs
+    `python3` on its `subagents.py`, which reads `~/.claude` and `~/.omp` session logs and runs `ps` and `git status`;
+    only file paths and short labels (a Bash call's description, omp's intent) come out, never commands or prompts.
   - `skills`: reads the skill folders.
   - `usage`: runs `python3` on its own scripts, which read `~/.omp`, `~/.claude`, `~/.codex`, `~/.local/share/opencode`
     and `~/.pi` session logs and run `git`, `gh` and `glab`. Only counts, models and timestamps are read, never prompt
@@ -492,7 +512,8 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
 - `herdr-app check` passes for agent-graph, inbox, jump, nav-keys, pr-review, skills, spaces-plus, tabs-plus and usage.
 - `herdr-app do layout.switch --name emergence` shows Spaces and an Inbox in the sidebar.
 - `herdr-app do tabs-plus.graph`, then `.prs`, `.skills` and `.usage`, each open their panel. `bun test` passes in
-  agent-graph, pr-review, skills, spaces-plus and usage, and `python3 mods/usage/test_scan.py` passes.
+  agent-graph, pr-review, skills, spaces-plus and usage, and `python3 mods/usage/test_scan.py`, `python3
+  mods/side/test_side.py` and `python3 mods/agent-graph/test_subagents.py` pass.
 - A terminal printing `\033]7501;state=blocked:app=claude\033\\` shows a "Needs you" row. `tabs-plus.thinner` then
   folds to the rail with a count badge, again to dots with the number, and once more opens the sidebar.
 - With a repo open as a space and another worktree of it (`git worktree add`), that worktree shows greyed under it;

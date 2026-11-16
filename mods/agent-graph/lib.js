@@ -45,14 +45,17 @@ const repoName = (common) => (common.endsWith("/.git") ? tail(common.slice(0, -5
  * prs: (machine, common) -> Map branch -> PR, or undefined while unknown
  * cursor: where the sidebar's keyboard is (sidebarCursor): { kind: "agent", id } an Inbox card, { kind: "space", id },
  *   { kind: "worktree", on, path } a worktree no space has open; null: the focused terminal (focused) is where you are.
+ * subs: in-process sub-agents as items (subItems): children of their agent; Active only never drops one by itself, and
+ *   a finished one never keeps its agent.
  * -> repos [{ id, kind, name, machine, rank, worktrees: [{ id, kind, top, branch, path, ahead, behind, pr, rank, here, agents: [item + rank + here + children] }] }]
  * here marks where you are (the graph rings it): an agent for an Inbox card or the focused terminal, the worktrees of a
  * space's agents, an unopened worktree's own. Active only still draws what the sidebar cursor marks, so its ring has a card.
  */
-export function buildTree(items, git, prs, { activeOnly = false, cursor = null, focused = null } = {}) {
-  const ids = new Set(items.map((i) => i.id));
+export function buildTree(items, git, prs, { activeOnly = false, cursor = null, focused = null, subs = [] } = {}) {
+  const all = [...items, ...subs];
+  const ids = new Set(all.map((i) => i.id));
   const kids = new Map();
-  const nodes = items.map((i) => ({ ...i, children: [] }));
+  const nodes = all.map((i) => ({ ...i, children: [] }));
   for (const n of nodes) if (n.parent && ids.has(n.parent) && n.parent !== n.id) (kids.get(n.parent) ?? kids.set(n.parent, []).get(n.parent)).push(n);
   const inSpace = (n) => cursor?.kind === "space" && n.space === cursor.id;
   // Most urgent status in a subtree; Active only drops idle ones, but not the sidebar cursor's, a space's agents, or one
@@ -61,8 +64,8 @@ export function buildTree(items, git, prs, { activeOnly = false, cursor = null, 
     n.children = (kids.get(n.id) ?? []).map(settle).filter(Boolean).sort(byRank);
     n.rank = Math.min(rank(n.status), ...n.children.map((c) => c.rank));
     n.here = cursor ? cursor.kind === "agent" && n.id === cursor.id : n.id === focused;
-    const kept = (cursor && n.here) || inSpace(n) || n.children.some((c) => c.rank === RANK.idle);
-    return activeOnly && n.rank === RANK.idle && !kept ? null : n;
+    const kept = (cursor && n.here) || inSpace(n) || n.children.some((c) => c.rank === RANK.idle && !c.sub);
+    return activeOnly && n.rank === RANK.idle && !kept && !n.sub ? null : n;
   };
   const spaceIn = (a) => inSpace(a) || a.children.some(spaceIn);
   const worktreeHere = (w) => cursor?.kind === "space" ? w.agents.some(spaceIn)
@@ -154,3 +157,46 @@ export function filterCounts(items) {
   return { active: agents.filter((i) => i.status !== "idle").length, all: agents.length };
 }
 
+
+// ---- In-process sub-agents: Claude Code's Task/Agent and omp's task (subagents.py reads their logs) ----
+
+// What Herdr reports (an agent's OSC app name, or a program's key) -> subagents.py's harness (as mods/side lib.js).
+const HARNESS = { "claude-code": "claude", claude: "claude", opencode: "opencode", codex: "codex", pi: "pi", omp: "omp" };
+export const harnessOf = (app, programKey) => HARNESS[app] ?? HARNESS[programKey] ?? null;
+const READ = ["claude", "omp"]; // pi, Codex, OpenCode: not read yet
+
+// What subagents.py is asked about: this computer's claude and omp agents (remote machines: not yet), with their git top.
+export const subRequests = (items, top) => items.filter((i) => !i.machine && i.agent && i.pid && READ.includes(i.harness))
+  .map((i) => ({ address: i.id, pid: i.pid, harness: i.harness, top: top(i) }));
+
+// subagents.py's agents (address -> { edited, subagents } | { error }) -> items for buildTree's subs: running ones
+// work, finished ones are idle (never done: that's news only a terminal brings).
+export const subItems = (items, scan) => items.flatMap((i) => (scan?.[i.id]?.subagents ?? []).map((s) => ({
+  id: `${i.id}#${s.id}`, parent: i.id, owner: i.id, machine: i.machine, cwd: i.cwd, agent: true, program: i.program,
+  status: s.running ? "working" : "idle", name: s.title, tab: null, space: i.space ?? null, sub: s,
+})));
+
+export const ago = (at, now) => { const m = Math.floor((now - at) / 60000); return m < 1 ? "now" : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h`; };
+
+// A sub-agent card's state line.
+export const subState = (s, now) => (s.running ? (s.action ? `Working · ${s.action}` : "Working") : `Finished ${ago(s.updatedAt, now)}`);
+
+export const OVERLAP = 15 * 60000;
+
+// Files two live writers (an agent, or a running sub-agent) both edited within OVERLAP and that are still uncommitted:
+// path -> { rel, who: [ids] }. Same path, same worktree. Finished sub-agents are history, not writers.
+export function overlaps(scan, now, window = OVERLAP) {
+  const by = new Map();
+  const add = (id, edited) => { for (const e of edited ?? []) if (e.dirty && now - e.at <= window) {
+    const o = by.get(e.path) ?? by.set(e.path, { rel: e.rel ?? e.path, who: [] }).get(e.path);
+    if (!o.who.includes(id)) o.who.push(id);
+  } };
+  for (const [address, a] of Object.entries(scan ?? {})) {
+    add(address, a.edited);
+    for (const s of a.subagents ?? []) if (s.running) add(`${address}#${s.id}`, s.edited);
+  }
+  return new Map([...by].filter(([, o]) => o.who.length > 1));
+}
+
+// The overlapping files any of `mine` (an id test) is writing.
+export const conflictsOf = (ov, mine) => [...ov.values()].filter((o) => o.who.some(mine)).map((o) => o.rel);
