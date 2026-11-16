@@ -29,9 +29,22 @@ Screenshots use made-up data.
 
 ![Agents panel](docs/images/agents.png)
 
-Every agent as repo → worktree (with its PR) → agent → sub-agents. Blocked in red, working in amber, done in green;
-**Active | All** at the top right (← / →): it opens on Active while an agent works or needs you, else on All. On All, a dot by Active's count says something has started working or needs you. Click an agent
-to jump to it, a PR to review it.
+Every agent as repo → worktree (with its PR) → agent → sub-agents, Claude Code's and omp's in-process ones included.
+Blocked in red, working in amber, done in green; **Active | All** at the top right (A): it opens on Active while an
+agent works or needs you, else on All. Every card shows its tool calls and cost (⚒ 22 · ≈ $1.44; ≈ is an estimate at
+API prices on a subscription), a worktree adds up everything under it, and ✎ counts the files a sub-agent edited.
+Finished sub-agents fold into "4 earlier sub-agents"; ← / → or the chevrons fold and unfold any card. **Graph | List**
+switches the view. Click an agent to jump to it, a PR to review it.
+
+![A sub-agent's details: overview and steps](docs/images/subagent-details.png)
+
+Click a sub-agent (or ↵) for **what it did**:
+- **Overview**: tool calls (and how many failed), how long it ran, tokens and model, cost, the kinds of work it did, its task and its result.
+- **Steps**: every tool call on a timeline with how long it took, failures in red. Runs of the same kind fold, and Space opens one to show its command and the start of its output.
+- **Files**: what it edited (uncommitted marked) and what it read.
+
+It refreshes every 5 s while the sub-agent runs; **Go to agent** (↵) jumps to the agent that started it. Transcripts
+are read when you open them and never stored; Claude Code keeps them about 30 days.
 
 ### PRs (⌘⇧R)
 
@@ -99,8 +112,18 @@ session it has read.
   still runs (amber past an hour); a half-strength icon means probably that agent (started in the background, matched
   by folder); a globe means your network can reach it. Click (or ↵) for its card: address, agent, command, uptime, CPU
   and memory, with Open, Go to agent and Stop (asks first, and checks the process still holds the port).
+  Deleting a clean worktree whose branch has commits nowhere else (not pushed or merged) says so in amber; the branch
+  keeps them. ⇧← ticks several worktrees to delete at once.
 - **Working N**, the last row: opens the graph on what's working (everything at 0).
 - **Sizes**: open, rail, dots (⌘B, ⌘⌥B).
+
+### Settings (⌘⌥,)
+
+<img src="docs/images/settings.png" alt="Emergence settings" width="400">
+
+Every switch the mods keep, in one dialog, saved as you change it: how far back Agents lists finished sub-agents
+(1 day, 1 week or 30 days), the sidebar's fold, side-by-side diffs, the Library's window size, and which harnesses a
+side chat (⌘⌥/) opens for.
 
 ### Status bar
 
@@ -124,6 +147,7 @@ or menu to Spaces, the Inbox or the panel you opened it from; a panel's window o
 |---|---|---|
 | ⌘E | everywhere | Jump |
 | ⌘⇧/ | layout | every Emergence key (⌘/ is Herdr's) |
+| ⌘⌥, | layout | Emergence settings |
 | ⌘⇧A · ⌘⇧R · ⌘⇧K · ⌘⇧U | layout | Agents · PRs · Library · Usage |
 | ⌘⇧I | layout | keyboard into the Inbox |
 | ⌘⇧O | layout | worktrees of this repo |
@@ -132,6 +156,8 @@ or menu to Spaces, the Inbox or the panel you opened it from; a panel's window o
 | ← → | Spaces | repo: fold · worktree: delete / archive |
 | ctrl-j · ctrl-k · ctrl-l | sidebar | down (Spaces → Inbox → Ports → Side chats) · up · back to the terminal (also Esc) |
 | ↵ · ← | Ports | the port's card · stop it (asks first) |
+| ↑ ↓ · ← → · A · ↵ | Agents | select · fold / unfold · Active or All · open (a sub-agent: its details) |
+| ← → · ↑ ↓ · Space · ↵ | sub-agent details | tabs · move · open a step · go to its agent |
 | ↑ ↓ · ← → · ↵ · Esc | panels | list · tabs · open · step back, then back to the terminal |
 | ⌘F · [ ] | PRs | find · previous / next commit |
 | ctrl-h/j/k/l | terminals | between panes ([optional](#optional-ctrlhjkl-between-panes)) |
@@ -140,7 +166,10 @@ Not ⌘⇧J (Homerow's scroll mode); not ⌘⇧B (Blueprint).
 
 ## What it runs
 
-- **Agents**: `git rev-parse` per agent folder; `gh pr list` (or `glab mr list`) per repo each minute.
+- **Agents**: `git rev-parse` per agent folder; `gh pr list` (or `glab mr list`) per repo each minute;
+  `mods/agent-graph/subagents.py` reads Claude Code's and omp's session logs for sub-agents, tool calls and cost
+  (file paths, short labels and counts only, cached in Herdr's `data/agent-graph/`), and a sub-agent's whole
+  transcript only while its details are open (never cached).
 - **PRs**: `git` and `gh` (or `glab`, by the repo's remote) in the focused repo; comments go through that forge's API.
 - **Library**: lists the skill folders above and `~/.claude/plugins/installed_plugins.json`.
 - **Usage**: `mods/usage/scan.py` reads session logs (counts, models, timestamps, and the `git commit` calls agents
@@ -195,7 +224,7 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/edi
 | `mods/jump` | ⌘E |
 | `mods/emergence-keys` | ⌘⇧/ |
 | `mods/emergence-settings` | ⌘⌥, |
-| `mods/confirm-safe`, `row-menu` | Cancel-first confirm; right-click menu |
+| `mods/confirm-safe`, `row-menu`, `worktree-sweep` | Cancel-first confirm; right-click menu; bulk worktree delete |
 | `mods/nav-keys` | ctrl-h/j/k/l |
 | `layouts/emergence.json` | the layout |
 | `RECIPE.md` | how to rebuild it |
@@ -204,7 +233,8 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/edi
 
 ```sh
 herdr-app check ~/.config/herdr-app/mods/<name>   # load and render once
-(cd mods/<name> && bun test)                      # Usage also: python3 mods/usage/test_scan.py
+(cd mods && bun test)                              # every mod; also python3 mods/usage/test_scan.py,
+                                                  # python3 mods/agent-graph/test_subagents.py
 bash install.test.sh                              # the installer and updater, in throwaway homes
 ```
 
