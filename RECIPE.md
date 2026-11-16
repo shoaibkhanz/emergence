@@ -262,9 +262,8 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
     history (1 day, 1 week or 30 days, the default and most: Claude Code deletes transcripts after that; `lib.js`
     `historySince`); the panel says it reads that (shared `agent-graph.historyOffered`), which shows the row. The card: the task's title; its state line
     "Working · <what it's doing now>" (a Bash call's description, omp's intent, else "Edit <file>") or "Finished 4m";
-    "✎ N" edited files and its metrics in the dim slot. Hovering lists the files; selecting it (↑/↓, a click) lists
-    them under the card (the list view: under the row), worktree-relative, newest first, with a dot on those still
-    uncommitted. A click (or ↵) opens its details (`detail.js`, the mod's own dialog: 680 × 0.9): title and state
+    "✎ N" edited files and its metrics in the dim slot. Hovering lists the files; the list view lists them under its row, worktree-relative, newest first, with a dot on those
+    still uncommitted. A click (or ↵) opens its details (`detail.js`, the mod's own dialog: 680 × 0.9): title and state
     ("Working · <its newest step>" while it runs), type · "from <agent>" · its worktree, then three tabs (←/→):
     Overview (stat tiles: tool calls and how many failed, how long it ran, tokens and model, cost; "What it did", a
     bar of its calls by kind: Read, Edit, Run, Search, Web, Sub-agent; Task and Result, folded by length until Space,

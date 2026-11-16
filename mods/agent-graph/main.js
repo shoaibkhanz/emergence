@@ -586,8 +586,6 @@ export default class AgentGraph extends View {
       if (n.data.folded && !n.data.history) els.push(h_flex().absolute().left(x + 12 * z).top(y + (n.h - 10) * z).w(w - 36 * z).justify_end()
         .child(this.summaryChip(t, n.data, z)));
     }
-    const open = L.nodes.find((n) => n.data.id === this.sel && n.data.sub?.edited.length);
-    if (open) els.push(this.files(t, open, X(open.x), Y(open.y), z));
     // Zoom controls (⌘/ctrl-scroll and - / = zoom too): − · the zoom (click: fit) · +.
     const zb = (id, tip, label, onClick) => h_flex().id(id).h(24).px(8).items_center().justify_center().text_size(12).text_color(t.muted)
       .cursor_pointer().tooltip(tip).hover((s) => s.bg(t.hover).text_color(t.foreground))
@@ -767,18 +765,6 @@ export default class AgentGraph extends View {
     return h_flex().gap(6 * z).items_center().min_w(0).flex_1()
       .child(div().size(6 * z).flex_none().rounded(6 * z).when(e.dirty, (el) => el.bg(t.accent)))
       .child(div().flex_1().min_w(0).truncate().text_size(11 * z).text_color(e.dirty ? t.foreground : t.muted).child(this.fileName(e)));
-  }
-
-  // The selected sub-agent's edited files, under its card.
-  files(t, n, x, y, z) {
-    const s = n.data.sub, more = s.edited.length - MAX_FILES;
-    return v_flex().absolute().left(x).top(y + (n.h + 6) * z).w(n.w * z).p(8 * z).gap(3 * z).rounded(8 * z)
-      .border(1).border_color(t.border).bg(t.surface).shadow_lg()
-      .child(h_flex().gap(6 * z).items_center().text_size(11 * z).text_color(t.dim)
-        .child(div().flex_1().child(`${s.edited.length} edited`))
-        .child(div().size(6 * z).flex_none().rounded(6 * z).bg(t.accent)).child("uncommitted"))
-      .children(s.edited.slice(0, MAX_FILES).map((e) => h_flex().h(18 * z).child(this.file(t, e, z))))
-      .when(more > 0, (el) => el.child(div().text_size(11 * z).text_color(t.dim).child(`+${more} more`)));
   }
 
   // Files two agents or sub-agents in a worktree's tree both edited and haven't committed (lib overlaps); folded or not.
