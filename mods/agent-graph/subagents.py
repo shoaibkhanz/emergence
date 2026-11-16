@@ -316,7 +316,7 @@ def read(path: str, cache: Cache, parse, mtime: int, tail: bool = False, final: 
     cache.visited.add(path)
     e = cache.get(path)
     size = os.path.getsize(path)
-    if e and e.get("off") == size:
+    if e and e.get("off") == size and not (final and e["st"]["n"]["msgs"]):  # all read (one just finished sheds its ids)
         return e["st"]
     fresh = not e or e.get("off", 0) > size
     if fresh:

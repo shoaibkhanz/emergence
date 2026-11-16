@@ -314,7 +314,7 @@ export default class AgentGraph extends View {
       : M.nodes.filter((n) => n.kind !== "repo").sort((a, b) => a.y - b.y || a.x - b.x);
     this.allFolds = foldables(whole);
     this.anyOpen = picks.some((n) => n.data.foldable && !n.data.folded);
-    if (!picks.some((n) => n.data.id === this.sel)) this.sel = (picks.find((n) => n.data.here) ?? picks.find((n) => n.data.id === foc) ?? picks[0])?.data.id ?? null;
+    if (!picks.some((n) => n.data.id === this.sel)) this.sel = (picks.find((n) => n.data.here) ?? picks.find((n) => n.data.id === foc) ?? picks.find((n) => !noTerminal(n.data)) ?? picks[0])?.data.id ?? null;
 
     // A popup is as tall as its content (mod.json height is the cap): size to the window. A panel fills its block.
     const root = this.panel
@@ -400,12 +400,12 @@ export default class AgentGraph extends View {
     const agent = (a, depth) => {
       const loud = a.status === "blocked", tone = loud ? t.blocked : a.status === "working" ? t.working : null, sel = this.sel === a.id, p = a.program;
       const ic = p?.icon ? (p.tint ? svg(p.icon).size(14).flex_none().text_color(t.foreground) : image(p.icon).w(14).h(14).flex_none()) : null;
-      const sub = a.sub, warn = conflictsOf(this.ov, (id) => id === a.id), tip = this.tip(a), line = metricLine(a.history ? a.total : a.m ?? a.total);
+      const sub = a.sub, warn = this.cardConflicts(a), tip = this.tip(a), line = metricLine(a.history ? a.total : a.m ?? a.total);
       rows.push(row(`l:${a.id}`, depth).border_1().border_color(a.here ? t.accent : alpha(t.border, 0)).cursor_pointer()
         .when(!!tone, (el) => el.bg(alpha(tone, 0.08))).when(sel && !tone, (el) => el.bg(t.selected))
         .hover((s) => s.bg(tone ? alpha(tone, 0.14) : t.hover))
         .when(!!tip, (el) => el.tooltip(tip))
-        .on_click(() => { if (sub || a.history) this.sel = a.id; if (a.history) this.toggle(a); else this.focusAgent(a); })
+        .on_click((_e, cx) => { if (sub || a.history) this.sel = a.id; if (a.history) { this.toggle(a); cx.notify(); } else this.focusAgent(a); })
         .child(this.chevron(t, a, 1))
         .child(this.dot(t, a.status, 8))
         .when(!!ic && !a.history, (el) => el.child(ic))
@@ -437,7 +437,7 @@ export default class AgentGraph extends View {
         const ab = git && (w.ahead || w.behind) ? [w.ahead && `↑${w.ahead}`, w.behind && `↓${w.behind}`].filter(Boolean).join(" ") : "";
         const total = this.totalLine(w.total);
         rows.push(row(`l:${w.id}`, 1).border_1().border_color(w.here ? t.accent : alpha(t.border, 0))
-          .when(this.sel === w.id, (el) => el.bg(t.selected)).on_click(() => { this.sel = w.id; })
+          .when(this.sel === w.id, (el) => el.bg(t.selected)).on_click((_e, cx) => { this.sel = w.id; cx.notify(); })
           .child(this.chevron(t, w, 1))
           .child(svg(ICON(git ? "branch" : "folder")).size(14).flex_none().text_color(t.muted))
           .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(git ? w.branch ?? "detached" : w.name))
@@ -597,7 +597,7 @@ export default class AgentGraph extends View {
       const path = git ? d.path : (d.path ?? "").replace(home(), "~");
       return this.ring(t, this.card(t, n, x, y, z), n, z, isFoc)
         .when(this.sel === d.id, (el) => el.bg(t.selected))
-        .on_click(() => { if (!this.drag?.moved) this.sel = d.id; })
+        .on_click((_e, cx) => { if (!this.drag?.moved) { this.sel = d.id; cx.notify(); } })
         .child(h_flex().gap(8 * z).items_center()
           .child(svg(ICON(git ? "branch" : "folder")).size(14 * z).flex_none().text_color(t.muted))
           .child(div().flex_1().min_w(0).truncate().text_size(13 * z).text_color(t.foreground).child(git ? d.branch ?? "detached" : d.name))
@@ -612,7 +612,7 @@ export default class AgentGraph extends View {
     if (d.history) return this.historyCard(t, n, x, y, z);
     const loud = d.status === "blocked", tone = loud ? t.blocked : d.status === "working" ? t.working : null; // working stands out too
     const sel = this.sel === d.id, line = metricLine(d.m ?? d.total), tip = this.tip(d);
-    const sub = d.sub, warn = conflictsOf(this.ov, (id) => id === d.id); // sub: an in-process sub-agent (lib subItems)
+    const sub = d.sub, warn = this.cardConflicts(d); // sub: an in-process sub-agent (lib subItems)
     const p = d.program;
     const icon = p?.icon ? (p.tint ? svg(p.icon).size(16 * z).flex_none().text_color(t.foreground) : image(p.icon).w(16 * z).h(16 * z).flex_none()) : null;
     return this.card(t, n, x, y, z, tone)
@@ -644,7 +644,7 @@ export default class AgentGraph extends View {
     return this.card(t, n, x, y, z).cursor_pointer()
       .when(sel, (el) => el.bg(t.selected))
       .hover((s) => s.bg(sel ? t.selected : t.raised).border_color(t.input).shadow_sm())
-      .on_click(() => { if (this.drag?.moved) return; this.sel = d.id; this.toggle(d); })
+      .on_click((_e, cx) => { if (this.drag?.moved) return; this.sel = d.id; this.toggle(d); cx.notify(); })
       .tooltip(this.tip(d))
       .child(div().min_w(0).truncate().text_size(13 * z).font_semibold().text_color(t.muted).child(d.name))
       .child(h_flex().gap(6 * z).items_center()
@@ -720,10 +720,15 @@ export default class AgentGraph extends View {
       .when(more > 0, (el) => el.child(div().text_size(11 * z).text_color(t.dim).child(`+${more} more`)));
   }
 
-  // Files two agents or sub-agents in a worktree's tree both edited and haven't committed (lib overlaps).
+  // Files two agents or sub-agents in a worktree's tree both edited and haven't committed (lib overlaps); folded or not.
   worktreeConflicts(w) {
-    const ids = new Set(w.agents.flatMap(function walk(a) { return [a.id, ...a.children.flatMap(walk)]; }));
+    const ids = new Set(w.ids);
     return conflictsOf(this.ov, (id) => ids.has(id));
+  }
+
+  // A card's own overlaps; a folded one also wears those of what it hides.
+  cardConflicts(d) {
+    return d.folded ? this.worktreeConflicts(d) : conflictsOf(this.ov, (id) => id === d.id);
   }
 
   // ⚠ in the blocked tone: on a card alone, on a worktree with the file (+N).

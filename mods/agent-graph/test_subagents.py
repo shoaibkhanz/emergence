@@ -270,8 +270,11 @@ class ClaudeTest(Base):
 
     def test_finished_logs_cache_only_their_totals(self):
         procs = self.claude()
-        write(os.path.join(self.subs, "agent-f.meta.json"), {"description": "Done", "finished": True})
-        jsonl(os.path.join(self.subs, "agent-f.jsonl"), [msg(NOW - 50 * MIN, "m1", tool="c1")], mtime=NOW - 50 * MIN)
+        write(os.path.join(self.subs, "agent-f.meta.json"), {"description": "Working"})
+        jsonl(os.path.join(self.subs, "agent-f.jsonl"), [msg(NOW - 2 * MIN, "m1", tool="c1")], mtime=NOW - 2 * MIN)
+        [s] = self.run_scan(procs)["subagents"]
+        self.assertEqual((s["tools"], s["running"]), (1, True))
+        write(os.path.join(self.subs, "agent-f.meta.json"), {"description": "Done", "finished": True})  # nothing appended
         [s] = self.run_scan(procs)["subagents"]
         self.assertEqual((s["tools"], s["running"]), (1, False))
         with open(sa.cache_path(env(self.home))) as f:

@@ -303,6 +303,8 @@ test("fold: a folded worktree or agent is a leaf (its summary rides on its card)
   const t1 = agentOf(meteredTree({ t1: true }), "t1");
   expect([t1.folded, t1.children]).toEqual([true, []]);
   expect(agentOf(meteredTree({ t1: true }), "t2").foldable).toBe(false); // nothing under it: no chevron
+  expect(t1.ids).toEqual(["t1", "t1#y", "t1#~earlier", "t1#new", "t1#old"]); // a folded card still knows what's under it
+  expect(tree[0].worktrees[0].ids).toContain("t1#old");
 });
 
 test("foldables: every card with something under it, inside folded ones too (expand all reaches them)", () => {

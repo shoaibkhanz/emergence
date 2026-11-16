@@ -244,7 +244,7 @@ export const isFolded = (n, choices) => choices?.[n.id] ?? Boolean(n.history);
 
 /**
  * repos (buildTree) -> the same tree with, on every worktree and agent card: total (its own metrics plus everything
- * under it, with agents and sub-agents counted), below (what's under it alone), foldable (something is), folded. A
+ * under it, with agents and sub-agents counted), below (what's under it alone), foldable (something is), folded, ids. A
  * folded card's subtree is gone, so layout and the list draw it as a leaf with below on its chip.
  */
 export function fold(repos, choices) {
@@ -254,7 +254,8 @@ export function fold(repos, choices) {
     const below = kids.reduce((t, k) => addUp(t, k.total), NONE);
     const foldable = kids.length > 0, folded = foldable && isFolded(n, choices);
     const shown = folded ? [] : kids;
-    return { ...n, ...(n.agents ? { agents: shown } : { children: shown }), total: addUp(self, below), below, foldable, folded };
+    return { ...n, ...(n.agents ? { agents: shown } : { children: shown }), total: addUp(self, below), below, foldable, folded,
+      ids: [n.id, ...kids.flatMap((k) => k.ids)] }; // its own and every id under it, folded or not (overlaps)
   };
   return repos.map((r) => ({ ...r, worktrees: r.worktrees.map(walk) }));
 }
