@@ -160,10 +160,11 @@ export default class Side extends View {
 
   renderPanel(t) {
     const { open } = view(), stack = find(layout(), "side-slots");
-    // A chat that ended by itself leaves its slot: move to another open one, or hide the slots (never show an idle one).
+    // A chat that ended by itself (/exit, Ctrl-D) leaves its slot: move to another open one, or close the panel as ✕
+    // does (never show an idle one).
     if (stack && !stack.hidden && find(layout(), "panel-body")?.active === "side" && !open.includes(stack.active)) {
       if (open.length) show(open[0], false);
-      else run("layout.hide", { id: "side-slots" });
+      else { run("layout.hide", { id: "side-slots" }); run("layout.hide", { id: "panel" }); }
     }
     const tabs = tabsOf(open, shared("side.tabs") ?? {});
     const bar = h_flex().id("side-header").size_full().px(8).gap(4).items_center().bg(t.chrome).border_b_1().border_color(t.border).text_size(12);
