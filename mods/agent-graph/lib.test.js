@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
   RANK, subItems, subState, ago, harnessOf, subRequests, overlaps, conflictsOf, metered, own, addUp, money, tokens, costLabel, metricLine,
-  summary, fold, foldables, isFolded, refold, worktreeOwners, worktreeNote, GONE, detailRequest, detailHead, took, mdLines, stepKind, groupSteps, toolMix, offset, stepTarget, groupTarget } from "./lib.js";
+  summary, fold, foldables, isFolded, refold, worktreeOwners, worktreeNote, GONE, detailRequest, detailHead, took, mdLines, stepKind, groupSteps, toolMix, offset, stepTarget, groupTarget, historySince } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -401,4 +401,15 @@ test("stepTarget, groupTarget: a step's target beside its label, short; a folded
   const st = (tool, target) => ({ tool, target });
   expect(groupTarget([st("Edit", "m/main.js"), st("Edit", "m/main.js"), st("Edit", "lib.js")])).toBe("main.js, lib.js");
   expect(groupTarget(["git status", "bun test", "git status", "uv", "gh pr", "rg"].map((t) => st("Bash", t)))).toBe("git status, bun test, uv, gh pr +1");
+});
+
+test("subItems since / historySince: finished sub-agents older than the window drop out; running ones never do", () => {
+  const DAY = 86_400_000, now = 100 * DAY;
+  const scan = { t1: { subagents: [{ id: "r", running: true, updatedAt: 0 }, { id: "new", running: false, finishedAt: now - DAY / 2 },
+    { id: "old", running: false, finishedAt: now - 3 * DAY }] } };
+  const items = [{ id: "t1", machine: null, cwd: "/r" }];
+  expect(subItems(items, scan, historySince(1, now)).map((s) => s.id)).toEqual(["t1#r", "t1#~earlier", "t1#new"]);
+  expect(subItems(items, scan, historySince(7, now)).filter((s) => s.sub).length).toBe(3);
+  expect(historySince(undefined, now)).toBe(now - 30 * DAY); // 30 unless chosen
+  expect(historySince(90, now)).toBe(now - 30 * DAY); // never past what's kept
 });

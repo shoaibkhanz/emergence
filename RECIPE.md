@@ -258,7 +258,9 @@ up front, else a fixed height (or a share of the window, as the keys list's 0.9)
     logs through `subagents.py`) are cards under their agent, beside `hc run` ones, in both views (Active never drops
     one by itself, and a finished one never keeps its agent there). Running ones are cards of their own; every one the
     session ran that has finished sits under one history card per agent, "12 earlier sub-agents" with their calls and
-    cost, folded by default; opened, their cards newest first. The card: the task's title; its state line
+    cost, folded by default; opened, their cards newest first. Only those finished within Emergence settings' Sub-agent
+    history (1 day, 1 week or 30 days, the default and most: Claude Code deletes transcripts after that; `lib.js`
+    `historySince`); the panel says it reads that (shared `agent-graph.historyOffered`), which shows the row. The card: the task's title; its state line
     "Working · <what it's doing now>" (a Bash call's description, omp's intent, else "Edit <file>") or "Finished 4m";
     "✎ N" edited files and its metrics in the dim slot. Hovering lists the files; selecting it (↑/↓, a click) lists
     them under the card (the list view: under the row), worktree-relative, newest first, with a dot on those still

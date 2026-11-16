@@ -181,8 +181,10 @@ export const subRequests = (items, top) => items.filter((i) => !i.machine && i.a
 // subagents.py's agents (address -> { edited, subagents, ...metrics } | { error }) -> items for buildTree's subs:
 // running ones work under their agent; finished ones are idle (never done: that's news only a terminal brings), under
 // one history card per agent, newest first.
-export const subItems = (items, scan) => items.flatMap((i) => {
-  const all = scan?.[i.id]?.subagents ?? [], done = all.filter((s) => !s.running), hid = `${i.id}#~earlier`;
+// since: finished ones older than this (ms) drop out (historySince; the Sub-agent history setting).
+export const subItems = (items, scan, since = 0) => items.flatMap((i) => {
+  const all = (scan?.[i.id]?.subagents ?? []).filter((s) => s.running || (s.finishedAt ?? s.updatedAt ?? 0) >= since);
+  const done = all.filter((s) => !s.running), hid = `${i.id}#~earlier`;
   const base = { owner: i.id, machine: i.machine, cwd: i.cwd, agent: true, program: i.program, tab: null, space: i.space ?? null };
   const card = (s, parent) => ({ ...base, id: `${i.id}#${s.id}`, parent, status: s.running ? "working" : "idle", name: s.title, sub: s,
     m: own(s), order: s.running ? 0 : -(s.finishedAt ?? s.updatedAt ?? 0) });
@@ -191,6 +193,10 @@ export const subItems = (items, scan) => items.flatMap((i) => {
       history: done.length, order: 1 }] : []),
     ...done.map((s) => card(s, hid))];
 });
+
+// The oldest finished sub-agent shown: Emergence settings' Sub-agent history (shared agent-graph.history: 1, 7 or
+// 30 days), 30 at most since Claude Code deletes transcripts after that.
+export const historySince = (days, now) => now - ([1, 7, 30].includes(days) ? days : 30) * 86_400_000;
 
 // The agents' own metrics from subagents.py, as m on their items.
 export const metered = (items, scan) => items.map((i) => (scan?.[i.id] && !scan[i.id].error ? { ...i, m: own(scan[i.id]) } : i));

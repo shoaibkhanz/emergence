@@ -7,7 +7,7 @@ import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout, appHome } from "herdr";
 import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
-  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners, worktreeNote, GONE, detailRequest } from "./lib.js";
+  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners, worktreeNote, GONE, detailRequest, historySince } from "./lib.js";
 import { Detail } from "./detail.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000, SUB_FAST = 5000;
@@ -73,6 +73,7 @@ const BREATH = { from: 0.4, to: 1, period: 1600 };
 export default class AgentGraph extends View {
   init(_props, cx) {
     if (props()?.detail) { this.detail = new Detail(cx); return; } // a sub-agent's details (openDetail): its own view
+    setShared("agent-graph.historyOffered", true); // Emergence settings shows Sub-agent history once this reads it
     this.panel = props()?.panel === true;
     this.backAt = shared("emergence.back");
     this.git = new Map(); // machine|cwd -> { at, v: facts | null }
@@ -327,7 +328,7 @@ export default class AgentGraph extends View {
     const foc = focused()?.terminal ?? null;
     this.now = Date.now();
     this.ov = overlaps(this.subs, this.now); // files two live writers both have uncommitted (lib)
-    const subs = subItems(items, this.subs);
+    const subs = subItems(items, this.subs, historySince(shared("agent-graph.history"), Date.now()));
     this.owners = worktreeOwners(items, subs); // worktree card id -> the sub-agent working there (lib)
     const whole = buildTree(metered(items, this.subs), (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined,
       { activeOnly: this.activeOnly, cursor, focused: foc, subs }); // marks here: lib
