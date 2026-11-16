@@ -1,6 +1,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, machines, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, agents, terminals, focused, exec, appHome } from "herdr";
+import { panelOnSwitch } from "./lib.js";
 
 // Herdr's tab bar plus the Emergence panels beside Files and Changes.
 // [layout block id in panel-body, label, icon, default panel width px]
@@ -188,7 +189,8 @@ export default class Tabs extends View {
   }
 
   // The side panel is remembered per space: switching shows that space's choice
-  // (closed if it never had one), and opening or closing it records it.
+  // (closed if it never had one; lib panelOnSwitch), and opening or closing it records it. A jump made from a panel
+  // (the Agents graph, shared "panel.carry") brings that panel along.
   syncPanel(space, panel, body, enabled) {
     if (!space || !panel) return;
     const now = panel.hidden ? null : body?.active ?? null;
@@ -196,7 +198,9 @@ export default class Tabs extends View {
       const first = this.space === undefined;
       this.space = space.id; this.pending = null;
       if (!(first && !(space.id in this.panels))) {
-        const stored = this.panels[space.id] ?? null, want = enabled.includes(stored) ? stored : null;
+        const carry = shared("panel.carry"), fresh = carry && carry.at !== this.carried ? carry : null; // each carry once
+        if (fresh) this.carried = fresh.at;
+        const want = panelOnSwitch({ stored: this.panels[space.id], enabled, carry: fresh, now: Date.now() });
         if (want !== now) {
           this.pending = { want, until: Date.now() + 1000 };
           this.remember(panel, body);

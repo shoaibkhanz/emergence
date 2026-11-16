@@ -145,7 +145,9 @@ export default class AgentGraph extends View {
     if (!this.panel) closeOverlay(props().overlay);
   }
 
+  // From the panel, the panel comes along to the agent's space (tabs-plus: shared "panel.carry").
   focusAgent(n) {
+    if (this.panel) setShared("panel.carry", { id: "graph", at: Date.now() });
     run("agent.focus", { terminal: n.id });
     this.dismiss();
   }
