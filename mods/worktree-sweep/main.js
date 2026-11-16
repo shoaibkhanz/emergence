@@ -61,7 +61,7 @@ export default class WorktreeSweep extends View {
     else if (a && ["left", "right", "tab"].includes(e.key)) this.asking = { ...a, sel: step(a.sel, e.key, a.list.length) };
     else if (a) return;
     else if (e.key === "up" || e.key === "down") this.cur = Math.max(0, Math.min(items.length - 1, this.cur + (e.key === "up" ? -1 : 1)));
-    else if (e.key === "space" && items[this.cur]) this.ticked = tick(this.ticked, items[this.cur].key);
+    else if ((e.key === "space" || e.key_char === " ") && items[this.cur]) this.ticked = tick(this.ticked, items[this.cur].key);
     else if (e.key === "enter") this.ask();
     else return;
     this.list.scroll_to_item(this.cur);
@@ -97,9 +97,9 @@ export default class WorktreeSweep extends View {
       .hover((s) => s.opacity(0.88)).on_click(onClick).child(label).when(on, (el) => el.child(div().text_size(11).opacity(0.7).child("↵")));
     const ready = n > 0 && [...this.ticked].every((k) => k in this.counts);
     const buttons = a
-      ? a.list.map(([label, what], i) => button(`wb${i}`, label, a.sel === i, what === "force", () => this.press(what)))
+      ? a.list.map(([label, what], i) => button(`wb${i}`, label, a.sel === i, what === "force", (_e, cx) => { this.press(what); cx.notify(); }))
       : [button("wb-cancel", "Cancel", false, false, () => closeOverlay(props().overlay)),
-        button("wb-ask", n ? `Delete ${n}…` : "Delete…", ready, false, () => this.ask()).when(!ready, (el) => el.opacity(0.5))];
+        button("wb-ask", n ? `Delete ${n}…` : "Delete…", ready, false, (_e, cx) => { this.ask(); cx.notify(); }).when(!ready, (el) => el.opacity(0.5))];
     const row = a?.list[0][1] === "force" ? [buttons[0], div().flex_1(), ...buttons.slice(1)] : [div().flex_1(), ...buttons];
     return v_flex().id("worktree-sweep").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .size_full().min_h(0).p(24).gap(16).rounded(10).bg(t.popover).text_size(13)

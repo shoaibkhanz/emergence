@@ -303,7 +303,7 @@ export default class Spaces extends View {
   // loses the folder's uncommitted changes and untracked files, still never the branch.
   async ask(kind, target, cx) {
     const { on, path, label, space } = target;
-    const st = await exec("git", ["-C", path, "status", "--porcelain"], { on });
+    const st = await exec("git", ["-C", path, "status", "--porcelain"], { on }).catch((e) => ({ code: 1, stderr: String(e) })); // a machine away
     if (kind === "delete") {
       if (st.code !== 0) return notify({ title: `Couldn't check ${label}`, body: st.stderr.trim(), level: "error" });
       if (st.stdout.trim()) return notify({ title: `${label} has uncommitted changes`, body: "Not deleted. → archives it, or deletes it permanently.", level: "warning" });
@@ -360,7 +360,8 @@ export default class Spaces extends View {
     const items = sweepItems(this.trees, opens, shared("spaces.archived") ?? {});
     this.sweepKeys = this.resume || this.ringed; // asked from the keyboard (or its menu), as ask's
     openOverlay({ mod: "worktree-sweep", kind: "dialog", width: 680, height: Math.min(560, 200 + 32 * Math.max(1, items.length)),
-      props: { items, ticked: target ? [JSON.stringify([target.on, target.path])] : [] } });
+      // An open space's top can be /private/tmp where git lists /tmp: its space id finds it too.
+      props: { items, ticked: items.filter((it) => target && (it.path === target.path || (target.space && it.space === target.space))).map((it) => it.key) } });
   }
 
   // The bulk delete's plan: close their open spaces, then `git worktree remove` each, --force only where the plan
