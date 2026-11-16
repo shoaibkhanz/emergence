@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn } from "./lib.js";
+import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn, sweepItems, sweepReport } from "./lib.js";
 
 const PORCELAIN = ["worktree /r", "HEAD a", "branch refs/heads/main", "",
   "worktree /w/feat", "HEAD b", "branch refs/heads/feat/x", "",
@@ -131,4 +131,23 @@ test("forceWarn: what Delete permanently loses", () => {
   expect(forceWarn(1)).toBe("Delete permanently loses its 1 uncommitted change. Can't be undone.");
   expect(forceWarn(0)).toBe("Delete permanently removes the folder now. Can't be undone.");
   expect(forceWarn(null)).toBe("Delete permanently loses any uncommitted changes. Can't be undone.");
+});
+
+test("sweepItems: every linked worktree, never a main, bare or prunable one; archived ones too, with the space to close", () => {
+  const trees = {
+    [JSON.stringify([null, "/r/.git"])]: { list: parseWorktrees(PORCELAIN) },
+    [JSON.stringify(["box", "/b.git"])]: { list: [{ path: "/b.git", branch: null, bare: true, prunable: false }, { path: "/b/x", branch: "x", bare: false, prunable: false }] },
+  };
+  const opens = [{ repo: JSON.stringify([null, "/r/.git"]), top: "/private/w/feat", branch: "feat/x", id: "s9" }];
+  const archived = { [JSON.stringify([null, "/w/det"])]: null };
+  expect(sweepItems(trees, opens, archived)).toEqual([
+    { key: JSON.stringify([null, "/w/feat"]), on: null, path: "/w/feat", label: "feat/x", repo: "r", space: "s9", archived: false },
+    { key: JSON.stringify([null, "/w/det"]), on: null, path: "/w/det", label: "det", repo: "r", space: null, archived: true },
+    { key: JSON.stringify(["box", "/b/x"]), on: "box", path: "/b/x", label: "x", repo: "b", space: null, archived: false }]);
+});
+
+test("sweepReport: what went, what was skipped for its changes, what git refused", () => {
+  expect(sweepReport(["a", "b"], [], [])).toEqual({ title: "Deleted 2 worktrees", body: "Branches stay.", level: "success" });
+  expect(sweepReport(["a"], ["c", "d"], [])).toEqual({ title: "Deleted 1 worktree", body: "Skipped 2 with uncommitted changes: c, d.", level: "warning" });
+  expect(sweepReport([], [], [["e", "fatal: locked"]])).toEqual({ title: "No worktrees deleted", body: "Couldn't delete e: fatal: locked.", level: "error" });
 });

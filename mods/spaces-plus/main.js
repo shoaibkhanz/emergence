@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, settings, shared, setShared, watchFolder, window, layout, nextCommand, focused, notify } from "herdr";
-import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn, HEADER_H, ROW_H, SUB_ROW_H, LIST_PAD } from "./lib.js";
+import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn, repoName, sweepItems, sweepReport, HEADER_H, ROW_H, SUB_ROW_H, LIST_PAD } from "./lib.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -103,6 +103,8 @@ export default class Spaces extends View {
         else if (c === "back") back(); // ctrl-l (keys.json mod:spaces-plus: a binding beats on_key_down)
         else if (c === "archive" || c === "delete" || c === "force-delete") this.act(c, cx); // the confirm dialog's choice (see ask)
         else if (c === "ask-archive" || c === "ask-delete") { if (this.menuFor) this.ask(c.slice(4), this.menuFor, cx); } // row-menu
+        else if (c === "ask-sweep") this.askSweep(this.menuFor); // row-menu
+        else if (c === "sweep") this.sweep(cx); // the bulk delete dialog's choice (see askSweep)
         cx.notify();
       }
     });
@@ -258,7 +260,7 @@ export default class Spaces extends View {
         exec("git", ["symbolic-ref", "-q", "HEAD"], { cwd, on }),
         exec("git", ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"], { cwd, on }),
       ]);
-      const name = repo.endsWith("/.git") ? base(repo.slice(0, -5)) : base(repo).replace(/\.git$/, "");
+      const name = repoName(repo);
       const [ahead, behind] = counts.code === 0 ? counts.stdout.trim().split(/\s+/).map(Number) : [0, 0];
       const info = { name, branch: branch.code === 0 ? branch.stdout.trim().replace(/^refs\/heads\//, "") : "(detached)", ahead, behind, repo: JSON.stringify([on, repo]), linked: repo !== `${top}/.git`, top };
       this.git[key] = info;
@@ -342,8 +344,43 @@ export default class Spaces extends View {
         : [["Open", "space.new", { folder: target.path, machine: target.on ?? "" }, I + "plus.svg", "↵"]]),
       ["Archive worktree…", "spaces-plus.ask-archive", {}, I + "archive.svg", "→", true, true], // stays: its confirm follows
       ["Delete worktree…", "spaces-plus.ask-delete", {}, "mods/row-menu/trash.svg", "←", false, true],
+      ["Delete worktrees…", "spaces-plus.ask-sweep", {}, "mods/row-menu/trash.svg", "⇧←", false, true],
     ];
-    openOverlay({ mod: "row-menu", kind: "popup", width: 230, height: 160, props: { items } });
+    openOverlay({ mod: "row-menu", kind: "popup", width: 230, height: 190, props: { items } });
+  }
+
+  // ⇧← (or the row menu): tick several worktrees to delete at once (worktree-sweep), every repo's in one list, `target`
+  // ticked. The dialog sends its plan back in shared "spaces.sweep" and runs spaces-plus.sweep.
+  askSweep(target) {
+    const ps = panes(), opens = [];
+    for (const s of spaces()) {
+      const g = this.git[where(s, ps)];
+      if (g?.linked) opens.push({ repo: g.repo, top: g.top, branch: g.branch, id: s.id });
+    }
+    const items = sweepItems(this.trees, opens, shared("spaces.archived") ?? {});
+    this.sweepKeys = this.resume || this.ringed; // asked from the keyboard (or its menu), as ask's
+    openOverlay({ mod: "worktree-sweep", kind: "dialog", width: 680, height: Math.min(560, 200 + 32 * Math.max(1, items.length)),
+      props: { items, ticked: target ? [JSON.stringify([target.on, target.path])] : [] } });
+  }
+
+  // The bulk delete's plan: close their open spaces, then `git worktree remove` each, --force only where the plan
+  // says (the red choice, a changed one). One at a time: worktrees of one repo share its git folder's lock.
+  async sweep(cx) {
+    const s = shared("spaces.sweep");
+    if (!Array.isArray(s?.remove) || Date.now() - s.at > 10000) return;
+    setShared("spaces.sweep", null); // once
+    const removed = [], failed = [];
+    for (const it of s.remove) if (it.space) run("space.close", { id: it.space, confirmed: true });
+    if (this.sweepKeys && s.remove.some((it) => it.space)) cx.timer.after(300, () => this.fh.focus()); // as act's
+    for (const it of s.remove) {
+      const r = await exec("git", ["-C", it.path, "worktree", "remove", ...(it.force ? ["--force"] : []), it.path], { on: it.on });
+      if (r.code === 0) removed.push(it);
+      else failed.push([it.label, r.stderr.trim()]);
+    }
+    const gone = new Set(removed.map((it) => it.key)), archived = shared("spaces.archived") ?? {};
+    if (Object.keys(archived).some((k) => gone.has(k))) setShared("spaces.archived", Object.fromEntries(Object.entries(archived).filter(([k]) => !gone.has(k))));
+    notify(sweepReport(removed.map((it) => it.label), s.skip, failed));
+    this.refreshGit(Object.keys(this.git), cx);
   }
 
   menu(w) {
@@ -633,6 +670,7 @@ export default class Spaces extends View {
     if (k === "ctrl-l" || k === "escape") return back();
     if (narrow()) return;
     const rows = this.rows ?? [], i = rows.findIndex((r) => r.key === this.cur), r = rows[i];
+    if (k === "shift-left") return this.askSweep(r && actionTarget(r)); // ← deletes one; ⇧← ticks several
     if (k === "up" || k === "down") this.cur = rows[Math.max(0, Math.min(rows.length - 1, i + (k === "up" ? -1 : 1)))]?.key ?? null;
     else if (!r) return;
     else if ((k === "left" || k === "right") && actionTarget(r)) this.ask(k === "left" ? "delete" : "archive", actionTarget(r), cx);
