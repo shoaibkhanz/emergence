@@ -7,7 +7,7 @@ import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout, appHome } from "herdr";
 import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
-  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold } from "./lib.js";
+  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000, SUB_FAST = 5000;
 const MAX_FILES = 8; // a selected sub-agent's edited files listed under its card
@@ -81,6 +81,7 @@ export default class AgentGraph extends View {
     this.offsets = new Map(JSON.parse(localStorage.getItem("offsets") || "[]")); // node id -> { x, y } the person dragged it by
     this.sel = null;
     this.folds = refold(JSON.parse(localStorage.getItem("folds") || "{}")); // card id -> folded (true) / open (false) the person chose
+    this.owners = new Map(); // worktree card id -> the sub-agent working there (render, lib worktreeOwners)
     this.subs = {}; // subagents.py's last answer: address -> { edited, subagents }
     this.subsJSON = "{}";
     this.subsLoop = false;
@@ -136,6 +137,7 @@ export default class AgentGraph extends View {
         await cx.sleep(16); // host calls made before a copy's first frame never resolve
         const now = Date.now(), stale = (c, ttl) => force || !c || now - c.at >= ttl;
         const cwds = new Map(items.filter((i) => i.cwd).map((i) => [key(i.machine, i.cwd), i]));
+        for (const s of subItems(items, this.subs)) if (s.sub?.worktree) cwds.set(key(s.machine, s.sub.worktree), { machine: s.machine, cwd: s.sub.worktree });
         await Promise.all([...cwds].filter(([k]) => stale(this.git.get(k), GIT_TTL))
           .map(async ([k, i]) => this.git.set(k, { at: now, v: await facts(i.machine, i.cwd) })));
         this.loaded = true;
@@ -307,8 +309,10 @@ export default class AgentGraph extends View {
     const foc = focused()?.terminal ?? null;
     this.now = Date.now();
     this.ov = overlaps(this.subs, this.now); // files two live writers both have uncommitted (lib)
+    const subs = subItems(items, this.subs);
+    this.owners = worktreeOwners(items, subs); // worktree card id -> the sub-agent working there (lib)
     const whole = buildTree(metered(items, this.subs), (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined,
-      { activeOnly: this.activeOnly, cursor, focused: foc, subs: subItems(items, this.subs) }); // marks here: lib
+      { activeOnly: this.activeOnly, cursor, focused: foc, subs }); // marks here: lib
     const tree = fold(whole, this.folds); // totals on every card; folded ones without their subtree (lib)
     const L = graphLayout(tree), M = this.moved(L); // M: with the person's dragged offsets
     const list = this.pick === "list"; // never switched for them: opening a group in the graph used to flip it to a list
@@ -425,6 +429,7 @@ export default class AgentGraph extends View {
         .child(this.dot(t, a.status, 8))
         .when(!!ic && !a.history, (el) => el.child(ic))
         .child(div().flex_1().min_w(0).truncate().text_color(a.history ? t.muted : t.foreground).child(a.name))
+        .map((el) => this.branchTag(t, el, a, 1, true))
         .when(warn.length > 0, (el) => el.child(this.warn(t, `w-${a.id}`, warn, 1, false)))
         .when(!a.history, (el) => el.child(sub // what it's doing now shares the row with its title
           ? div().flex_1().min_w(0).truncate().text_right().text_size(11).text_color(t.dim).child(subState(sub, this.now))
@@ -457,6 +462,7 @@ export default class AgentGraph extends View {
           .child(svg(ICON(git ? "branch" : "folder")).size(14).flex_none().text_color(t.muted))
           .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(git ? w.branch ?? "detached" : w.name))
           .when(!!ab, (el) => el.child(dim(ab)))
+          .when(this.owners.has(w.id), (el) => el.child(this.workedBy(t, w, w.path, 11).flex_none().max_w(200)))
           .map((el) => { const f = this.worktreeConflicts(w); return f.length ? el.child(this.warn(t, `w-${w.id}`, f, 1, true)) : el; })
           .when(!!total, (el) => el.child(dim(total).id(`lt-${w.id}`).when(w.total.estimate, (el) => el.tooltip(ESTIMATE))))
           .when(w.folded, (el) => el.child(this.summaryChip(t, w, 1)))
@@ -618,7 +624,7 @@ export default class AgentGraph extends View {
           .child(div().flex_1().min_w(0).truncate().text_size(13 * z).text_color(t.foreground).child(git ? d.branch ?? "detached" : d.name))
           .when(!!ab, (el) => el.child(div().flex_none().text_size(11 * z).text_color(t.dim).child(ab))))
         .child(h_flex().gap(8 * z).items_center()
-          .child(div().flex_1().min_w(0).truncate().text_size(11 * z).text_color(t.dim).child(path))
+          .child(this.workedBy(t, d, path, 11 * z))
           .map((el) => { const f = this.worktreeConflicts(d); return f.length ? el.child(this.warn(t, `w-${d.id}`, f, z, true)) : el; })
           .map((el) => { const total = this.totalLine(d.total); return total ? el.child(div().id(`wt-${d.id}`).flex_none().text_size(11 * z).text_color(t.muted)
             .when(d.total.estimate, (el) => el.tooltip(`${total}: everything under it\n${ESTIMATE}`)).child(total)) : el; })
@@ -639,7 +645,8 @@ export default class AgentGraph extends View {
       .map((el) => this.ring(t, el, n, z, isFoc))
       .child(h_flex().gap(8 * z).items_center()
         .when(!!icon, (el) => el.child(icon))
-        .child(div().flex_1().min_w(0).truncate().text_size(13 * z).font_semibold().text_color(t.foreground).child(d.name)))
+        .child(div().flex_1().min_w(0).truncate().text_size(13 * z).font_semibold().text_color(t.foreground).child(d.name))
+        .map((el) => this.branchTag(t, el, d, z, false)))
       .child(h_flex().gap(6 * z).items_center()
         .child(this.dot(t, d.status, 8 * z))
         .child(sub // "Working · Run the tests" / "Finished 4m", and its edited files' count in the dim slot
@@ -650,6 +657,22 @@ export default class AgentGraph extends View {
         .child(sub ? div().flex_none().text_size(11 * z).text_color(t.dim).child(sub.edited.length ? `✎ ${sub.edited.length}` : "")
           : div().flex_1().min_w(0).truncate().text_right().text_size(11 * z).text_color(t.dim).child(d.tab ?? (d.parent ? "sub-agent" : "")))
         .when(!!line, (el) => el.child(div().flex_none().text_size(11 * z).text_color(t.dim).child(line)))); // "⚒ 66 · ≈ $1.20": its own
+  }
+
+  // An isolated sub-agent's own branch (git, not the meta's: the person may have switched it). A graph card has no room
+  // for the name beside its title: the icon, the name on hover; a list row (wide) shows it.
+  branchTag(t, el, d, z, named) {
+    const w = d.sub?.worktree, br = w && this.git.get(key(d.machine, w))?.v?.branch;
+    return !br ? el : el.child(h_flex().id(`br-${d.id}`).flex_none().max_w(160 * z).gap(4 * z).items_center().text_size(11 * z).text_color(t.dim)
+      .tooltip(`Works in its own worktree on ${br}\n${w.replace(home(), "~")}`)
+      .child(svg(ICON("branch")).size(11 * z).flex_none()).when(named, (el) => el.child(div().min_w(0).truncate().child(br))));
+  }
+
+  // A worktree's dim line: the sub-agent working there ("↳ Ticket 2"), else its path.
+  workedBy(t, w, path, size) {
+    const o = this.owners.get(w.id);
+    const el = div().id(`by-${w.id}`).flex_1().min_w(0).truncate().text_size(size).text_color(o?.running ? t.muted : t.dim);
+    return !o ? el.child(path) : el.tooltip(`${o.running ? "Working here" : "Worked here"}: ${o.task}\nA sub-agent of ${o.agent ?? "an agent"}\n${path}`).child(`↳ ${o.task}`);
   }
 
   // One card for every sub-agent an agent ran that has finished: "12 earlier sub-agents", their calls and cost. A click

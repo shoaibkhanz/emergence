@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
   RANK, subItems, subState, ago, harnessOf, subRequests, overlaps, conflictsOf, metered, own, addUp, money, tokens, costLabel, metricLine,
-  summary, fold, foldables, isFolded, refold } from "./lib.js";
+  summary, fold, foldables, isFolded, refold, worktreeOwners } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -321,4 +321,15 @@ test("side chat slots stay out of the graph: clicking one would swap the panel t
 test("refold: earlier sub-agents fold again each time the panel opens; other choices stay", () => {
   expect(refold({ "t1#~earlier": false, "t2#~earlier": true, t1: true, "|/r/app": false })).toEqual({ "t2#~earlier": true, t1: true, "|/r/app": false });
   expect(isFolded({ id: "t1#~earlier", history: true }, refold({ "t1#~earlier": false }))).toBe(true);
+});
+
+test("worktreeOwners: an isolated sub-agent's worktree names who works there, a running one first", () => {
+  const items = [{ id: "t1", name: "Home", machine: null }, { id: "t9", name: "Remote", machine: "box" }];
+  const sub = (owner, machine, title, worktree, running) => ({ owner, machine, name: title, sub: { worktree, running } });
+  const subs = [sub("t1", null, "Old ticket", "/r/.claude/worktrees/a", false), sub("t1", null, "Ticket 2", "/r/.claude/worktrees/a", true),
+    sub("t1", null, "In place", null, true), { owner: "t1", machine: null, id: "t1#~earlier", history: 1 }, sub("t9", "box", "Far", "/r/w", false)];
+  const owners = worktreeOwners(items, subs);
+  expect([...owners.keys()]).toEqual(["|/r/.claude/worktrees/a", "box|/r/w"]);
+  expect(owners.get("|/r/.claude/worktrees/a")).toEqual({ agent: "Home", task: "Ticket 2", running: true });
+  expect(owners.get("box|/r/w")).toEqual({ agent: "Remote", task: "Far", running: false });
 });

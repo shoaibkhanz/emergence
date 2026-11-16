@@ -268,6 +268,18 @@ export const foldables = (repos) => repos.flatMap((r) => r.worktrees.flatMap(fun
   return kids.length ? [n.id, ...kids.flatMap(ids)] : [];
 }));
 
+// An isolated sub-agent's worktree (machine|top, a worktree card's id) -> who works there, a running sub-agent before
+// finished ones: an orchestrator's worktrees otherwise show no agent, since its sub-agents sit under it (subItems).
+export function worktreeOwners(items, subs) {
+  const name = new Map(items.map((i) => [i.id, i.name]));
+  const out = new Map();
+  for (const s of subs.filter((s) => s.sub?.worktree).sort((a, b) => Number(!!b.sub.running) - Number(!!a.sub.running))) {
+    const k = `${s.machine ?? ""}|${s.sub.worktree}`;
+    if (!out.has(k)) out.set(k, { agent: name.get(s.owner), task: s.name, running: s.sub.running });
+  }
+  return out;
+}
+
 // The graph's terminals: live ones, minus the side chat slots (layout block side-slots, mods/side). A side chat is in
 // the sidebar's Side chats; here, a click on it would swap the panel the graph is in for the Side view.
 export const graphTerminals = (terminals, sideSlots) => terminals.filter((x) => x.state === "live" && !sideSlots.includes(x.name));
