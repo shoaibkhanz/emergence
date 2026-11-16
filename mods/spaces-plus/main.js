@@ -80,7 +80,7 @@ export default class Spaces extends View {
     this.watching = new Set(); // local repos' git folders
     // Spaces made while this runs wait (at most a moment) for their git, so a
     // worktree appears under its repo instead of jumping there.
-    this.shown = new Set(spaces().map((s) => s.id));
+    this.seen = new Set(spaces().map((s) => s.id));
     this.born = {};
     this.pressed = null;
     this.over = null;
@@ -117,11 +117,11 @@ export default class Spaces extends View {
   checkNew(cx) {
     const now = Date.now();
     const sp = spaces();
-    for (const s of sp) if (!this.shown.has(s.id)) this.born[s.id] ??= now;
+    for (const s of sp) if (!this.seen.has(s.id)) this.born[s.id] ??= now;
     const due = this.due(now, sp, panes());
     if (due.size) this.refreshGit(due, cx);
     // No blur event: the cursor ring goes when the keyboard has left (a click elsewhere, pane.go).
-    if (sp.some((s) => !this.shown.has(s.id)) || this.orderingDue(now) || this.fh.is_focused() !== this.ringed) cx.notify();
+    if (sp.some((s) => !this.seen.has(s.id)) || this.orderingDue(now) || this.fh.is_focused() !== this.ringed) cx.notify();
   }
 
   // Places whose git could have changed: new ones (a new space, a cd), where a
@@ -397,8 +397,8 @@ export default class Spaces extends View {
   // Spaces in order, each worktree space moved under its main checkout's.
   ordered() {
     const sp = spaces(), ps = panes();
-    const ready = (w) => this.shown.has(w.id) || where(w, ps) in this.git || Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
-    for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
+    const ready = (w) => this.seen.has(w.id) || where(w, ps) in this.git || Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
+    for (const w of sp) if (!this.seen.has(w.id) && ready(w)) this.seen.add(w.id);
     const list = sp.map((w, i) => ({ w, i, g: this.git[where(w, ps)] ?? null }));
     const mains = new Set(list.filter((r) => r.g && !r.g.linked).map((r) => r.g.repo));
     const nested = (r) => r.g?.linked && mains.has(r.g.repo);
@@ -431,7 +431,7 @@ export default class Spaces extends View {
       }
       this.ordering.machines = [...moved];
     }
-    return out.filter(r => this.shown.has(r.w.id));
+    return out.filter(r => this.seen.has(r.w.id));
   }
 
   // The rows, under a header per machine once one isn't this computer. Open, each repo's worktrees go under it;
@@ -463,7 +463,7 @@ export default class Spaces extends View {
     const loading = m => {
       const layout = machines().find(k => k.name === m)?.layout;
       return layout === "loading" || (!layout && this.machines.some(k => k.name === m && k.state === "connected"))
-        || spaces().some(s => (s.machine ?? null) === m && !this.shown.has(s.id));
+        || spaces().some(s => (s.machine ?? null) === m && !this.seen.has(s.id));
     };
     const loadingRow = m => h_flex().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(collapsed ? 0 : 8).items_center().when(collapsed, el => el.justify_center()).text_size(12).text_color(t.dim).child(collapsed ? "…" : "Loading…");
     if (!remote.length) return loading(null) && !rows.length ? [out(null, loadingRow(null))] : rows.map(draw);
