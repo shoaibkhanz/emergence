@@ -8,13 +8,10 @@ from __future__ import annotations  # stock macOS python3 is 3.9: `str | None` m
 import glob
 import json
 import os
-import shutil
-import time
+
+from .chat import carried, digest, recent, write_chat  # noqa: F401 (digest, recent: tests)
 
 NAME = "Claude Code"
-INSTR = "Answer and explain; don't edit files. Files may have changed since this point."
-CAP = 24000  # characters of recent exchanges in the background (~6k tokens)
-KEEP = 20  # chat folders kept under <dataDir>/chats
 CARRY = ("--model", "--effort")  # the copy talks to the same model; every other flag is dropped
 
 
@@ -41,20 +38,6 @@ def locate(req: dict, env) -> dict:
         return {"error": {"code": "not-found", "message": "this Claude session has no conversation yet"}}
     return {"session": {"harness": "claude", "id": s["sessionId"], "cwd": s.get("cwd") or req.get("cwd")},
             "confidence": "exact", "why": f"~/.claude/sessions/{p.pid}.json"}
-
-
-def _carried(args: list[str]) -> list[str]:
-    out, i = [], 1
-    while i < len(args):
-        a = args[i]
-        if a in CARRY and i + 1 < len(args):
-            out += [a, args[i + 1]]
-            i += 2
-            continue
-        if a.split("=", 1)[0] in CARRY and "=" in a:
-            out.append(a)
-        i += 1
-    return out
 
 
 def entries(lines) -> tuple:
@@ -86,61 +69,6 @@ def entries(lines) -> tuple:
     return out, summary
 
 
-def digest(es: list) -> str:
-    """Entries as text: a heading each time the speaker changes."""
-    out, last = [], None
-    for role, text in es:
-        if role != last:
-            out.append(f"\n## {'You' if role == 'user' else 'Agent'}\n")
-            last = role
-        out.append(text)
-    return "\n".join(out).strip() + "\n"
-
-
-def recent(es: list, cap: int = CAP) -> list:
-    """The longest tail of entries that starts at something the person said and fits in cap characters. If none
-    does (pressed mid-work, or one huge exchange), the longest tail that fits, topped up with the end of the entry
-    before it, so the background is never just "[used Bash]"."""
-    best, size, j = None, 0, len(es)
-    for i in range(len(es) - 1, -1, -1):
-        if size + len(es[i][1]) > cap:
-            break
-        size += len(es[i][1])
-        j = i
-        if es[i][0] == "user":
-            best = i
-    if best is not None:
-        return es[best:]
-    rest = cap - size
-    head = [(es[j - 1][0], es[j - 1][1][-rest:])] if j > 0 and rest > 0 else []
-    return head + es[j:]
-
-
-def _write(path: str, text: str) -> None:
-    """A private file (0600): the conversation is as private as Claude's own transcripts."""
-    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8") as f:
-        f.write(text)
-
-
-def _write_chat(sid: str, transcript: str, data_dir: str) -> str:
-    with open(transcript, encoding="utf-8") as f:
-        es, summary = entries(f)
-    chats = os.path.join(data_dir, "chats")
-    d = os.path.join(chats, f"{int(time.time() * 1000)}-{sid[:8]}")
-    os.makedirs(d, mode=0o700)
-    conv = os.path.join(d, "conversation.md")
-    _write(conv, digest(es))
-    bg = [INSTR, f"You're a side chat beside an agent. Its whole conversation so far is in {conv}; read it in parts "
-                 "when asked about something not below.",
-          f"## Earlier, summarised\n\n{summary}" if summary else "",
-          "## Most recent exchanges\n" + digest(recent(es))]
-    path = os.path.join(d, "background.md")
-    _write(path, "\n\n".join(b for b in bg if b))
-    for old in sorted(os.listdir(chats))[:-KEEP]:
-        shutil.rmtree(os.path.join(chats, old), ignore_errors=True)
-    return path
-
-
 def copy(req: dict, env) -> dict:
     p, _ = _owner(req, env)
     args = p.args if p and p.args else ["claude"]
@@ -150,7 +78,9 @@ def copy(req: dict, env) -> dict:
     found = glob.glob(os.path.join(env.home, ".claude", "projects", "*", f"{sid}.jsonl"))
     if not found:
         return {"error": {"code": "not-found", "message": "this Claude session has no conversation yet"}}
-    bg = _write_chat(sid, found[0], req["dataDir"])
+    with open(found[0], encoding="utf-8") as f:
+        es, summary = entries(f)
+    bg = write_chat(sid, es, summary, req["dataDir"])
     mode = ["--permission-mode", "plan"] if req.get("answerOnly") else []
-    argv = [prog, *mode, "--append-system-prompt-file", bg, *_carried(args)]
+    argv = [prog, *mode, "--append-system-prompt-file", bg, *carried(args, CARRY)]
     return {"launch": {"argv": argv, "cwd": req["session"]["cwd"]}, "note": None if req.get("answerOnly") else "can-edit"}

@@ -1,5 +1,5 @@
 // Side sessions: ⌘⌥/ on an agent's pane opens a side chat beside it that has the agent's conversation as background
-// (Claude: a fresh session; OpenCode: a read-only fork shown without its history), in the right panel's Side view,
+// (Claude, pi, omp: a fresh session; OpenCode: a read-only fork shown without its history), in the right panel's Side view,
 // one tab per side chat (findings and design: docs/superpowers/specs/2026-11-15-side-sessions-*.md, local).
 // One mod, three copies:
 //   props {resident: true}  a 0px layout block that gets the key commands (a mod hears them only while shown);
@@ -17,7 +17,7 @@ import { exec, hc, run, theme, props, nextCommand, focused, panes, agents, termi
   openOverlay, closeOverlay, appHome, home, layout, shared, setShared } from "herdr";
 import { NAMES, harnessOf, decide, noticeFor, tabsOf, slotView, claim, bannerOf, withoutTab, INTRO, withoutStarting, withoutStale } from "./lib.js";
 
-const SUPPORTED = ["claude", "opencode"]; // harnesses with an adapter in side.py; codex, pi and omp come next
+const SUPPORTED = ["claude", "opencode", "pi", "omp"]; // harnesses with an adapter in side.py; codex comes next
 const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(c, id)).find(Boolean));
 // The person's harness switches: only the ones they flipped (never switched = on). Shared, not localStorage: each copy
 // of a mod (key listener, popup) has its own store.

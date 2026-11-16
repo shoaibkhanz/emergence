@@ -273,6 +273,133 @@ class OpenCodeTest(unittest.TestCase):
         self.assertIn("HTTP 400", r["error"]["message"])
 
 
+PI_FIX = os.path.join(FIX, "pi-format", "session.jsonl")
+PI_SID = "01a1e1d5-0000-0000-0000-000000000001"
+PI_NAME = f"2026-11-16T00-49-57-417Z_{PI_SID}.jsonl"
+
+
+class PiFormatTest(unittest.TestCase):
+    def test_entries_follow_the_active_branch(self):
+        from adapters import pi_format
+        with open(PI_FIX) as f:
+            es, summary = pi_format.entries(f)
+        self.assertEqual(es, [("user", "FIRST QUESTION about pi"), ("agent", "first answer"), ("agent", "[used read]"),
+                              ("user", "LAST QUESTION"), ("agent", "LAST ANSWER")])
+        self.assertEqual(summary, "SUMMARY of earlier work")
+
+    def test_entries_empty_file(self):
+        from adapters import pi_format
+        self.assertEqual(pi_format.entries([]), ([], None))
+
+
+def pi_home(tmp, cwd="/w/pi"):
+    d = os.path.join(tmp, ".pi", "agent", "sessions", "--" + cwd.strip("/").replace("/", "-") + "--")
+    os.makedirs(d)
+    shutil.copy(PI_FIX, os.path.join(d, PI_NAME))
+    return d
+
+
+PI_TREE = [side.Proc(100, ["-zsh"], "ttys005"),
+           side.Proc(200, ["node", "/opt/homebrew/bin/pi", "--model", "sonnet", "--tools", "bash", "--thinking=high"], "ttys005")]
+
+
+class PiTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+
+    def locate(self, tree=PI_TREE, cwd="/w/pi"):
+        return side.handle("locate", {"harness": "pi", "pid": 100, "cwd": cwd}, env(home=self.tmp, procs=lambda pid: tree))
+
+    def test_locate_guess_newest_in_folder(self):
+        d = pi_home(self.tmp)
+        old = os.path.join(d, "2026-01-01T00-00-00-000Z_old.jsonl")
+        shutil.copy(PI_FIX, old)
+        os.utime(old, (1, 1))
+        r = self.locate()
+        self.assertEqual(r["session"], {"harness": "pi", "id": PI_SID, "file": os.path.join(d, PI_NAME), "cwd": "/w/pi"})
+        self.assertEqual(r["confidence"], "guess")
+
+    def test_locate_exact_from_session_arg(self):
+        d = pi_home(self.tmp)
+        os.utime(os.path.join(d, PI_NAME), (1, 1))
+        shutil.copy(PI_FIX, os.path.join(d, "2026-12-01T00-00-00-000Z_newer.jsonl"))
+        tree = PI_TREE[:1] + [side.Proc(200, ["pi", "--session", PI_SID[:8]], "ttys005")]
+        r = self.locate(tree)
+        self.assertEqual((r["session"]["file"], r["confidence"]), (os.path.join(d, PI_NAME), "exact"))
+
+    def test_locate_nothing_in_folder(self):
+        self.assertEqual(self.locate()["error"]["code"], "not-found")
+
+    def copy(self, answer_only, file=None):
+        d = pi_home(self.tmp)
+        session = {"harness": "pi", "id": PI_SID, "file": file or os.path.join(d, PI_NAME), "cwd": "/w/pi"}
+        return side.handle("copy", {"session": session, "pid": 100, "answerOnly": answer_only,
+                                    "dataDir": os.path.join(self.tmp, "data")}, env(home=self.tmp, procs=lambda pid: PI_TREE))
+
+    def test_copy_answer_only(self):
+        r = self.copy(True)
+        argv = r["launch"]["argv"]
+        self.assertEqual(argv[:2], ["pi", "--append-system-prompt"])
+        self.assertEqual(argv[3:], ["--tools", "read,grep,find,ls", "--model", "sonnet", "--thinking=high"])
+        self.assertEqual((r["launch"]["cwd"], r["note"]), ("/w/pi", None))
+        with open(argv[2]) as f:
+            bg = f.read()
+        for want in (INSTR, "SUMMARY of earlier work", "LAST QUESTION"):
+            self.assertIn(want, bg)
+        self.assertNotIn("ABANDONED", bg)
+
+    def test_copy_not_answer_only_can_edit(self):
+        r = self.copy(False)
+        self.assertNotIn("--tools", r["launch"]["argv"])
+        self.assertEqual(r["note"], "can-edit")
+
+    def test_copy_session_file_gone(self):
+        self.assertEqual(self.copy(True, file=os.path.join(self.tmp, "gone.jsonl"))["error"]["code"], "not-found")
+
+
+OMP_TREE = [side.Proc(100, ["-zsh"], "ttys009"), side.Proc(200, ["omp", "--model", "opus", "--profile", "work"], "ttys009")]
+
+
+class OmpTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+        self.file = os.path.join(self.tmp, PI_NAME)
+        shutil.copy(PI_FIX, self.file)
+
+    def pointer(self, tty, file):
+        d = os.path.join(self.tmp, ".omp", "agent", "terminal-sessions")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, tty), "w") as f:
+            f.write(f"/w/pi\n{file}\ncwdstat 1 2\n")
+
+    def locate(self):
+        return side.handle("locate", {"harness": "omp", "pid": 100, "cwd": "/w/pi"},
+                           env(home=self.tmp, procs=lambda pid: OMP_TREE))
+
+    def test_locate_exact_from_terminal_pointer(self):
+        self.pointer("ttys009", self.file)
+        r = self.locate()
+        self.assertEqual(r["session"], {"harness": "omp", "id": PI_SID, "file": self.file, "cwd": "/w/pi"})
+        self.assertEqual(r["confidence"], "exact")
+
+    def test_locate_pointer_to_missing_file(self):
+        self.pointer("ttys009", os.path.join(self.tmp, "gone.jsonl"))
+        self.assertEqual(self.locate()["error"]["code"], "not-found")
+
+    def test_locate_no_pointer(self):
+        self.assertEqual(self.locate()["error"]["code"], "not-found")
+
+    def test_copy_answer_only(self):
+        session = {"harness": "omp", "id": PI_SID, "file": self.file, "cwd": "/w/pi"}
+        r = side.handle("copy", {"session": session, "pid": 100, "answerOnly": True, "dataDir": os.path.join(self.tmp, "d")},
+                        env(home=self.tmp, procs=lambda pid: OMP_TREE))
+        argv = r["launch"]["argv"]
+        self.assertEqual(argv[:2], ["omp", "--append-system-prompt"])
+        self.assertEqual(argv[3:], ["--tools", "read,grep,glob,find", "--model", "opus", "--profile", "work"])
+
+
 class HostTest(unittest.TestCase):
     def setUp(self):
         import tempfile

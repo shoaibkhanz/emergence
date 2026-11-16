@@ -1,0 +1,15 @@
+{"type":"title","v":1,"title":"omp writes a title line without an id","source":"auto"}
+{"type":"session","version":3,"id":"01a1e1d5-0000-0000-0000-000000000001","timestamp":"2026-11-16T00:49:57.417Z","cwd":"/w/pi"}
+{"type":"model_change","id":"m1","parentId":null,"provider":"anthropic","modelId":"claude-opus-5-5"}
+{"type":"custom_message","id":"cm1","parentId":"m1","customType":"x","content":"CUSTOM_MESSAGE","display":false}
+{"type":"message","id":"u1","parentId":"cm1","message":{"role":"user","content":[{"type":"text","text":"FIRST QUESTION about pi"},{"type":"image","data":"IMAGE_DATA"}]}}
+{"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","content":[{"type":"thinking","thinking":"THINKING"},{"type":"text","text":"first answer"},{"type":"toolCall","name":"read","arguments":{"path":"x"}}]}}
+{"type":"message","id":"r1","parentId":"a1","message":{"role":"toolResult","content":[{"type":"text","text":"TOOL_RESULT"}]}}
+{"type":"message","id":"u2","parentId":"r1","message":{"role":"user","content":[{"type":"text","text":"ABANDONED QUESTION"}]}}
+{"type":"message","id":"a2","parentId":"u2","message":{"role":"assistant","content":[{"type":"text","text":"ABANDONED ANSWER"}]}}
+{"type":"compaction","id":"c1","parentId":"r1","summary":"SUMMARY of earlier work","firstKeptEntryId":"u1"}
+not json
+{"type":"message","id":"u3","parentId":"c1","message":{"role":"user","content":"LAST QUESTION"}}
+{"type":"custom","id":"x1","parentId":"u3","customType":"foo","data":{}}
+{"type":"message","id":"f1","parentId":"x1","message":{"role":"fileMention","files":[]}}
+{"type":"message","id":"a3","parentId":"f1","message":{"role":"assistant","content":[{"type":"text","text":"LAST ANSWER"}]}}
