@@ -7,7 +7,7 @@ import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout, appHome } from "herdr";
 import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
-  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners } from "./lib.js";
+  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners, worktreeNote, GONE } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000, SUB_FAST = 5000;
 const MAX_FILES = 8; // a selected sub-agent's edited files listed under its card
@@ -33,8 +33,10 @@ function find(node, id) {
 }
 const panelShows = (block) => { const p = find(layout(), "panel"); return !!p && !p.hidden && find(p, "panel-body")?.active === block; };
 
+// A folder gone from disk (a worktree deleted outside the sidebar, its terminal still there): GONE, so it draws no card.
 async function facts(on, cwd) {
   try {
+    if ((await exec("test", ["-d", cwd], { on })).code === 1) return GONE;
     const r = await exec("git", ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir", "--abbrev-ref", "HEAD"], { cwd, on });
     const f = r.code === 0 ? parseRevParse(r.stdout) : null;
     if (f?.branch) {
@@ -145,7 +147,7 @@ export default class AgentGraph extends View {
         const repos = new Map();
         for (const [k, i] of cwds) {
           const v = this.git.get(k)?.v;
-          if (v) repos.set(key(i.machine, v.common), { on: i.machine, top: v.top });
+          if (v?.common) repos.set(key(i.machine, v.common), { on: i.machine, top: v.top });
         }
         await Promise.all([...repos].filter(([k]) => stale(this.prs.get(k), PR_TTL))
           .map(async ([k, r]) => this.prs.set(k, { at: now, v: await pulls(r.on, r.top) })));
@@ -662,7 +664,10 @@ export default class AgentGraph extends View {
   // An isolated sub-agent's own branch (git, not the meta's: the person may have switched it). A graph card has no room
   // for the name beside its title: the icon, the name on hover; a list row (wide) shows it.
   branchTag(t, el, d, z, named) {
-    const w = d.sub?.worktree, br = w && this.git.get(key(d.machine, w))?.v?.branch;
+    const w = d.sub?.worktree, f = w && this.git.get(key(d.machine, w))?.v, br = f?.branch;
+    if (f?.gone) return el.child(h_flex().id(`br-${d.id}`).flex_none().gap(4 * z).items_center().text_size(11 * z).text_color(t.dim)
+      .tooltip(`Its worktree was deleted\n${w.replace(home(), "~")}`)
+      .child(svg(ICON("branch")).size(11 * z).flex_none().opacity(0.5)).when(named, (el) => el.child("worktree deleted")));
     return !br ? el : el.child(h_flex().id(`br-${d.id}`).flex_none().max_w(160 * z).gap(4 * z).items_center().text_size(11 * z).text_color(t.dim)
       .tooltip(`Works in its own worktree on ${br}\n${w.replace(home(), "~")}`)
       .child(svg(ICON("branch")).size(11 * z).flex_none()).when(named, (el) => el.child(div().min_w(0).truncate().child(br))));
@@ -699,7 +704,7 @@ export default class AgentGraph extends View {
 
   // A card's hover: what a sub-agent touched, else its tab; then its calls and cost, and with what's under it.
   tip(d) {
-    const head = d.sub ? this.fileTip(d.sub) : d.history ? `${d.name}: click to ${d.folded ? "open" : "fold"}` : d.tab;
+    const head = d.sub ? this.fileTip(d.sub, d.machine) : d.history ? `${d.name}: click to ${d.folded ? "open" : "fold"}` : d.tab;
     const own = d.m && metricLine(d.m), all = d.below && (d.below.tools || d.below.tokens) ? metricLine(d.total) : "";
     return [head, own && `${own}${all ? " (its own)" : ""}`, all && `${d.history ? "" : "with sub-agents: "}${all}`,
       d.total?.estimate && ESTIMATE, d.total?.unpriced && "+: some requests had no known price"].filter(Boolean).join("\n");
@@ -731,10 +736,10 @@ export default class AgentGraph extends View {
   }
 
   // The hover label: tooltips take plain text.
-  fileTip(s) {
+  fileTip(s, machine = null) {
     if (!s.edited.length) return `${subState(s, this.now)}\nNo files edited`;
     const more = s.edited.length - MAX_FILES;
-    const where = s.worktree ? ` in ${s.worktree.split("/").pop()}` : ""; // an isolated sub-agent's own worktree
+    const where = worktreeNote(s.worktree, s.worktree && this.git.get(key(machine, s.worktree))?.v); // an isolated sub-agent's own worktree
     return [subState(s, this.now), `${s.edited.length} edited${where} · ● uncommitted`, ...s.edited.slice(0, MAX_FILES).map((e) => `${e.dirty ? "●" : "  "} ${this.fileName(e)}`),
       ...(more > 0 ? [`+${more} more`] : [])].join("\n");
   }

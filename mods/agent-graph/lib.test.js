@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
   RANK, subItems, subState, ago, harnessOf, subRequests, overlaps, conflictsOf, metered, own, addUp, money, tokens, costLabel, metricLine,
-  summary, fold, foldables, isFolded, refold, worktreeOwners } from "./lib.js";
+  summary, fold, foldables, isFolded, refold, worktreeOwners, worktreeNote, GONE } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -332,4 +332,18 @@ test("worktreeOwners: an isolated sub-agent's worktree names who works there, a 
   expect([...owners.keys()]).toEqual(["|/r/.claude/worktrees/a", "box|/r/w"]);
   expect(owners.get("|/r/.claude/worktrees/a")).toEqual({ agent: "Home", task: "Ticket 2", running: true });
   expect(owners.get("box|/r/w")).toEqual({ agent: "Remote", task: "Far", running: false });
+});
+
+test("a terminal whose folder was deleted (git: gone) draws no card; its worktree goes with it", () => {
+  const gone = (_m, cwd) => (cwd === "/r/app/.wt/old" ? GONE : git(_m, cwd));
+  const tree = buildTree([item("t1", "/r/app", "idle"), item("t2", "/r/app/.wt/old", "idle"), item("t3", "/r/app/.wt/old", "working", "t2")], gone, prs);
+  expect(tree.map((r) => r.name)).toEqual(["app"]);
+  expect(tree[0].worktrees.map((w) => w.top)).toEqual(["/r/app"]);
+});
+
+test("worktreeNote: where an isolated sub-agent worked, and whether that worktree is gone", () => {
+  expect(worktreeNote(null, null)).toBe("");
+  expect(worktreeNote("/r/app/.wt/feat", GIT["/r/app/.wt/feat"])).toBe(" in feat");
+  expect(worktreeNote("/r/app/.wt/old", GONE)).toBe(" in old (worktree deleted)");
+  expect(worktreeNote("/r/app/.wt/old", undefined)).toBe(" in old"); // not checked yet
 });

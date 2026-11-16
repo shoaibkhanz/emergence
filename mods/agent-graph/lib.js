@@ -13,6 +13,12 @@ export const cleanTitle = (s) =>
     .replace(/[\u{E000}-\u{F8FF}\u{F0000}-\u{10FFFF}]/gu, "").replace(/\s+/g, " ").trim();
 
 // `git rev-parse --path-format=absolute --show-toplevel --git-common-dir --abbrev-ref HEAD` -> facts.
+// git facts for a folder that no longer exists (a deleted worktree): its terminals draw no card.
+export const GONE = Object.freeze({ gone: true });
+
+// " in <worktree>" for an isolated sub-agent, marked once git finds its worktree deleted ("" without one).
+export const worktreeNote = (path, facts) => (path ? ` in ${tail(path)}${facts?.gone ? " (worktree deleted)" : ""}` : "");
+
 export function parseRevParse(stdout) {
   const [top, common, branch] = stdout.trim().split("\n");
   return top && common ? { top, common, branch: branch === "HEAD" ? null : branch ?? null } : null;
@@ -77,6 +83,7 @@ export function buildTree(items, git, prs, { activeOnly = false, cursor = null, 
   const repos = new Map();
   for (const n of roots) {
     const g = git(n.machine, n.cwd);
+    if (g?.gone) continue;
     const rid = g ? `${n.machine ?? ""}|${g.common}` : `${n.machine ?? ""}|none`;
     const repo = repos.get(rid) ?? repos.set(rid, g
       ? { id: rid, kind: "repo", name: repoName(g.common), machine: n.machine, worktrees: new Map() }
