@@ -7,7 +7,8 @@ import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout, appHome } from "herdr";
 import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
-  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners, worktreeNote, GONE } from "./lib.js";
+  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners, worktreeNote, GONE, detailRequest } from "./lib.js";
+import { Detail } from "./detail.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000, SUB_FAST = 5000;
 const MAX_FILES = 8; // a selected sub-agent's edited files listed under its card
@@ -71,6 +72,7 @@ const BREATH = { from: 0.4, to: 1, period: 1600 };
 
 export default class AgentGraph extends View {
   init(_props, cx) {
+    if (props()?.detail) { this.detail = new Detail(cx); return; } // a sub-agent's details (openDetail): its own view
     this.panel = props()?.panel === true;
     this.backAt = shared("emergence.back");
     this.git = new Map(); // machine|cwd -> { at, v: facts | null }
@@ -216,6 +218,16 @@ export default class AgentGraph extends View {
     this.dismiss();
   }
 
+  // A sub-agent: its details in a dialog over the graph (detail.js), not its agent's terminal; one it can't read yet
+  // (omp, another machine) still goes to its agent. The large popup closes first: a dialog doesn't sit over a popup.
+  open(n) {
+    if (!n.sub) return this.focusAgent(n);
+    const req = detailRequest(n, this.items(), (i) => this.git.get(key(i.machine, i.cwd))?.v?.top ?? null);
+    if (!req) return this.focusAgent(n);
+    this.dismiss();
+    openOverlay({ mod: "agent-graph", kind: "dialog", width: 680, height: 0.9, props: { detail: req, owner: n.owner, name: n.name, sub: n.sub } });
+  }
+
   // Cross-mod deep link: pr-review picks this up (if < 30 s old) and selects the PR.
   // With a PRs panel in the layout (emergence) that panel takes it; otherwise the pr-review window.
   openPr(w) {
@@ -287,9 +299,13 @@ export default class AgentGraph extends View {
   }
 
   // The large popup (mod.open) closing gives the keyboard back to the side panel showing (emergence.back).
-  async close() { if (!this.panel && props()?.overlay) setShared("emergence.back", Date.now()); }
+  async close() {
+    if (this.detail) return this.detail.dismissed();
+    if (!this.panel && props()?.overlay) setShared("emergence.back", Date.now());
+  }
 
   render(cx) {
+    if (this.detail) return this.detail.render(cx);
     const t = theme();
     this.Z = Number(settings()?.zoom) > 0 ? Number(settings().zoom) : 1;
     if (this.raw) this.size = { width: this.raw.width / this.Z, height: this.raw.height / this.Z };
@@ -343,7 +359,7 @@ export default class AgentGraph extends View {
         else if ((k === "left" || k === "right") && picks[i]?.data.foldable && picks[i].data.folded !== (k === "left")) this.setFold([this.sel], k === "left");
         else if ((k === "down" || k === "up") && picks.length) this.sel = picks[(i + (k === "down" ? 1 : picks.length - 1)) % picks.length].data.id;
         else if (k === "enter" && i >= 0 && noTerminal(picks[i].data)) this.toggle(picks[i].data);
-        else if (k === "enter" && i >= 0) return this.focusAgent(picks[i].data);
+        else if (k === "enter" && i >= 0) return this.open(picks[i].data);
         else return;
         cx.stop_propagation();
         cx.notify();
@@ -371,8 +387,8 @@ export default class AgentGraph extends View {
       .on_click((_e, cx) => { onClick(cx); cx.notify(); });
     const icon = (el) => el.w(24).px(0).justify_center().border_color(alpha(t.border, 0)) // icon buttons have no box, as in every panel
       .hover((s) => s.bg(t.hover).text_color(t.foreground));
-    const hint = !this.panel ? "↑↓ select · ←→ fold · A active · all · ↵ focus · F fit · R reset · Esc close"
-      : W >= 1000 ? "↑↓ select · ←→ fold · A active · all · ↵ focus · F fit · R reset" : null;
+    const hint = !this.panel ? "↑↓ select · ←→ fold · A active · all · ↵ open · F fit · R reset · Esc close"
+      : W >= 1000 ? "↑↓ select · ←→ fold · A active · all · ↵ open · F fit · R reset" : null;
     // Active | All (A), each with what it shows: decided each time the panel opens (lib openOnActive), then yours.
     const pick = (active) => { if (this.activeOnly !== active) { this.activeOnly = active; this.view = null; this.nudge = false; } };
     // On All, a dot by the Active count says Active has something for you: amber when an agent needs you, else blue.
@@ -426,7 +442,7 @@ export default class AgentGraph extends View {
         .when(!!tone, (el) => el.bg(alpha(tone, 0.08))).when(sel && !tone, (el) => el.bg(t.selected))
         .hover((s) => s.bg(tone ? alpha(tone, 0.14) : t.hover))
         .when(!!tip, (el) => el.tooltip(tip))
-        .on_click((_e, cx) => { if (sub || a.history) this.sel = a.id; if (a.history) { this.toggle(a); cx.notify(); } else this.focusAgent(a); })
+        .on_click((_e, cx) => { if (sub || a.history) this.sel = a.id; if (a.history) { this.toggle(a); cx.notify(); } else this.open(a); })
         .child(this.chevron(t, a, 1))
         .child(this.dot(t, a.status, 8))
         .when(!!ic && !a.history, (el) => el.child(ic))
@@ -642,7 +658,7 @@ export default class AgentGraph extends View {
       .when(sel && !tone, (el) => el.bg(t.selected))
       .cursor_pointer()
       .hover((s) => s.bg(tone ? mix(t.background, tone, 0.14) : sel ? t.selected : t.raised).border_color(isFoc ? t.accent : tone ?? t.input).shadow_sm())
-      .on_click(() => { if (this.drag?.moved) return; if (sub) this.sel = d.id; this.focusAgent(d); }) // a pan that started on the card isn't a click
+      .on_click(() => { if (this.drag?.moved) return; if (sub) this.sel = d.id; this.open(d); }) // a pan that started on the card isn't a click
       .when(!!tip, (el) => el.tooltip(tip))
       .map((el) => this.ring(t, el, n, z, isFoc))
       .child(h_flex().gap(8 * z).items_center()

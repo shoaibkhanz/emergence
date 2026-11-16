@@ -284,6 +284,69 @@ class ClaudeTest(Base):
         self.assertEqual(s["tools"], 1)
 
 
+class DetailTest(Base):
+    """One sub-agent's whole story, read when its details open: printed for the view, never cached."""
+    claude = ClaudeTest.claude
+
+    def req(self, sid="a1", harness="claude"):
+        return {"pid": 100, "harness": harness, "top": self.wt, "id": sid}
+
+    def test_task_result_facts_and_files(self):
+        procs = self.claude()
+        write(os.path.join(self.subs, "agent-a1.meta.json"), {"description": "Fix the flaky test", "agentType": "general-purpose", "finished": True})
+        jsonl(os.path.join(self.subs, "agent-a1.jsonl"), [
+            {"type": "user", "timestamp": iso(NOW - 9 * MIN), "message": {"role": "user", "content": "Fix the flaky test in a.py.\nIt fails one run in ten."}},
+            {"type": "attachment", "timestamp": iso(NOW - 9 * MIN), "attachment": {"type": "reminder"}},
+            {**(e := use(NOW - 8 * MIN, "u1", "Edit", {"file_path": os.path.join(self.wt, "a.py"), "old_string": "x", "new_string": "y"})),
+             "message": {**e["message"], "id": "m1", "model": "claude-opus-5-5"}},  # a real record carries its message id
+            result(NOW - 8 * MIN, "u1"),
+            {"type": "assistant", "timestamp": iso(NOW - 7 * MIN), "message": {"id": "m9", "model": "claude-opus-5-5", "usage": {"input_tokens": 1000},
+                                                                            "content": [{"type": "text", "text": "Fixed: a.py waited on a timer."}]}},
+        ], mtime=NOW - 7 * MIN)
+        out = sa.detail(self.req(), env(self.home, procs, lambda top: " M a.py\0" if top == self.wt else None))
+        d = out["detail"]
+        self.assertEqual((d["title"], d["type"], d["model"], d["running"]), ("Fix the flaky test", "general-purpose", "claude-opus-5-5", False))
+        self.assertEqual(d["task"], "Fix the flaky test in a.py.\nIt fails one run in ten.")
+        self.assertEqual(d["result"], "Fixed: a.py waited on a timer.")
+        self.assertEqual((d["startedAt"], d["endedAt"]), (NOW - 9 * MIN, NOW - 7 * MIN))
+        self.assertEqual([(e["rel"], e["dirty"]) for e in d["edited"]], [("a.py", True)])
+        self.assertEqual(d["tools"], 1)
+        self.assertFalse(os.path.exists(sa.cache_path(env(self.home))))  # nothing kept: prompts and output stay out of the cache
+
+    def test_result_from_handback(self):
+        procs = self.claude()
+        jsonl(os.path.join(self.subs, "agent-a1.jsonl"), [
+            {"type": "user", "timestamp": iso(NOW - 3 * MIN), "message": {"content": [{"type": "text", "text": "Review the diff"}]}},
+            {"type": "assistant", "timestamp": iso(NOW - 2 * MIN), "message": {"content": [{"type": "text", "text": "Looking."}]}},
+            use(NOW - MIN, "h1", "SubagentHandback", {"message": "## Findings\nNone."}),
+            result(NOW - MIN, "h1"),
+        ])
+        d = sa.detail(self.req(), env(self.home, procs))["detail"]
+        self.assertEqual((d["task"], d["result"]), ("Review the diff", "## Findings\nNone."))
+
+    def test_long_text_is_cut(self):
+        procs = self.claude()
+        jsonl(os.path.join(self.subs, "agent-a1.jsonl"), [{"type": "user", "timestamp": iso(NOW), "message": {"content": "x" * (sa.TEXT_MAX + 50)}}])
+        d = sa.detail(self.req(), env(self.home, procs))["detail"]
+        self.assertEqual(len(d["task"]), sa.TEXT_MAX + 1)
+        self.assertTrue(d["task"].endswith("…"))
+        self.assertIsNone(d["result"])
+
+    def test_gone_bad_and_not_yet(self):
+        procs = self.claude()
+        os.makedirs(self.subs)
+        self.assertEqual(sa.detail(self.req("zz"), env(self.home, procs))["error"]["code"], "gone")
+        self.assertEqual(sa.detail(self.req("../x"), env(self.home, procs))["error"]["code"], "bad-request")
+        self.assertEqual(sa.detail("nope", env(self.home, procs))["error"]["code"], "bad-request")
+        self.assertEqual(sa.detail(self.req(harness="omp"), env(self.home, procs))["error"]["code"], "unsupported")
+
+    def test_cli_detail_always_json(self):
+        r = subprocess.run([sys.executable, "-B", os.path.join(HERE, "subagents.py"), "--detail", json.dumps(self.req())],
+                           capture_output=True, text=True, env={**os.environ, "HERDR_APP_HOME": self.home, "HOME": self.home})
+        self.assertEqual(r.returncode, 0)
+        self.assertIn(json.loads(r.stdout)["error"]["code"], ("gone", "no-session"))
+
+
 class PriceTest(unittest.TestCase):
     def test_longest_prefix_with_a_boundary(self):
         self.assertEqual(sa.price("claude-fable-5-2"), (8, 40, 0.025))

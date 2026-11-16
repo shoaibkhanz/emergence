@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
   RANK, subItems, subState, ago, harnessOf, subRequests, overlaps, conflictsOf, metered, own, addUp, money, tokens, costLabel, metricLine,
-  summary, fold, foldables, isFolded, refold, worktreeOwners, worktreeNote, GONE } from "./lib.js";
+  summary, fold, foldables, isFolded, refold, worktreeOwners, worktreeNote, GONE, detailRequest, detailHead, took, mdLines } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -346,4 +346,28 @@ test("worktreeNote: where an isolated sub-agent worked, and whether that worktre
   expect(worktreeNote("/r/app/.wt/feat", GIT["/r/app/.wt/feat"])).toBe(" in feat");
   expect(worktreeNote("/r/app/.wt/old", GONE)).toBe(" in old (worktree deleted)");
   expect(worktreeNote("/r/app/.wt/old", undefined)).toBe(" in old"); // not checked yet
+});
+
+test("detailRequest: a sub-agent card asks subagents.py about itself through its agent's pid; only local Claude for now", () => {
+  const items = [{ id: "t1", pid: 42, harness: "claude", machine: null, cwd: "/r/app" }, { id: "t2", pid: 7, harness: "omp", machine: null, cwd: "/r/app" }];
+  const card = (owner) => ({ id: `${owner}#a1`, owner, sub: { id: "a1" }, machine: null });
+  expect(detailRequest(card("t1"), items, () => "/r/app")).toEqual({ pid: 42, harness: "claude", top: "/r/app", id: "a1" });
+  expect(detailRequest(card("t2"), items, () => "/r/app")).toBeNull();
+  expect(detailRequest({ id: "t1#~earlier", owner: "t1", history: 3 }, items, () => null)).toBeNull();
+  expect(detailRequest(card("gone"), items, () => null)).toBeNull();
+});
+
+test("took and detailHead: the dialog's header facts", () => {
+  expect([took(45_000), took(386_000), took(4_380_000), took(-5)]).toEqual(["45s", "6m 26s", "1h 13m", "0s"]);
+  const d = { running: false, type: "Plan", model: "claude-fable-5-2", startedAt: 0, endedAt: 386_000, updatedAt: 386_000, tools: 15, tokens: 879_699, cost: 3.4177, costKind: "estimate" };
+  expect(detailHead(d, 386_000 + 6 * 3_600_000)).toEqual({ state: "Finished 6h", facts: "Plan · fable-5-2 · ran 6m 26s", metrics: "⚒ 15 · 880k tokens · ≈ $3.42" });
+  expect(detailHead({ ...d, running: true, model: null, type: null }, 400_000).facts).toBe("running 6m 40s");
+});
+
+test("mdLines: a report's markdown as plain lines a dialog can style (no inline markup)", () => {
+  const md = "## What I found\n\nThe **graph** reads `items()`.\n- one\n  * two\n1. first\n```js\nconst **x** = 1;\n```\nend";
+  expect(mdLines(md)).toEqual([
+    { kind: "h", text: "What I found" }, { kind: "gap", text: "" }, { kind: "p", text: "The graph reads items()." },
+    { kind: "li", text: "one", depth: 0 }, { kind: "li", text: "two", depth: 1 }, { kind: "p", text: "1. first" },
+    { kind: "code", text: "const **x** = 1;" }, { kind: "p", text: "end" }]);
 });

@@ -424,15 +424,19 @@ def mtime_ms(p: str) -> int:
     return int(os.path.getmtime(p) * 1000)
 
 
-def claude(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
-    """A Claude Code agent: its pid's tree -> ~/.claude/sessions/<pid>.json -> sessionId -> the transcript beside
-    ~/.claude/projects/*/<sessionId>/subagents/agent-<id>.jsonl (+ .meta.json)."""
-    sid, pid = None, None
+def claude_session(a: dict, env: Env) -> tuple:
+    """(sessionId, the pid it belongs to) of the Claude Code under a's foreground pid, else (None, None)."""
     for p in env.procs(int(a["pid"])):
         f = os.path.join(env.home, ".claude", "sessions", f"{p.pid}.json")
         if os.path.isfile(f):
-            sid, pid = (load(f) or {}).get("sessionId"), p.pid
-            break
+            return (load(f) or {}).get("sessionId"), p.pid
+    return None, None
+
+
+def claude(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
+    """A Claude Code agent: its pid's tree -> ~/.claude/sessions/<pid>.json -> sessionId -> the transcript beside
+    ~/.claude/projects/*/<sessionId>/subagents/agent-<id>.jsonl (+ .meta.json)."""
+    sid, pid = claude_session(a, env)
     out = {"edited": [], "subagents": [], **metrics(None, None)}
     if not sid:
         return out
@@ -492,6 +496,72 @@ def omp(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
 
 
 HARNESSES = {"claude": claude, "omp": omp}
+
+TEXT_MAX = 20_000  # a task or result longer than this is cut (…): the dialog shows the start; the transcript has it all
+SUB_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _cut(t):
+    return t if not isinstance(t, str) or len(t) <= TEXT_MAX else t[:TEXT_MAX] + "…"
+
+
+def _text(content) -> str | None:
+    """A message's own words: a string, or its text blocks joined (None: only tool calls or results)."""
+    if isinstance(content, str):
+        return content
+    texts = [p.get("text") for p in content or [] if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str)]
+    return "\n\n".join(texts) if texts else None
+
+
+def detail(req, env: Env) -> dict:
+    """One Claude sub-agent's details, for its dialog: {title, type, model, running, startedAt, endedAt, task, result,
+    edited, ...metrics}. task: the first message it was given; result: its handback (a background sub-agent's report),
+    else the last thing it said. Read whole, printed, never cached (the scan's cache keeps no prompts or output)."""
+    if not isinstance(req, dict) or not SUB_ID.match(str(req.get("id") or "")):
+        return error("bad-request", "expected {pid, harness, top, id}")
+    if req.get("harness") != "claude":
+        return error("unsupported", "Details for this harness's sub-agents aren't read yet.")
+    sid, pid = claude_session(req, env)
+    if not sid:
+        return error("no-session", "Its agent's session isn't running any more.")
+    logs = glob.glob(os.path.join(env.home, ".claude", "projects", "*", sid, "subagents", f"agent-{req['id']}.jsonl"))
+    if not logs:
+        return error("gone", "Its transcript is gone: Claude Code keeps them about 30 days.")
+    log, top = logs[0], req.get("top")
+    meta_f = log[:-6] + ".meta.json"
+    meta = load(meta_f) if os.path.isfile(meta_f) else {}
+    meta = meta if isinstance(meta, dict) else {}
+    mt, st = mtime_ms(log), blank()
+    task = result = handback = model = None
+    first = last = None
+    with open(log, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(o, dict) or o.get("type") not in ("user", "assistant"):
+                continue
+            at = ms(o.get("timestamp"), mt)
+            first, last = first or at, at
+            parse_claude(o, st, at)
+            m = o.get("message") if isinstance(o.get("message"), dict) else {}
+            if o["type"] == "user" and task is None and not o.get("isMeta"):
+                task = _text(m.get("content"))
+            elif o["type"] == "assistant":
+                model = m.get("model") if m.get("model") not in (None, "<synthetic>") else model
+                result = _text(m.get("content")) or result
+                for p in _parts(o):
+                    if p.get("type") == "tool_use" and p.get("name") == "SubagentHandback" and isinstance(p.get("input"), dict):
+                        handback = p["input"].get("message") if isinstance(p["input"].get("message"), str) else handback
+    kind = "api" if approved_key(env, pid) else "estimate"
+    wt = meta.get("worktreePath") if isinstance(meta.get("worktreePath"), str) else None
+    return {"v": V, "detail": {
+        "id": req["id"], "title": first_line(meta.get("description")) or first_line(meta.get("agentType")) or "Sub-agent",
+        "type": meta.get("agentType") if isinstance(meta.get("agentType"), str) else None, "model": model,
+        "running": not meta.get("finished") and env.now - mt < STALE, "startedAt": first, "endedAt": last,
+        "task": _cut(task), "result": _cut(handback or result), "worktree": wt,
+        "edited": edited(st, wt or top, Dirty(env)), **metrics(st, kind)}}
 
 
 def error(code: str, message: str) -> dict:
@@ -564,6 +634,15 @@ def real_env() -> Env:
 
 
 def main(argv: list) -> None:
+    if "--detail" in argv:
+        try:
+            req = json.loads(argv[argv.index("--detail") + 1])
+            print(json.dumps(detail(req, real_env())))
+        except (ValueError, IndexError) as e:
+            print(json.dumps(error("bad-request", str(e))))
+        except Exception as e:  # always one JSON answer
+            print(json.dumps(error("internal", f"{type(e).__name__}: {e}")))
+        return
     try:
         req = json.loads(argv[argv.index("--json") + 1]) if "--json" in argv else []
     except (ValueError, IndexError) as e:

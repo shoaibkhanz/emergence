@@ -290,3 +290,42 @@ export function worktreeOwners(items, subs) {
 // The graph's terminals: live ones, minus the side chat slots (layout block side-slots, mods/side). A side chat is in
 // the sidebar's Side chats; here, a click on it would swap the panel the graph is in for the Side view.
 export const graphTerminals = (terminals, sideSlots) => terminals.filter((x) => x.state === "live" && !sideSlots.includes(x.name));
+
+// ---- A sub-agent's details (the dialog a sub-agent card opens: detail.js) ----
+
+// What subagents.py --detail needs to find one sub-agent: its agent's pid and harness, the worktree top, its id.
+// null: not one it reads (a history card, another machine, a harness without details yet).
+export function detailRequest(card, items, top) {
+  const o = card?.sub && items.find((i) => i.id === card.owner);
+  return o && !o.machine && o.harness === "claude" && o.pid ? { pid: o.pid, harness: o.harness, top: top(o), id: card.sub.id } : null;
+}
+
+// "45s", "6m 26s", "1h 13m".
+export function took(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
+
+// The header: its state chip, "Plan · fable-5-2 · ran 6m 26s", "⚒ 15 · 880k tokens · ≈ $3.42".
+export function detailHead(d, now) {
+  const span = d.startedAt != null ? `${d.running ? "running" : "ran"} ${took((d.running ? now : d.endedAt ?? now) - d.startedAt)}` : "";
+  const t = own(d);
+  return { state: subState({ running: d.running, updatedAt: d.endedAt ?? now }, now),
+    facts: [d.type, d.model?.replace(/^claude-/, ""), span].filter(Boolean).join(" · "),
+    metrics: [t.tools ? `⚒ ${t.tools}` : "", t.tokens ? `${tokens(t.tokens)} tokens` : "", costLabel(t)].filter(Boolean).join(" · ") };
+}
+
+// A task's or report's markdown as lines to style: headings, bullets (depth by indent), code (fenced, kept as is),
+// gaps; bold, italics and backticks dropped, since a line is drawn in one style.
+export function mdLines(body) {
+  const out = [], plain = (s) => s.replace(/\*\*(.+?)\*\*|__(.+?)__/g, "$1$2").replace(/`([^`]+)`/g, "$1");
+  let code = false;
+  for (const l of body.replace(/\s+$/, "").split("\n")) {
+    if (/^\s*```/.test(l)) { code = !code; continue; }
+    const li = l.match(/^(\s*)[-*]\s+(.*)$/);
+    out.push(code ? { kind: "code", text: l } : !l.trim() ? { kind: "gap", text: "" }
+      : /^#{1,6}\s/.test(l) ? { kind: "h", text: plain(l.replace(/^#{1,6}\s+/, "")) }
+      : li ? { kind: "li", text: plain(li[2]), depth: Math.floor(li[1].length / 2) } : { kind: "p", text: plain(l) });
+  }
+  return out;
+}
