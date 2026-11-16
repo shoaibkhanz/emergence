@@ -2,11 +2,14 @@
 Herdr knows nothing about (it sees only terminals). pi, Codex and OpenCode: not read in v1.
 
 `python3 subagents.py --json '[{address, pid, harness, top}]'` (the live local agent terminals: foreground pid, "claude"
-or "omp", the git top of their folder) prints {"v": 1, "agents": {address: {edited, subagents}}}, or {"v": 1, "error":
-{code, message}}; it always exits 0. edited: [{path, rel, at, dirty}], newest first (rel: worktree-relative, dirty:
-still uncommitted). A sub-agent: {id, title, running, action, edited, worktree, updatedAt}; running ones and those
-updated in the last 30 min. Only file paths and short labels (a Bash call's description, omp's intent) come out, never
-commands, prompts or output. Logs are read from a byte offset kept per file in <app>/data/agent-graph/subagents.json.
+or "omp", the git top of their folder) prints {"v": 1, "agents": {address: {edited, subagents, ...metrics}}}, or
+{"v": 1, "error": {code, message}}; it always exits 0. edited: [{path, rel, at, dirty}], newest first (rel:
+worktree-relative, dirty: still uncommitted). A sub-agent: {id, title, running, action, edited, worktree, updatedAt,
+finishedAt, ...metrics}: every one the session ran. Metrics, the agent's own and each sub-agent's: {tools, tokens,
+cost, costKind}: tool calls, tokens (input, output, cache reads and writes), USD; costKind "recorded" (omp's own
+figure), "api" (Claude billed to an API key), "estimate" (Claude on a subscription: tokens at API prices), null with
+no price. Only file paths, short labels (a Bash call's description, omp's intent) and numbers come out, never commands,
+prompts, output or keys. Logs are read from a byte offset kept per file in <app>/data/agent-graph/subagents-2.json.
 """
 from __future__ import annotations  # stock macOS python3 is 3.9: `str | None` must not evaluate at import
 
@@ -20,15 +23,57 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 from typing import Callable
 
 V = 1
 MIN = 60_000
-RECENT = 30 * MIN  # finished sub-agents (and the agent's own edits) shown this long
+RECENT = 30 * MIN  # the agent's own edits shown this long
 STALE = 10 * MIN  # a sub-agent silent this long isn't running, finished or not
-TAIL = 8 << 20  # an agent's own transcript is first read from this far before its end: only recent edits matter
+TAIL = 8 << 20  # before this far from its end, an agent's own transcript's first read takes only usage lines
 PENDING = 20  # calls in flight remembered per log (an interrupted one never gets its result)
 CLAUDE_EDITS = ("Edit", "MultiEdit", "Write", "NotebookEdit")
+CACHE = "subagents-2.json"  # -2: entries carry metrics; the first version's had none
+
+# Claude API list prices, $ per million tokens: (input, output, cache-read multiplier of input). Cache writes are
+# input x1.25 (5 min) or x2 (1 h); "fast" speed doubles everything. From the Claude API reference, 2026-11-03. This is
+# what Claude Code itself computes (its cost-state totalCostUSD), even on a subscription. Bedrock, Vertex and
+# negotiated prices differ. A model not listed gets no price, never a guess.
+PRICES = {
+    "claude-fable-5-2": (8, 40, 0.025), "claude-fable-5-1": (10, 50, 0.025), "claude-fable-5": (10, 50, 0.1),
+    "claude-mythos-5-2": (8, 40, 0.025), "claude-mythos-5-1": (10, 50, 0.025),
+    "claude-opus-5-5": (4, 20, 0.05), "claude-opus-5": (5, 25, 0.1),
+    "claude-opus-4-8": (5, 25, 0.1), "claude-opus-4-7": (5, 25, 0.1), "claude-opus-4-6": (5, 25, 0.1),
+    "claude-sonnet-5-5": (2, 10, 0.05), "claude-sonnet-5": (2, 10, 0.1), "claude-sonnet-4-6": (3, 15, 0.1),
+    "claude-haiku-5-5": (0.10, 0.50, 0.1), "claude-haiku-4-5": (1, 5, 0.1),
+}
+
+
+def price(model) -> tuple | None:
+    """The longest listed prefix that ends at a boundary: "claude-fable-5-20261101" is fable-5 dated, not fable-5-2."""
+    if not isinstance(model, str):
+        return None
+    hits = [k for k in PRICES if model == k or (model.startswith(k) and model[len(k)] in "-@[")]
+    return PRICES[max(hits, key=len)] if hits else None
+
+
+def claude_cost(model, u: dict) -> float | None:
+    """One assistant message's USD at list prices, from its usage."""
+    p = price(model)
+    if not p:
+        return None
+    n = lambda k, d=u: d.get(k) if isinstance(d.get(k), (int, float)) else 0
+    i, o, read = p
+    cc = u.get("cache_creation") if isinstance(u.get("cache_creation"), dict) else None
+    write = n("ephemeral_5m_input_tokens", cc) * 1.25 + n("ephemeral_1h_input_tokens", cc) * 2 if cc \
+        else n("cache_creation_input_tokens") * 1.25
+    usd = (n("input_tokens") * i + n("output_tokens") * o + write * i + n("cache_read_input_tokens") * i * read) / 1e6
+    return usd * 2 if u.get("speed") == "fast" else usd
+
+
+def claude_tokens(u: dict) -> int:
+    return sum(u.get(k) for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+               if isinstance(u.get(k), int))
 
 
 @dataclass(frozen=True)
@@ -44,6 +89,7 @@ class Env:
     now: int  # ms
     procs: Callable[[int], list]  # pid -> that pid, then its descendants, breadth-first
     git_status: Callable[[str], "str | None"]  # worktree top -> `git status --porcelain -z` stdout, None on failure
+    penv: Callable[[int], str] = lambda pid: ""  # pid -> `ps eww` text (its command, then its environment)
 
 
 def procs_from(ps: str, pid: int) -> list:
@@ -135,12 +181,43 @@ def _pend(st: dict, cid, label: str) -> None:
             st["pending"].pop(next(iter(st["pending"])))
 
 
-def parse_claude(o: dict, st: dict, at: int) -> None:
-    """One Claude transcript line into the log's state: edits (Edit/Write paths and the files a Bash command changed)
-    and calls still waiting for their result."""
+def count_claude(o: dict, st: dict) -> None:
+    """An assistant record's usage and calls into the log's totals. Claude writes a message once per content block,
+    each with the message's usage (the last one wins), and may repeat it far down the log: messages count once by id,
+    calls by their own id."""
+    m, n = o["message"], st["n"]
+    if m.get("model") == "<synthetic>" or not m.get("id"):
+        return
+    u = m.get("usage") if isinstance(m.get("usage"), dict) else {}
+    # The advisor's requests ride in the message's usage.iterations, each with its own model.
+    parts = [(m.get("model"), u)] + [(x.get("model"), x) for x in u.get("iterations") or ()
+                                     if isinstance(x, dict) and x.get("type") == "advisor_message"]
+    costs = [claude_cost(model, x) for model, x in parts]
+    now = [sum(claude_tokens(x) for _, x in parts), None if None in costs else sum(costs)]
+    was = n["msgs"].get(m["id"])
+    for (tok, usd), sign in ((was, -1), (now, 1)) if was else ((now, 1),):
+        n["tokens"] += sign * tok
+        if usd is None:
+            n["unpriced"] += sign
+        else:
+            n["cost"] += sign * usd
+            n["priced"] += sign
+    n["msgs"][m["id"]] = now
+    for p in _parts(o):
+        if p.get("type") == "tool_use" and p.get("id") and p["id"] not in n["calls"]:
+            n["calls"][p["id"]] = 1
+            n["tools"] += 1
+
+
+def parse_claude(o: dict, st: dict, at: int, own: str | None = None) -> None:
+    """One Claude transcript line into the log's state: edits (Edit/Write paths and the files a Bash command changed),
+    calls still waiting for their result, and usage. own: an agent's own transcript counts only its session's records
+    (a resume copies the earlier session's in)."""
     kind = o.get("type")
     if kind not in ("assistant", "user"):
         return
+    if kind == "assistant" and isinstance(o.get("message"), dict) and (not own or o.get("sessionId") in (None, own)):
+        count_claude(o, st)
     cwd = o.get("cwd") or st.get("cwd")
     st["cwd"] = cwd
     for p in _parts(o):
@@ -162,10 +239,27 @@ def parse_claude(o: dict, st: dict, at: int) -> None:
                 st["edits"][path] = at
 
 
+def count_omp(u, st: dict) -> None:
+    """omp records each request's tokens and its real cost."""
+    if not isinstance(u, dict):
+        return
+    n = st["n"]
+    tok = u.get("totalTokens") if isinstance(u.get("totalTokens"), int) else \
+        sum(u.get(k) for k in ("input", "output", "cacheRead", "cacheWrite") if isinstance(u.get(k), int))
+    n["tokens"] += tok
+    usd = (u.get("cost") or {}).get("total") if isinstance(u.get("cost"), dict) else None
+    if isinstance(usd, (int, float)):
+        n["cost"] += usd
+        n["priced"] += 1
+
+
 def parse_omp(o: dict, st: dict, at: int) -> None:
-    """One omp (pi format) line: written and edited paths, calls in flight with their intent, and session_exit."""
+    """One omp (pi format) line: written and edited paths, calls in flight with their intent, session_exit, usage and
+    calls."""
     kind = o.get("type")
-    if kind == "session":
+    if kind == "model_usage":  # side requests (titles): spend, not turns
+        count_omp(o.get("usage"), st)
+    elif kind == "session":
         st["cwd"] = o.get("cwd") or st.get("cwd")
     elif kind == "custom":
         d = o.get("data") if isinstance(o.get("data"), dict) else {}
@@ -177,9 +271,11 @@ def parse_omp(o: dict, st: dict, at: int) -> None:
     elif kind == "message":
         m = o["message"] if isinstance(o.get("message"), dict) else {}
         if m.get("role") == "assistant":
+            count_omp(m.get("usage"), st)
             for p in _parts(o):
                 if p.get("type") != "toolCall":
                     continue
+                st["n"]["tools"] += 1
                 name, args = str(p.get("name") or ""), p.get("arguments") if isinstance(p.get("arguments"), dict) else {}
                 if name in ("edit", "write"):
                     path = _abs(omp_path(name, args), st.get("cwd"))
@@ -194,31 +290,58 @@ def parse_omp(o: dict, st: dict, at: int) -> None:
                 st["edits"][path] = at
 
 
-def read(path: str, cache: dict, parse, mtime: int, tail: bool = False) -> dict:
+class Cache(dict):
+    """Per log: {off, st}. Remembers which logs this run visited; the rest are gone and dropped on save."""
+
+    def __init__(self, old: dict):
+        super().__init__(old)
+        self.visited = set()
+
+
+def blank() -> dict:
+    return {"edits": {}, "pending": {}, "done": False, "cwd": None,
+            "n": {"tools": 0, "tokens": 0, "cost": 0.0, "priced": 0, "unpriced": 0, "msgs": {}, "calls": {}}}
+
+
+# Lines worth parsing: the rest (attachments, snapshots, Claude's api-request copies) are most of a log's bytes.
+KEYS = (b'"usage"', b'"tool_use"', b'"toolCall"', b'"tool_result"', b"bashEditDiff", b'"toolResult"', b'"session"', b"session_exit",
+        b"tool_execution_start")
+
+
+def read(path: str, cache: Cache, parse, mtime: int, tail: bool = False, final: bool = False) -> dict:
     """The log's state, after parsing only what was appended since the last run (complete lines only). A log that
-    shrank is read again; a first read of an agent's own transcript (tail) starts near its end."""
+    shrank is read again. An agent's own transcript (tail) is long: on a first read, only usage lines before its last
+    TAIL bytes (totals need the whole session; edits and calls in flight only the end). A finished log (final) keeps
+    its totals but not the ids it deduplicated by."""
+    cache.visited.add(path)
     e = cache.get(path)
     size = os.path.getsize(path)
+    if e and e.get("off") == size:
+        return e["st"]
     fresh = not e or e.get("off", 0) > size
     if fresh:
-        e = {"off": max(0, size - TAIL) if tail else 0, "st": {"edits": {}, "pending": {}, "done": False, "cwd": None}}
+        e = {"off": 0, "st": blank()}
+    cut = size - TAIL if fresh and tail else 0
     with open(path, "rb") as f:
         f.seek(e["off"])
         chunk = f.read()
     end = chunk.rfind(b"\n") + 1
-    lines = chunk[:end].split(b"\n")
-    if fresh and e["off"]:
-        lines = lines[1:]  # started mid-line
-    for line in lines:
+    pos = e["off"]
+    for line in chunk[:end].split(b"\n"):
+        at, pos = pos, pos + len(line) + 1
+        if not any(k in line for k in (KEYS[:1] if at < cut else KEYS)) or line.startswith(b'{"type":"api-request'):
+            continue
         try:
             o = json.loads(line)
         except ValueError:
             continue
         if isinstance(o, dict):
             parse(o, e["st"], ms(o.get("timestamp"), mtime))
-    e = {"off": e["off"] + end, "st": e["st"]}
-    cache[path] = e
-    return e["st"]
+    st = e["st"]
+    if final:
+        st = {**st, "n": {**st["n"], "msgs": {}, "calls": {}}}
+    cache[path] = {"off": e["off"] + end, "st": st}
+    return st
 
 
 def porcelain(out: str) -> list:
@@ -262,10 +385,34 @@ def edited(st: dict, top: str | None, dirty: Dirty, since: int = 0) -> list:
     return out
 
 
-def subagent(sid, title, path, st, running, worktree, top, mtime, dirty) -> dict:
+def metrics(st: dict | None, kind: str) -> dict:
+    """{tools, tokens, cost, costKind}: a cost only when every request had a price (kind: whose figure it is)."""
+    n = st["n"] if st else blank()["n"]
+    priced = n["priced"] > 0 and not n["unpriced"]
+    return {"tools": n["tools"], "tokens": n["tokens"], "cost": round(n["cost"], 6) if priced else None,
+            "costKind": kind if priced else None}
+
+
+def subagent(sid, title, st, running, worktree, top, mtime, dirty, kind) -> dict:
     pending = list(st["pending"].values())
     return {"id": sid, "title": title, "running": running, "action": pending[-1] if running and pending else None,
-            "edited": edited(st, worktree or top, dirty), "worktree": worktree, "updatedAt": mtime}
+            "edited": edited(st, worktree or top, dirty), "worktree": worktree, "updatedAt": mtime,
+            "finishedAt": None if running else mtime, **metrics(st, kind)}
+
+
+def approved_key(env: Env, pid: int) -> bool:
+    """Is this Claude Code billed to an API key? It uses ANTHROPIC_API_KEY from its environment only once the person
+    approved it (~/.claude.json keeps the last 20 characters of approved keys). Only the answer leaves here: the key is
+    never printed, logged, cached or returned, and anything unreadable means no (a subscription)."""
+    try:
+        m = re.search(r"(?:^|\s)ANTHROPIC_API_KEY=(\S+)", env.penv(pid) or "")
+        if not m:
+            return False
+        with open(os.path.join(env.home, ".claude.json"), encoding="utf-8") as f:
+            approved = (json.load(f).get("customApiKeyResponses") or {}).get("approved") or []
+        return m.group(1)[-20:] in approved
+    except Exception:  # noqa: BLE001: whatever went wrong, it must not carry the key out in a message
+        return False
 
 
 def load(path: str):
@@ -280,18 +427,19 @@ def mtime_ms(p: str) -> int:
 def claude(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
     """A Claude Code agent: its pid's tree -> ~/.claude/sessions/<pid>.json -> sessionId -> the transcript beside
     ~/.claude/projects/*/<sessionId>/subagents/agent-<id>.jsonl (+ .meta.json)."""
-    sid = None
+    sid, pid = None, None
     for p in env.procs(int(a["pid"])):
         f = os.path.join(env.home, ".claude", "sessions", f"{p.pid}.json")
         if os.path.isfile(f):
-            sid = (load(f) or {}).get("sessionId")
+            sid, pid = (load(f) or {}).get("sessionId"), p.pid
             break
-    out = {"edited": [], "subagents": []}
+    out = {"edited": [], "subagents": [], **metrics(None, None)}
     if not sid:
         return out
-    top = a.get("top")
+    top, kind = a.get("top"), "api" if approved_key(env, pid) else "estimate"
     for log in glob.glob(os.path.join(env.home, ".claude", "projects", "*", f"{sid}.jsonl"))[:1]:
-        out["edited"] = edited(read(log, cache, parse_claude, mtime_ms(log), tail=True), top, dirty, env.now - RECENT)
+        st = read(log, cache, partial(parse_claude, own=sid), mtime_ms(log), tail=True)
+        out = {**out, "edited": edited(st, top, dirty, env.now - RECENT), **metrics(st, kind)}
     for log in glob.glob(os.path.join(env.home, ".claude", "projects", "*", sid, "subagents", "agent-*.jsonl")):
         try:
             meta_f = log[:-6] + ".meta.json"
@@ -299,12 +447,10 @@ def claude(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
             meta = meta if isinstance(meta, dict) else {}
             mt = mtime_ms(log)
             running = not meta.get("finished") and env.now - mt < STALE
-            if not running and env.now - mt > RECENT:
-                continue
-            st = read(log, cache, parse_claude, mt)
+            st = read(log, cache, parse_claude, mt, final=bool(meta.get("finished")))
             title = first_line(meta.get("description")) or first_line(meta.get("agentType")) or "Sub-agent"
             wt = meta.get("worktreePath") if isinstance(meta.get("worktreePath"), str) else None
-            out["subagents"].append(subagent(os.path.basename(log)[6:-6], title, log, st, running, wt, top, mt, dirty))
+            out["subagents"].append(subagent(os.path.basename(log)[6:-6], title, st, running, wt, top, mt, dirty, kind))
         except (OSError, ValueError, AttributeError, TypeError) as ex:
             print(f"subagents: {log}: {type(ex).__name__}: {ex}", file=sys.stderr)
     return out
@@ -322,11 +468,12 @@ def omp(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
             if len(lines) > 1 and lines[1].endswith(".jsonl") and os.path.isfile(lines[1]):
                 session = lines[1]
                 break
-    out = {"edited": [], "subagents": []}
+    out = {"edited": [], "subagents": [], **metrics(None, None)}
     if not session:
         return out
     top = a.get("top")
-    out["edited"] = edited(read(session, cache, parse_omp, mtime_ms(session), tail=True), top, dirty, env.now - RECENT)
+    st = read(session, cache, parse_omp, mtime_ms(session), tail=True)
+    out = {**out, "edited": edited(st, top, dirty, env.now - RECENT), **metrics(st, "recorded")}
     root = session[:-6]
     for d, _, files in os.walk(root):
         for name in files:
@@ -335,12 +482,10 @@ def omp(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
             log = os.path.join(d, name)
             try:
                 mt = mtime_ms(log)
-                if env.now - mt > RECENT:
-                    continue
                 st = read(log, cache, parse_omp, mt)
                 running = not st.get("done") and env.now - mt < STALE
                 rel = os.path.relpath(log, root)[:-6]
-                out["subagents"].append(subagent(rel, name[:-6], log, st, running, None, top, mt, dirty))
+                out["subagents"].append(subagent(rel, name[:-6], st, running, None, top, mt, dirty, "recorded"))
             except (OSError, ValueError) as ex:
                 print(f"subagents: {log}: {type(ex).__name__}: {ex}", file=sys.stderr)
     return out
@@ -353,16 +498,20 @@ def error(code: str, message: str) -> dict:
     return {"v": V, "error": {"code": code, "message": message}}
 
 
+def cache_path(env: Env) -> str:
+    return os.path.join(env.app, "data", "agent-graph", CACHE)
+
+
 def scan(req, env: Env) -> dict:
     if not isinstance(req, list):
         return error("bad-request", "expected a list of agents")
-    cache_f = os.path.join(env.app, "data", "agent-graph", "subagents.json")
+    cache_f = cache_path(env)
     try:
         old = load(cache_f)
         old = old if isinstance(old, dict) else {}
     except (OSError, ValueError):
         old = {}
-    cache, dirty, agents = dict(old), Dirty(env), {}
+    cache, dirty, agents = Cache(old), Dirty(env), {}
     for a in req:
         fn = HARNESSES.get(a.get("harness")) if isinstance(a, dict) else None
         if not fn or not a.get("address"):
@@ -371,7 +520,7 @@ def scan(req, env: Env) -> dict:
             agents[a["address"]] = fn(a, env, cache, dirty)
         except Exception as ex:  # one agent's bad file is that agent's error, never the panel's
             agents[a["address"]] = {"error": f"{type(ex).__name__}: {ex}"}
-    kept = {k: v for k, v in cache.items() if k not in old or v is not old[k]}  # logs this run read; the rest are gone
+    kept = {k: v for k, v in cache.items() if k in cache.visited}  # logs this run visited; the rest are gone
     try:
         os.makedirs(os.path.dirname(cache_f), exist_ok=True)
         tmp = f"{cache_f}.{os.getpid()}"
@@ -401,12 +550,17 @@ def real_env() -> Env:
         return procs_from(ps[0], pid)
 
     def git_status(top: str):
+        if not os.path.isdir(top):  # an isolated sub-agent's worktree, long removed
+            return None
         # no index.lock: the agents in that worktree may be committing right now
         code, out = run(["git", "--no-optional-locks", "-C", top, "status", "--porcelain", "-z", "--untracked-files=all"])
         return out if code == 0 else None
 
+    def penv(pid: int) -> str:
+        return run(["ps", "eww", "-o", "command=", "-p", str(pid)])[1]
+
     return Env(home=home, app=os.environ.get("HERDR_APP_HOME") or os.path.join(home, ".config", "herdr-app"),
-               now=int(time.time() * 1000), procs=procs, git_status=git_status)
+               now=int(time.time() * 1000), procs=procs, git_status=git_status, penv=penv)
 
 
 def main(argv: list) -> None:

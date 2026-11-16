@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -55,9 +57,17 @@ def oresult(at, cid, name, details=None):
                                                               "content": [{"type": "text", "text": "SECRET_OUTPUT"}], "details": details or {}}}
 
 
-def env(home, procs=None, status=None, now=NOW):
+def env(home, procs=None, status=None, now=NOW, penv=None):
     return sa.Env(home=home, app=os.path.join(home, "app"), now=now, procs=procs or (lambda pid: []),
-                  git_status=status or (lambda top: None))
+                  git_status=status or (lambda top: None), penv=penv or (lambda pid: ""))
+
+
+# An assistant record as Claude Code writes it: one content block per record, the message's usage on each.
+def msg(at, mid, model="claude-opus-5-5", usage=None, tool=None, sid=None, kind="assistant"):
+    u = usage if usage is not None else {"input_tokens": 1_000_000}
+    content = [{"type": "tool_use", "id": tool, "name": "Bash", "input": {"command": "SECRET_CMD"}}] if tool else [{"type": "text", "text": "SECRET_PROMPT"}]
+    return {"type": kind, "timestamp": iso(at), **({"sessionId": sid} if sid else {}),
+            "message": {"id": mid, "model": model, "usage": u, "content": content}}
 
 
 class Base(unittest.TestCase):
@@ -112,7 +122,7 @@ class ClaudeTest(Base):
         self.assertEqual(sa.claude_label("mcp__srv__do_thing", {}), "do_thing")
         self.assertEqual(sa.claude_label("Grep", {"pattern": "SECRET"}), "Search")
 
-    def test_finished_window_and_stale(self):
+    def test_history_and_stale(self):
         procs = self.claude()
         write(os.path.join(self.subs, "agent-done.meta.json"), {"description": "Done one", "finished": True})
         jsonl(os.path.join(self.subs, "agent-done.jsonl"), [use(NOW - 20 * MIN, "u1", "Bash", {"command": "x"})], mtime=NOW - 20 * MIN)
@@ -122,11 +132,12 @@ class ClaudeTest(Base):
         jsonl(os.path.join(self.subs, "agent-stale.jsonl"), [use(NOW - 12 * MIN, "u1", "Bash", {"command": "x"})], mtime=NOW - 12 * MIN)
         os.makedirs(os.path.join(self.subs, "workflows"))  # Claude keeps other things here
         subs = {s["id"]: s for s in self.run_scan(procs)["subagents"]}
-        self.assertEqual(set(subs), {"done", "stale"})  # older than 30 min: left out
+        self.assertEqual(set(subs), {"done", "old", "stale"})  # every sub-agent the session ran, however old
         self.assertFalse(subs["done"]["running"])
         self.assertIsNone(subs["done"]["action"])
         self.assertFalse(subs["stale"]["running"])
         self.assertEqual(subs["done"]["updatedAt"], NOW - 20 * MIN)
+        self.assertEqual((subs["old"]["finishedAt"], subs["stale"]["finishedAt"]), (NOW - 45 * MIN, NOW - 12 * MIN))
 
     def test_isolated_worktree_and_incremental_reads(self):
         procs = self.claude()
@@ -173,7 +184,123 @@ class ClaudeTest(Base):
 
     def test_no_session_is_empty_not_error(self):
         out = sa.scan([{"address": "t1", "pid": 5, "harness": "claude"}], env(self.home))
-        self.assertEqual(out["agents"]["t1"], {"edited": [], "subagents": []})
+        self.assertEqual(out["agents"]["t1"], {"edited": [], "subagents": [], "tools": 0, "tokens": 0, "cost": None, "costKind": None})
+
+    def test_metrics_dedupe_by_message_and_call(self):
+        procs = self.claude()
+        write(os.path.join(self.subs, "agent-m.meta.json"), {"description": "Metered"})
+        jsonl(os.path.join(self.subs, "agent-m.jsonl"), [
+            msg(NOW - 3 * MIN, "m1", tool="c1"),  # one message, written once per block: two calls, one cost
+            msg(NOW - 3 * MIN, "m1", tool="c2"),
+            msg(NOW - 3 * MIN, "m1", tool="c2"),  # the same call again: once
+            msg(NOW - 2 * MIN, "m2", usage={"output_tokens": 100_000}),
+            msg(NOW - 2 * MIN, "m2", usage={"output_tokens": 200_000}),  # streamed: the last usage wins
+            msg(NOW - 2 * MIN, "m9", tool="c9", kind="api-request-blob"),  # repeats calls; never counted
+            msg(NOW - 1 * MIN, "m3", model="<synthetic>", usage={"output_tokens": 5}),  # no request, no cost
+        ])
+        [s] = self.run_scan(procs)["subagents"]
+        self.assertEqual((s["tools"], s["tokens"]), (2, 1_200_000))
+        self.assertAlmostEqual(s["cost"], 4 + 4)  # 1M input at $4 + 200k output at $20
+        self.assertEqual(s["costKind"], "estimate")
+        # A repeat far down the log, read in a later run, still counts once.
+        with open(os.path.join(self.subs, "agent-m.jsonl"), "a") as f:
+            f.write(json.dumps(msg(NOW, "m1", tool="c1")) + "\n" + json.dumps(msg(NOW, "m4", usage={"input_tokens": 10}, tool="c4")) + "\n")
+        [s] = self.run_scan(procs)["subagents"]
+        self.assertEqual((s["tools"], s["tokens"]), (3, 1_200_010))
+
+    def test_advisor_requests_count(self):
+        procs = self.claude()
+        write(os.path.join(self.subs, "agent-v.meta.json"), {"description": "Advised"})
+        adv = {"type": "advisor_message", "model": "claude-fable-5-2", "input_tokens": 1_000_000, "output_tokens": 0}
+        jsonl(os.path.join(self.subs, "agent-v.jsonl"), [msg(NOW - 1 * MIN, "m1", usage={"input_tokens": 1_000_000, "iterations": [
+            {"type": "message", "input_tokens": 1_000_000}, adv]})])
+        [s] = self.run_scan(procs)["subagents"]
+        self.assertEqual(s["tokens"], 2_000_000)  # the executor's own iteration is the message's usage already
+        self.assertAlmostEqual(s["cost"], 4 + 8)
+
+    def test_unknown_model_shows_tokens_not_cost(self):
+        procs = self.claude()
+        write(os.path.join(self.subs, "agent-u.meta.json"), {"description": "Unknown"})
+        jsonl(os.path.join(self.subs, "agent-u.jsonl"), [msg(NOW - 1 * MIN, "m1"), msg(NOW - 1 * MIN, "m2", model="claude-next-9")])
+        [s] = self.run_scan(procs)["subagents"]
+        self.assertEqual((s["tokens"], s["cost"], s["costKind"]), (2_000_000, None, None))
+
+    def test_main_transcript_counts_its_own_session_whole(self):
+        procs = self.claude()
+        log = os.path.join(self.proj, "S1.jsonl")
+        jsonl(log, [msg(NOW - 90 * MIN, "m0", sid="S1", tool="c0")]  # before the tail: still counted
+              + [{"type": "attachment", "pad": "x" * 200}] * 5
+              + [msg(NOW - 80 * MIN, "old", sid="S0", tool="c8"),  # copied in by a resume: the earlier session's
+                 msg(NOW - 1 * MIN, "m1", sid="S1", usage={"output_tokens": 50_000})])
+        tail, sa.TAIL = sa.TAIL, 400
+        try:
+            out = self.run_scan(procs)
+        finally:
+            sa.TAIL = tail
+        self.assertEqual((out["tools"], out["tokens"]), (1, 1_050_000))
+        self.assertAlmostEqual(out["cost"], 4 + 1)
+
+    def test_billing_label_and_no_key_material(self):
+        procs = self.claude()
+        key = "sk-ant-api03-" + "K" * 30 + "SUFFIXSUFFIXSUFFIX20"
+        write(os.path.join(self.home, ".claude.json"), {"customApiKeyResponses": {"approved": [key[-20:]], "rejected": []},
+                                                        "oauthAccount": {"billingType": "stripe_subscription"}})
+        jsonl(os.path.join(self.proj, "S1.jsonl"), [msg(NOW - 1 * MIN, "m1", sid="S1")])
+        write(os.path.join(self.subs, "agent-a.meta.json"), {"description": "Sub"})
+        jsonl(os.path.join(self.subs, "agent-a.jsonl"), [msg(NOW - 1 * MIN, "m2")])
+        ps = lambda k: (lambda pid: f"/usr/bin/claude --x TERM=xterm ANTHROPIC_API_KEY={k} HOME=/h" if pid == 300 else "")
+        req = [{"address": "t1", "pid": 100, "harness": "claude", "top": self.wt}]
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            api = sa.scan(req, env(self.home, procs, penv=ps(key)))
+            other = sa.scan(req, env(self.home, procs, penv=ps("sk-ant-api03-not-approved-key-000000000")))["agents"]["t1"]
+            none = sa.scan(req, env(self.home, procs))["agents"]["t1"]
+            with open(os.path.join(self.home, ".claude.json"), "w") as f:
+                f.write("{broken")
+            broken = sa.scan(req, env(self.home, procs, penv=ps(key)))["agents"]["t1"]
+        a = api["agents"]["t1"]
+        self.assertEqual((a["costKind"], a["subagents"][0]["costKind"]), ("api", "api"))
+        self.assertEqual((other["costKind"], none["costKind"], broken["costKind"]), ("estimate", "estimate", "estimate"))
+        with open(sa.cache_path(env(self.home))) as f:
+            cached = f.read()
+        for text in (json.dumps(api), err.getvalue(), cached):
+            self.assertNotIn(key[-20:], text)
+            self.assertNotIn("SECRET", text)
+        self.assertNotIn("ANTHROPIC", json.dumps(api))
+
+    def test_finished_logs_cache_only_their_totals(self):
+        procs = self.claude()
+        write(os.path.join(self.subs, "agent-f.meta.json"), {"description": "Done", "finished": True})
+        jsonl(os.path.join(self.subs, "agent-f.jsonl"), [msg(NOW - 50 * MIN, "m1", tool="c1")], mtime=NOW - 50 * MIN)
+        [s] = self.run_scan(procs)["subagents"]
+        self.assertEqual((s["tools"], s["running"]), (1, False))
+        with open(sa.cache_path(env(self.home))) as f:
+            entry = next(v for k, v in json.load(f).items() if k.endswith("agent-f.jsonl"))
+        self.assertNotIn('"m1"', json.dumps(entry))  # no per-message ids kept for a log that won't grow
+        [s] = self.run_scan(procs)["subagents"]  # and the next run still has its totals
+        self.assertEqual(s["tools"], 1)
+
+
+class PriceTest(unittest.TestCase):
+    def test_longest_prefix_with_a_boundary(self):
+        self.assertEqual(sa.price("claude-fable-5-2"), (8, 40, 0.025))
+        self.assertEqual(sa.price("claude-fable-5-20261101"), (10, 50, 0.1))  # a date suffix, not fable-5-2
+        self.assertEqual(sa.price("claude-opus-4-8[1m]"), (5, 25, 0.1))
+        self.assertEqual(sa.price("claude-haiku-5-5@20261001"), (0.10, 0.50, 0.1))
+        self.assertIsNone(sa.price("claude-opus-9"))
+        self.assertIsNone(sa.price(None))
+
+    def test_claude_cost(self):
+        M = 1_000_000
+        c = lambda u, m="claude-opus-5-5": sa.claude_cost(m, u)
+        self.assertAlmostEqual(c({"input_tokens": M, "output_tokens": M}), 4 + 20)
+        self.assertAlmostEqual(c({"cache_read_input_tokens": M}), 4 * 0.05)
+        self.assertAlmostEqual(c({"cache_creation": {"ephemeral_5m_input_tokens": M, "ephemeral_1h_input_tokens": M},
+                                  "cache_creation_input_tokens": 2 * M}), 4 * 1.25 + 4 * 2)  # the breakdown wins
+        self.assertAlmostEqual(c({"cache_creation_input_tokens": M}), 4 * 1.25)  # no breakdown: 5-minute writes
+        self.assertAlmostEqual(c({"input_tokens": M, "speed": "fast"}), 8)
+        self.assertAlmostEqual(c({"input_tokens": M}, "claude-sonnet-4-6-20260101"), 3)
+        self.assertIsNone(c({"input_tokens": M}, "gpt-9"))
 
 
 class OmpTest(Base):
@@ -212,6 +339,26 @@ class OmpTest(Base):
         self.assertFalse(subs["Tests/Tests.Unit"]["running"])
         self.assertEqual(subs["Tests/Tests.Unit"]["title"], "Tests.Unit")
         self.assertNotIn("SECRET", json.dumps(out))
+        self.assertEqual((g["tools"], g["cost"], g["costKind"]), (3, None, None))  # no usage recorded: nothing to show
+
+    def test_omp_recorded_cost(self):
+        sdir = os.path.join(self.home, ".omp", "agent", "sessions", "-repo")
+        session = os.path.join(sdir, "s1.jsonl")
+        usage = lambda c: {"input": 10, "output": 20, "cacheRead": 30, "cacheWrite": 40, "totalTokens": 100, "cost": {"total": c}}
+        turn = lambda at, c, calls: {"type": "message", "timestamp": iso(at), "message": {"role": "assistant", "usage": usage(c),
+                                     "content": [{"type": "toolCall", "id": f"c{i}", "name": "read", "arguments": {}} for i in range(calls)]}}
+        jsonl(session, [{"type": "session", "cwd": self.wt}, turn(NOW - 3 * MIN, 0.25, 2), turn(NOW - 2 * MIN, 0.5, 1),
+                        {"type": "model_usage", "model": "x", "usage": usage(0.125)}])
+        jsonl(os.path.join(session[:-6], "Task.jsonl"), [turn(NOW - 1 * MIN, 1.0, 4)])
+        ptr = os.path.join(self.home, ".omp", "agent", "terminal-sessions", "ttys009")
+        os.makedirs(os.path.dirname(ptr))
+        with open(ptr, "w") as f:
+            f.write(f"{self.wt}\n{session}\n")
+        procs = lambda pid: [sa.Proc(8, "ttys009")] if pid == 7 else []
+        out = sa.scan([{"address": "t2", "pid": 7, "harness": "omp", "top": self.wt}], env(self.home, procs))["agents"]["t2"]
+        self.assertEqual((out["tools"], out["tokens"], out["cost"], out["costKind"]), (3, 300, 0.875, "recorded"))
+        [s] = out["subagents"]
+        self.assertEqual((s["tools"], s["tokens"], s["cost"], s["costKind"]), (4, 100, 1.0, "recorded"))
 
     def test_omp_label(self):
         self.assertEqual(sa.omp_label("read", {"path": "/w/x.md"}, None), "Read x.md")
