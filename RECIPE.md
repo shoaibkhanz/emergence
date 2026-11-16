@@ -101,7 +101,9 @@ their search field as the header) share one frame: `popover`, radius 10, 24px pa
 (15px semibold title, Herdr's "Esc" chip: 11px `dim`, `hover` background, closes on click), sections headed 11.5px
 `dim` with their columns named at the same widths as the rows'. Buttons are 32px, 12/500, and exactly one is filled:
 the one Enter presses (`solid`; a destructive one `blocked` at 18%), with ↵; ←/→/Tab move the fill; the others are
-`raised` with an `input` border, Stop and Delete in `blocked` text. A question or status sits left of the buttons (12
+`raised` with an `input` border, Stop and Delete in `blocked` text. A destructive third choice (confirm-safe's
+`extra`) stands apart at the far left in `blocked` text, ← from Cancel, never selected first, with a `blocked` line
+under the box saying what it loses. A question or status sits left of the buttons (12
 `muted`, two lines at most), so asking never changes a dialog's height. A boxed subject is `surface` with a `border`.
 Widths: 440 (a question), 560 (a card), 680 (a list or palette). Centred (`kind: "dialog"`), as tall as their content
 where it's known up front, else a fixed height (or a share of the window, as the keys list's 0.9) whose lists scroll
@@ -174,9 +176,12 @@ inside.
     button named for the action, red for Delete). Every close gives the keyboard back to Spaces if it was there (the
     Focus rule below; asked by a click from the terminal, it stays in the terminal), and after a `space.close`
     Spaces takes it again 300 ms later (the next space's terminal grabs it).
-    Delete: `git status --porcelain` first (dirty: a warning toast, no dialog), then `space.close` if open and
-    `git worktree remove` (the branch stays). Archive: shared `spaces.archived` (JSON [machine, path] → the space it
-    closed), skipped by `addWorktrees`; reopening it in another space drops it from the archive (`reopened`).
+    Delete: `git status --porcelain` first (dirty: a warning toast pointing at →, no dialog), then `space.close` if
+    open and `git worktree remove` (the branch stays). Archive: shared `spaces.archived` (JSON [machine, path] → the
+    space it closed), skipped by `addWorktrees`; reopening it in another space drops it from the archive (`reopened`).
+    The archive confirm also offers Delete permanently (red, at its left: ← from Cancel, then ↵), dirty or not:
+    `space.close` if open, then `git worktree remove --force` (the branch stays; the folder's uncommitted changes and
+    untracked files go). Its red line counts them from the same `git status --porcelain` (`lib.js` `forceWarn`).
   - Right-click on a worktree opens `row-menu` (Herdr's `menu` has fixed items): Open (greyed) or Rename and Close
     space (open), then Archive worktree… (→) and Delete worktree… (←), which run `spaces-plus.ask-archive` /
     `ask-delete`; the target waits in `menuFor`. Main checkouts keep Herdr's space menu.

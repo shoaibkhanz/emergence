@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf } from "./lib.js";
+import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn } from "./lib.js";
 
 const PORCELAIN = ["worktree /r", "HEAD a", "branch refs/heads/main", "",
   "worktree /w/feat", "HEAD b", "branch refs/heads/feat/x", "",
@@ -118,4 +118,17 @@ test("cursorOf: a space row is its space, an unopened worktree its machine and p
   expect(cursorOf({ kind: "space", key: "s:s1", w: { id: "s1" } })).toEqual({ kind: "space", id: "s1" });
   expect(cursorOf({ kind: "wt", on: null, path: "/w/feat" })).toEqual({ kind: "worktree", on: null, path: "/w/feat" });
   expect(cursorOf(undefined)).toBe(null);
+});
+
+test("changeCount: files git status --porcelain lists (null: couldn't tell)", () => {
+  expect(changeCount({ code: 0, stdout: " M a.js\n?? b/\n" })).toBe(2);
+  expect(changeCount({ code: 0, stdout: "" })).toBe(0);
+  expect(changeCount({ code: 128, stdout: "" })).toBe(null);
+});
+
+test("forceWarn: what Delete permanently loses", () => {
+  expect(forceWarn(2)).toBe("Delete permanently loses its 2 uncommitted changes. Can't be undone.");
+  expect(forceWarn(1)).toBe("Delete permanently loses its 1 uncommitted change. Can't be undone.");
+  expect(forceWarn(0)).toBe("Delete permanently removes the folder now. Can't be undone.");
+  expect(forceWarn(null)).toBe("Delete permanently loses any uncommitted changes. Can't be undone.");
 });

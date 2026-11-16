@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, settings, shared, setShared, watchFolder, window, layout, nextCommand, focused, notify } from "herdr";
-import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, HEADER_H, ROW_H, SUB_ROW_H, LIST_PAD } from "./lib.js";
+import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn, HEADER_H, ROW_H, SUB_ROW_H, LIST_PAD } from "./lib.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -101,7 +101,7 @@ export default class Spaces extends View {
         if (c === "focus") this.fh.focus();
         else if (c === "toggle") run(this.fh.is_focused() ? "tabs-plus.fold" : "inbox.toggle");
         else if (c === "back") back(); // ctrl-l (keys.json mod:spaces-plus: a binding beats on_key_down)
-        else if (c === "archive" || c === "delete") this.act(c, cx); // the confirm dialog's OK (see ask)
+        else if (c === "archive" || c === "delete" || c === "force-delete") this.act(c, cx); // the confirm dialog's choice (see ask)
         else if (c === "ask-archive" || c === "ask-delete") { if (this.menuFor) this.ask(c.slice(4), this.menuFor, cx); } // row-menu
         cx.notify();
       }
@@ -296,33 +296,36 @@ export default class Spaces extends View {
   // ← deletes, → archives the worktree under the cursor, each after a confirm dialog (confirm-safe: Cancel selected; it
   // runs spaces-plus.<kind> on OK; a mod command carries no args, so the target waits in this.asked).
   // Delete is `git worktree remove`: never with uncommitted changes, never the branch. Archive hides it from the
-  // sidebar (shared "spaces.archived"), on disk still; ⌘E Jump opens it, and that brings it back.
+  // sidebar (shared "spaces.archived"), on disk still; ⌘E Jump opens it, and that brings it back. The archive confirm
+  // also offers Delete permanently (red, at its left, never selected first): `git worktree remove --force`, which
+  // loses the folder's uncommitted changes and untracked files, still never the branch.
   async ask(kind, target, cx) {
     const { on, path, label, space } = target;
+    const st = await exec("git", ["-C", path, "status", "--porcelain"], { on });
     if (kind === "delete") {
-      const st = await exec("git", ["-C", path, "status", "--porcelain"], { on });
       if (st.code !== 0) return notify({ title: `Couldn't check ${label}`, body: st.stderr.trim(), level: "error" });
-      if (st.stdout.trim()) return notify({ title: `${label} has uncommitted changes`, body: "Not deleted. → archives it instead.", level: "warning" });
+      if (st.stdout.trim()) return notify({ title: `${label} has uncommitted changes`, body: "Not deleted. → archives it, or deletes it permanently.", level: "warning" });
     }
     this.asked = { kind, target, keys: this.resume || this.ringed }; // asked from the keyboard (or its menu), not a click from the terminal
     const del = kind === "delete";
     // Every close (Confirm, Cancel, Esc) gives the keyboard back to Spaces if it was here (comeBack).
-    openOverlay({ mod: "confirm-safe", kind: "dialog", width: 440, height: space ? 270 : 242, props: {
+    openOverlay({ mod: "confirm-safe", kind: "dialog", width: 440, height: (space ? 270 : 242) + (del ? 0 : 50), props: {
       title: `${del ? "Delete" : "Archive"} worktree?`, name: label,
       detail: del ? "Removes this folder from disk. Its branch stays." : "Hides it from the sidebar; the folder stays. Reopen it from ⌘E Jump.",
       path, warn: space ? "Its open space and terminals close." : null, action: del ? "Delete" : "Archive", danger: del,
-      command: { name: `spaces-plus.${kind}` } } });
+      command: { name: `spaces-plus.${kind}` },
+      extra: del ? null : { action: "Delete permanently", warn: forceWarn(changeCount(st)), command: { name: "spaces-plus.force-delete" } } } });
   }
 
   async act(kind, cx) {
     const a = this.asked;
     this.asked = null;
-    if (a?.kind !== kind) return;
+    if (a?.kind !== (kind === "force-delete" ? "archive" : kind)) return; // Delete permanently is the archive confirm's
     const { on, path, label, space } = a.target;
     if (kind === "archive") setShared("spaces.archived", { ...(shared("spaces.archived") ?? {}), [JSON.stringify([on, path])]: space });
     if (space) { run("space.close", { id: space, confirmed: true }); if (a.keys) cx.timer.after(300, () => this.fh.focus()); } // the next space's terminal takes the keyboard
-    if (kind === "delete") {
-      const r = await exec("git", ["-C", path, "worktree", "remove", path], { on });
+    if (kind !== "archive") {
+      const r = await exec("git", ["-C", path, "worktree", "remove", ...(kind === "force-delete" ? ["--force"] : []), path], { on });
       if (r.code !== 0) notify({ title: `Couldn't delete ${label}`, body: r.stderr.trim(), level: "error" });
     }
     this.refreshGit(Object.keys(this.git), cx);

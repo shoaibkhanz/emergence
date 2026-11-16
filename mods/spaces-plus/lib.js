@@ -86,6 +86,18 @@ export function cursorOf(r) {
   return r?.w ? { kind: "space", id: r.w.id } : null;
 }
 
+// `git status --porcelain`'s exec result -> how many files have uncommitted changes (untracked too); null: git failed.
+export function changeCount(st) {
+  return st.code === 0 ? st.stdout.split("\n").filter(Boolean).length : null;
+}
+
+// The red line under the archive confirm's Delete permanently (`git worktree remove --force`): what it loses.
+export function forceWarn(n) {
+  if (n === 0) return "Delete permanently removes the folder now. Can't be undone.";
+  const what = n === null ? "any uncommitted changes" : `its ${n} uncommitted change${n === 1 ? "" : "s"}`;
+  return `Delete permanently loses ${what}. Can't be undone.`;
+}
+
 // Spaces' sizes (px): its header (shorter than the other sections': it tops the sidebar), a row (a worktree's or a
 // nested space's a little less), and the room under the list, which the inbox leaves under its cards too
 // (mods/sidebar.test.js holds the sections' copies together).
