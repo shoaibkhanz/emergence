@@ -10,7 +10,7 @@ import { exec, focused, panes, spaces, theme, settings, props, shared, setShared
 import * as github from "./github.js";
 import * as gitlab from "./gitlab.js";
 import { forgeOrder } from "./gitlab-map.js";
-import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, TAGS, tagBody, splitTag, shown, findAll, findTalk, mentions, gapBefore, hiddenRows, pairRows, tabArrows } from "./lib.js";
+import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, TAGS, tagBody, splitTag, shown, findAll, findTalk, mentions, gapBefore, hiddenRows, pairRows, tabArrows, carryThreads, toCarry, settle, threadLines, hunkTail } from "./lib.js";
 
 const MONO = "Geist Mono";
 const icon = (name) => svg(`mods/pr-review/${name}.svg`);
@@ -136,10 +136,15 @@ export default class PrReview extends View {
 
   // Every 5 s while shown: the PR's comments and conversation, then its diff once the head has moved past the one
   // shown (this branch: the working tree, so an agent's edits land as it makes them), unless you're in a commit, a
-  // selection or a draft there; it catches up after. The PR list every 30 s.
+  // selection or a draft there; it catches up after (comments for the newer head wait for it: settle). The PR list
+  // every 30 s.
   poll(s, cx) {
     if (!s?.info) return;
     if (this.ticks++ % 6 === 0) this.loadPRs(s, cx, true);
+    this.sync(s, cx);
+  }
+
+  sync(s, cx) {
     const entry = s.entry, d = s.diffs.get(entry);
     if (!d || d.loading || d.polling) return;
     d.polling = true;
@@ -151,9 +156,9 @@ export default class PrReview extends View {
           const text = await this.diffText(s, entry, got);
           if (pair === (entry === "local" && this.compareTitle(s))) {
             if (got.commits) d.commits = got.commits;
-            if (text === d.text) d.at = d.headOid; // a new head with the same changes (base merged in, message amended)
+            if (text === d.text) { d.at = got.head ?? null; Object.assign(d, settle(d)); } // a new head with the same changes (base merged in, message amended)
             if (entry !== "local") d.commits = await s.api.prCommits(s.id, entry).catch(() => d.commits);
-            if (text !== d.text && !d.loading && !d.commit && !s.sel) this.applyDiff(d, text); // a selection made meanwhile keeps its lines
+            if (text !== d.text && !d.loading && !d.commit && !s.sel) this.applyDiff(d, text, got.head); // a selection made meanwhile keeps its lines
           }
         }
       } catch { /* the next poll tries again */ }
@@ -296,7 +301,11 @@ export default class PrReview extends View {
     Object.assign(d, { commit: null, full: null, byCommit: null, at: null }); // a refresh shows all changes again
     s.diffs.set(entry, d);
     cx.spawn(async (cx) => {
-      try { this.applyDiff(d, await this.diffText(s, entry, d)); } catch (e) { d.error = e.message; }
+      try {
+        const got = {}, text = await this.diffText(s, entry, got);
+        if (got.commits) d.commits = got.commits;
+        this.applyDiff(d, text, got.head);
+      } catch (e) { d.error = e.message; }
       d.loading = false;
       cx.notify();
     });
@@ -314,12 +323,13 @@ export default class PrReview extends View {
 
   // The entry's diff; for the compare, since the merge-base of its two sides (uncommitted work included when the head
   // is this branch), with its commits. The default branch is taken from origin when it can be (a stale local main
-  // would add others' work); a picked one, as is.
-  async diffText(s, entry, d) {
-    if (entry !== "local") return s.api.prDiff(s.id, entry);
+  // would add others' work); a picked one, as is. A PR's head is read just before its diff (got.head): a push in
+  // between only makes the diff newer than the head it's marked with, which the next poll refetches.
+  async diffText(s, entry, got) {
+    if (entry !== "local") { got.head = (await s.api.viewPR(s.id, entry)).headRefOid; return s.api.prDiff(s.id, entry); }
     const base = this.baseOf(s), head = this.headOf(s), to = head ?? "HEAD", picked = base !== s.info.defaultBranch;
     const mb = (await (picked ? git(s.id, ["merge-base", base, to]) : git(s.id, ["merge-base", `origin/${base}`, to]).catch(() => git(s.id, ["merge-base", base, to])))).trim();
-    d.commits = (await git(s.id, ["log", "--reverse", "--format=%H%x09%an%x09%cI%x09%s", `${mb}..${to}`])).split("\n").filter(Boolean)
+    got.commits = (await git(s.id, ["log", "--reverse", "--format=%H%x09%an%x09%cI%x09%s", `${mb}..${to}`])).split("\n").filter(Boolean)
       .map((l) => { const [oid, author, at, ...h] = l.split("\t"); return { oid, author, at, headline: h.join("\t") }; });
     return git(s.id, ["diff", "--no-color", "--no-ext-diff", mb, ...(head ? [head] : [])]);
   }
@@ -383,15 +393,17 @@ export default class PrReview extends View {
       .child(icon("chevron-down").size(11).flex_none().text_color(on ? t.foreground : t.dim));
   }
 
-  // A diff in place: it stays on the same file, wherever that now sits. `at` (the head it's from) comes with the next comments.
-  applyDiff(d, text) {
+  // A diff in place, taken at head `at` (null for this branch): it stays on the same file, wherever that now sits.
+  // Comments waiting for that head go on it.
+  applyDiff(d, text, at = null) {
     const keep = d.files?.[d.fi]?.path, hx = new Map(d.files?.map((f) => [f.path, f.hx])); // the file shown and the sideways scrolls stay
     d.text = text;
     d.files = parseDiff(text);
     for (const f of d.files) f.hx = hx.get(f.path);
     d.order = fileTree(d.files).filter((r) => !r.dir).map((r) => r.fi); // the tree's (and the arrows') file order
-    const at = d.files.findIndex((f) => f.path === keep);
-    Object.assign(d, { fi: at >= 0 ? at : d.order[0] ?? 0, error: null, at: null });
+    const fi = d.files.findIndex((f) => f.path === keep);
+    Object.assign(d, { fi: fi >= 0 ? fi : d.order[0] ?? 0, error: null, at });
+    Object.assign(d, settle(d));
   }
 
   // Narrow the entry to one commit's own changes (oid), or back to all of them (null). Comments stay on all changes:
@@ -426,12 +438,22 @@ export default class PrReview extends View {
     try {
       const r = await s.api.threads(s.id, s.info.nwo, n);
       if (seq !== d.tseq) return; // a later fetch (after a reply or resolve) got there first
-      Object.assign(d, { headOid: r.headOid, threads: r.threads, talk: r.talk, threadsError: null });
-      d.at ??= r.headOid; // the head the diff shown was taken at (near enough), for its hidden lines
+      // Outdated threads carry to this head through a compare from the commit each was written on, once per commit.
+      // ponytail: a failed compare stays null until the head moves; retry it if that bites.
+      if (d.comparedTo !== r.headOid) Object.assign(d, { compares: new Map(), comparedTo: r.headOid });
+      const cmp = d.compares, oids = [...new Set(r.threads.map(toCarry).filter((o) => o && !cmp.has(o)))];
+      await Promise.all(oids.map(async (o) => cmp.set(o, await s.api.compare(s.id, s.info.nwo, o, r.headOid).catch(() => null))));
+      if (seq !== d.tseq) return;
+      // The comments wait for a diff taken at their head before they go on it (settle); the conversation needn't.
+      Object.assign(d, { headOid: r.headOid, talk: r.talk, threadsError: null, next: { at: r.headOid, threads: carryThreads(r.threads, (o) => cmp.get(o)) } });
+      Object.assign(d, settle(d));
     } catch (e) { d.threadsError = e.message; }
   }
 
   loadThreads(s, n, cx) { cx.spawn(async (cx) => { await this.fetchThreads(s, n); cx.notify(); }); }
+
+  // After a write: its fresh comments wait when the head moved past the diff shown, so fetch that diff now (sync).
+  catchUp(s, cx) { if (s.diffs.get(s.entry)?.next) this.sync(s, cx); }
 
   refresh(cx) {
     const s = this.cur;
@@ -496,6 +518,7 @@ export default class PrReview extends View {
         s.sel = null;
         this.unfocus();
         await this.fetchThreads(s, s.entry);
+        this.catchUp(s, cx);
       } catch (e) { this.composeError = e.message; }
       this.posting = false;
       cx.notify();
@@ -510,7 +533,7 @@ export default class PrReview extends View {
     this.busy = th.id;
     this.actError = null;
     cx.spawn(async (cx) => {
-      try { await fn(s.info.nwo); after?.(); await this.fetchThreads(s, s.entry); }
+      try { await fn(s.info.nwo); after?.(); await this.fetchThreads(s, s.entry); this.catchUp(s, cx); }
       catch (e) { this.actError = { thread: th.id, msg: e.message }; }
       this.busy = null;
       cx.notify();
@@ -1124,27 +1147,27 @@ export default class PrReview extends View {
     const items = [], tops = [], fi = d.fi, f = d.files[fi];
     let y = 0;
     const push = (it) => { items.push(it); tops.push(y); y += it.h; };
-    const card = (th) => {
+    const card = (th, loose = false) => {
       const open = !th.isResolved || this.expanded.has(th.id);
-      const measure = `th-${th.id}-${open}`;
-      push({ k: "thread", key: `th-${th.id}`, th, measure, h: this.heights.get(measure) ?? (open ? H.thread : H.resolved) });
+      const measure = `th-${th.id}-${open}-${loose}`;
+      push({ k: "thread", key: `th-${th.id}`, th, loose, measure, h: this.heights.get(measure) ?? (open ? H.thread : H.resolved) });
     };
     const { at, loose } = anchorThreads(f.rows, d.commit ? [] : (d.threads ?? []).filter((x) => x.path === f.path));
     const note = f.binary ? "Binary file not shown." : f.rows.length ? null
       : { deleted: "Empty file deleted.", renamed: "Renamed without changes.", added: "Empty file added." }[f.status] ?? "No text changes.";
     if (note) push({ k: "note", key: `note-${fi}`, text: note, h: H.note });
-    loose.forEach(card);
+    loose.forEach((th) => card(th, true));
     const range = s.sel?.fi === fi ? selectRange(f.rows, s.sel.anchor, s.sel.focus) : null;
     const on = (ri) => ri != null && Boolean(range) && ri >= range.from && ri <= range.to;
     if (this.splitOn()) for (const p of pairRows(f.rows)) {
       // Side by side: a pair per line (context on both sides), hunk headers across; cards under the pair.
       if (p.hunk != null) push({ k: "row", key: `r-${fi}-${p.hunk}`, fi, ri: p.hunk, row: f.rows[p.hunk], h: H.hunk });
       else push({ k: "pair", key: `p-${fi}-${p.l}-${p.r}`, fi, l: p.l, r: p.r, onL: on(p.l), onR: on(p.r), h: H.row });
-      new Set([p.hunk ?? p.l, p.r]).forEach((ri) => ri != null && (at.get(ri) ?? []).forEach(card));
+      new Set([p.hunk ?? p.l, p.r]).forEach((ri) => ri != null && (at.get(ri) ?? []).forEach((th) => card(th)));
     }
     else f.rows.forEach((row, ri) => {
       push({ k: "row", key: `r-${fi}-${ri}`, fi, ri, row, on: on(ri), h: row.kind === "hunk" ? H.hunk : H.row });
-      (at.get(ri) ?? []).forEach(card);
+      (at.get(ri) ?? []).forEach((th) => card(th));
     });
     if (this.tailLeft(f)) push({ k: "tail", key: `tail-${fi}`, h: H.hunk });
     return { items, tops, heights: items.map((x) => x.h), total: y + 24, range };
@@ -1252,7 +1275,7 @@ export default class PrReview extends View {
     if (it.k === "row") return this.row(t, s, it);
     if (it.k === "pair") return this.pair(t, s, d, it);
     if (it.k === "note") return h_flex().h(it.h).pl(this.narrow ? 16 : GUTTER).pr(16).items_center().text_size(12).text_color(t.muted).child(div().min_w(0).truncate().child(it.text));
-    return this.measured(it, this.thread(t, s, it.th));
+    return this.measured(it, this.thread(t, s, it.th, it.loose));
   }
 
   // The shown file's header above its diff, with previous / next file.
@@ -1348,7 +1371,7 @@ export default class PrReview extends View {
         .child(this.button(t, "compose-post", this.posting ? "Posting…" : "Comment", (cx) => this.post(cx), true, this.posting || !d.headOid)));
   }
 
-  thread(t, s, th) {
+  thread(t, s, th, loose) {
     const busy = this.busy === th.id;
     const err = this.actError?.thread === th.id ? this.actError.msg : null;
     const first = th.comments[0];
@@ -1360,21 +1383,29 @@ export default class PrReview extends View {
     if (th.isResolved && !this.expanded.has(th.id)) return card.child(toggle.h(30).px(12).gap(8).items_center().hover((x) => x.bg(t.hover))
       .child(icon("chevron-right").size(13).flex_none().text_color(t.dim))
       .child(this.chip(t, "Resolved", t.done))
+      .when(th.isOutdated, (el) => el.child(this.chip(t, "Outdated", t.idle)))
       .child(div().flex_none().text_size(12).font_semibold().text_color(t.accent).child(first?.author?.login ?? ""))
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(splitTag(first?.body).text.split("\n")[0]))
       .child(div().flex_none().text_size(11).text_color(t.dim).child(`${th.comments.length} comment${th.comments.length === 1 ? "" : "s"}`)));
-    const lines = th.line == null ? "Outdated" : th.startLine && th.startLine !== th.line ? `Lines ${th.startLine}–${th.line}` : `Line ${th.line}`;
+    const { at, was } = threadLines(th), side = th.diffSide === "LEFT" ? "old · " : "";
+    // Outdated with no line here: the code it was written on (the last lines of its hunk then), as the diff draws lines.
+    const code = loose && th.isOutdated ? hunkTail(first?.diffHunk) : [];
     const dr = this.draft?.thread === th.id ? this.draft : null;
     return card
       .child(h_flex().h(36).px(12).gap(8).items_center().border_b(1).border_color(t.border)
         .when(th.isResolved, (el) => el.child(toggle.child(icon("chevron-down").size(13).text_color(t.dim))))
-        .child(div().text_size(11).text_color(t.dim).child(`${th.diffSide === "LEFT" ? "old · " : ""}${lines}`))
-        .when(th.isOutdated, (el) => el.child(this.chip(t, "Outdated", t.idle)))
+        .when(Boolean(at), (el) => el.child(div().text_size(11).text_color(t.dim).child(`${side}${at}`)))
+        .when(th.isOutdated, (el) => el.child(this.chip(t, was ? `Outdated · ${side}${was}` : "Outdated", t.idle)))
         .when(th.isResolved, (el) => el.child(this.chip(t, "Resolved", t.done)))
         .child(div().flex_1())
         .when(busy, (el) => el.child(icon("spinner").size(13).text_color(t.dim).spin(900)))
         .when(!busy, (el) => el.child(this.link(t, `res-${th.id}`, th.isResolved ? "Unresolve" : "Resolve",
           (cx) => this.act(th, (nwo) => (th.isResolved ? s.api.unresolveThread : s.api.resolveThread)(s.id, th.id, nwo, s.entry), cx)))))
+      .when(code.length > 0, (el) => el.child(v_flex().py(4).bg(t.background).border_b(1).border_color(t.border)
+        .children(code.map((l, i) => h_flex().id(`hunk-${th.id}-${i}`).h(H.row).px(12).gap(8).items_center().font_family(MONO).text_size(12)
+          .when(l.kind === "add", (x) => x.bg(tint(t.done, "1a"))).when(l.kind === "del", (x) => x.bg(tint(t.blocked, "1a")))
+          .child(div().w(10).flex_none().text_color(l.kind === "add" ? t.done : l.kind === "del" ? t.blocked : t.dim).child({ add: "+", del: "−" }[l.kind] ?? ""))
+          .child(div().flex_1().min_w(0).whitespace_nowrap().overflow_hidden().child(shown(l.text)))))))
       .children(th.comments.map((c, ci) => this.comment(t, s, th, c, ci, dr)))
       .when(Boolean(err), (el) => el.child(div().px(12).pb(10).text_size(12).text_color(t.blocked).child(err)))
       .child(dr?.kind === "reply"

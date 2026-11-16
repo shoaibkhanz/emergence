@@ -7,7 +7,7 @@ const STATE = { opened: "OPEN", merged: "MERGED", closed: "CLOSED", locked: "CLO
 // GitLab's list carries no line counts: null, and the panel shows none.
 export const mapMR = (mr) => ({
   number: mr.iid, title: mr.title, state: STATE[mr.state] ?? "OPEN", isDraft: Boolean(mr.draft), author: { login: mr.author?.username },
-  additions: null, deletions: null, updatedAt: mr.updated_at, headRefName: mr.source_branch, baseRefName: mr.target_branch,
+  additions: null, deletions: null, updatedAt: mr.updated_at, headRefName: mr.source_branch, baseRefName: mr.target_branch, headRefOid: mr.sha ?? null,
 });
 
 // The panel's states are gh's; gh's "closed" includes merged, GitLab's doesn't.
@@ -33,14 +33,15 @@ export function mapThreads(discussions, mr, me) {
     const notes = d.notes.filter((n) => !n.system);
     if (!notes.length) continue;
     const p = notes[0].type === "DiffNote" && notes[0].position;
-    // Outdated (written at an older head): no line, so the panel shows it apart, as GitHub does; GitLab keeps the old
-    // version's numbers, which would hang it on whatever code has them now.
+    // Outdated (written at an older head): no line, as GitHub's; GitLab keeps the old version's numbers (originalLine,
+    // "was line N"), which would hang it on whatever code has them now. No commit to carry it from: it shows apart.
     const out = p && p.head_sha !== head, st = p && rangeStart(p.line_range);
     // One side for both ends (the label and the row it hangs on): the old one for a removed line, or a range begun on one.
     const left = p && (p.new_line == null || (p.old_line != null && st?.old != null && st.new == null));
+    const line = p && (left ? p.old_line : p.new_line), start = !st ? null : left ? st.old ?? st.new : st.new ?? st.old;
     if (p) threads.push({
       id: d.id, isResolved: Boolean(notes[0].resolved), isOutdated: out, path: p.new_path ?? p.old_path,
-      line: out ? null : left ? p.old_line : p.new_line, startLine: out || !st ? null : left ? st.old ?? st.new : st.new ?? st.old,
+      line: out ? null : line, startLine: out ? null : start, originalLine: line, originalStartLine: start,
       diffSide: left ? "LEFT" : "RIGHT", comments: notes.map((n) => comment(n, me)),
     });
     else for (const n of notes) talk.push({ ...comment(n, me), kind: "comment", author: n.author?.username, at: n.created_at });

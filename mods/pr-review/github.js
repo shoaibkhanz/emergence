@@ -18,7 +18,7 @@ export async function repoInfo(id) {
   return { nwo: r.nameWithOwner, defaultBranch: r.defaultBranchRef?.name || null };
 }
 
-const PR_FIELDS = "number,title,state,isDraft,author,additions,deletions,updatedAt,headRefName,baseRefName";
+const PR_FIELDS = "number,title,state,isDraft,author,additions,deletions,updatedAt,headRefName,baseRefName,headRefOid";
 export function listPRs(id, state, search) {
   return json(id, ["pr", "list", "--state", state, "--limit", "100", ...(search ? ["--search", search] : []), "--json", PR_FIELDS]);
 }
@@ -30,6 +30,10 @@ export const prCommits = async (id, number) => (await json(id, ["pr", "view", St
   .map((c) => ({ oid: c.oid, headline: c.messageHeadline, author: c.authors?.[0]?.login || c.authors?.[0]?.name || "", at: c.committedDate }));
 // One commit's own changes, as a unified diff (it need not be fetched locally).
 export const commitDiff = (id, nwo, oid) => gh(id, ["api", "-H", "Accept: application/vnd.github.diff", `repos/${nwo}/commits/${oid}`], 120000);
+// How head moved on from base: { status ("ahead" when base is an ancestor), files: [{ path, oldPath, patch }] } (patch
+// null for a file too big to show). gitlab.js has none: its threads carry no commit to start from.
+export const compare = (id, nwo, base, head) => json(id, ["api", `repos/${nwo}/compare/${base}...${head}`,
+  "--jq", "{status, files: [.files[]? | {path: .filename, oldPath: (.previous_filename // .filename), patch}]}"]);
 // A file's text at a ref (a commit or branch).
 export const fileAt = (id, nwo, path, ref) =>
   gh(id, ["api", "-H", "Accept: application/vnd.github.raw", `repos/${nwo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`], 120000);
@@ -38,10 +42,11 @@ const THREADS = `query($owner:String!,$name:String!,$number:Int!){repository(own
   headRefOid body createdAt author{login}
   comments(last:100){nodes{id databaseId body author{login} createdAt viewerCanDelete viewerCanUpdate}}
   reviews(last:100){nodes{id body state author{login} submittedAt}}
-  reviewThreads(first:100){nodes{id isResolved isOutdated path line startLine diffSide
-  comments(first:50){nodes{id databaseId body author{login} createdAt viewerCanDelete viewerCanUpdate}}}}}}}`;
+  reviewThreads(first:100){nodes{id isResolved isOutdated path line startLine originalLine originalStartLine diffSide
+  comments(first:50){nodes{id databaseId body author{login} createdAt viewerCanDelete viewerCanUpdate diffHunk originalCommit{oid}}}}}}}}`;
 
-// { headOid, threads: [{ id, isResolved, isOutdated, path, line, startLine, diffSide, comments: [...] }],
+// { headOid, threads: [{ id, isResolved, isOutdated, path, line, startLine, originalLine, originalStartLine, diffSide,
+//   comments: [{ ..., diffHunk, originalCommit: { oid } }] }] (line null once outdated; original*: where it was written),
 //   talk: the conversation, oldest first: the description, PR comments, and reviews with a verdict or a note —
 //   [{ id, kind: "body" | "comment" | "review", author, at, body, state?, databaseId?, viewerCanUpdate?, viewerCanDelete? }] }
 export async function threads(id, nwo, number) {
