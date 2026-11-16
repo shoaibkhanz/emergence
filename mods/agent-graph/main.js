@@ -7,7 +7,7 @@ import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout, appHome } from "herdr";
 import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge,
-  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf } from "./lib.js";
+  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000, SUB_FAST = 5000;
 const MAX_FILES = 8; // a selected sub-agent's edited files listed under its card
@@ -20,6 +20,8 @@ const ICON = (f) => `mods/agent-graph/${f}.svg`;
 const key = (m, p) => `${m ?? ""}|${p}`;
 const alpha = (c, a) => c.slice(0, 7) + Math.round(a * 255).toString(16).padStart(2, "0");
 const clamp = (z) => Math.min(ZMAX, Math.max(ZMIN, z));
+const ESTIMATE = "≈ at API prices (subscription)";
+const noTerminal = (d) => !!d.history || Array.isArray(d.agents); // a history card, a worktree: Enter / a click folds it
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -77,6 +79,7 @@ export default class AgentGraph extends View {
     this.view = null; // { x, y, z } once the person pans or zooms; null = fitted
     this.offsets = new Map(JSON.parse(localStorage.getItem("offsets") || "[]")); // node id -> { x, y } the person dragged it by
     this.sel = null;
+    this.folds = JSON.parse(localStorage.getItem("folds") || "{}"); // card id -> folded (true) / open (false) the person chose
     this.subs = {}; // subagents.py's last answer: address -> { edited, subagents }
     this.subsJSON = "{}";
     this.subsLoop = false;
@@ -247,6 +250,17 @@ export default class AgentGraph extends View {
     this.drag = null;
   }
 
+  // Folding a card (or all of them: ids) is remembered in this copy's localStorage.
+  setFold(ids, folded) {
+    this.folds = { ...this.folds, ...Object.fromEntries(ids.map((id) => [id, folded])) };
+    localStorage.setItem("folds", JSON.stringify(this.folds));
+  }
+
+  // Enter or a click on a card with no terminal of its own (a worktree, a history card) folds or opens it.
+  toggle(d) {
+    if (d.foldable) this.setFold([d.id], !d.folded);
+  }
+
   zoomAt(f, px, py) {
     const v = this.view ?? this.fitted, z = clamp(v.z * f), k = z / v.z;
     this.view = { z, x: px - (px - v.x) * k, y: py - (py - v.y) * k };
@@ -290,13 +304,16 @@ export default class AgentGraph extends View {
     const foc = focused()?.terminal ?? null;
     this.now = Date.now();
     this.ov = overlaps(this.subs, this.now); // files two live writers both have uncommitted (lib)
-    const tree = buildTree(items, (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined,
+    const whole = buildTree(metered(items, this.subs), (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined,
       { activeOnly: this.activeOnly, cursor, focused: foc, subs: subItems(items, this.subs) }); // marks here: lib
+    const tree = fold(whole, this.folds); // totals on every card; folded ones without their subtree (lib)
     const L = graphLayout(tree), M = this.moved(L); // M: with the person's dragged offsets
     const list = this.panel && this.loaded && !!this.size && (this.size.width - 2 * PANEL_PAD) / Math.max(1, L.width) < PANEL_Z;
     const walk = (a) => [{ data: a }, ...a.children.flatMap(walk)];
-    const picks = list ? tree.flatMap((r) => r.worktrees.flatMap((w) => w.agents.flatMap(walk)))
-      : M.nodes.filter((n) => n.kind === "agent").sort((a, b) => a.y - b.y || a.x - b.x);
+    const picks = list ? tree.flatMap((r) => r.worktrees.flatMap((w) => [{ data: w }, ...w.agents.flatMap(walk)]))
+      : M.nodes.filter((n) => n.kind !== "repo").sort((a, b) => a.y - b.y || a.x - b.x);
+    this.allFolds = foldables(whole);
+    this.anyOpen = picks.some((n) => n.data.foldable && !n.data.folded);
     if (!picks.some((n) => n.data.id === this.sel)) this.sel = (picks.find((n) => n.data.here) ?? picks.find((n) => n.data.id === foc) ?? picks[0])?.data.id ?? null;
 
     // A popup is as tall as its content (mod.json height is the cap): size to the window. A panel fills its block.
@@ -313,8 +330,10 @@ export default class AgentGraph extends View {
         if (k === "f") this.view = null;
         else if ((k === "-" || k === "=" || k === "+") && this.fitted && this.size) this.zoomAt(k === "-" ? 0.8 : 1.25, this.size.width / 2, this.size.height / 2);
         else if (k === "r") { this.offsets.clear(); localStorage.removeItem("offsets"); this.view = null; }
-        else if ((k === "left" || k === "right") && this.activeOnly !== (k === "left")) { this.activeOnly = k === "left"; this.view = null; this.nudge = false; }
+        else if (k === "a") { this.activeOnly = !this.activeOnly; this.view = null; this.nudge = false; }
+        else if ((k === "left" || k === "right") && picks[i]?.data.foldable && picks[i].data.folded !== (k === "left")) this.setFold([this.sel], k === "left");
         else if ((k === "down" || k === "up") && picks.length) this.sel = picks[(i + (k === "down" ? 1 : picks.length - 1)) % picks.length].data.id;
+        else if (k === "enter" && i >= 0 && noTerminal(picks[i].data)) this.toggle(picks[i].data);
         else if (k === "enter" && i >= 0) return this.focusAgent(picks[i].data);
         else return;
         cx.stop_propagation();
@@ -343,9 +362,9 @@ export default class AgentGraph extends View {
       .on_click((_e, cx) => { onClick(cx); cx.notify(); });
     const icon = (el) => el.w(24).px(0).justify_center().border_color(alpha(t.border, 0)) // icon buttons have no box, as in every panel
       .hover((s) => s.bg(t.hover).text_color(t.foreground));
-    const hint = !this.panel ? "↑↓ select · ←→ active · all · ↵ focus · F fit · R reset · Esc close"
-      : W >= 1000 ? "↑↓ select · ←→ active · all · ↵ focus · F fit · R reset" : null;
-    // Active | All (← / →), each with what it shows: decided each time the panel opens (lib openOnActive), then yours.
+    const hint = !this.panel ? "↑↓ select · ←→ fold · A active · all · ↵ focus · F fit · R reset · Esc close"
+      : W >= 1000 ? "↑↓ select · ←→ fold · A active · all · ↵ focus · F fit · R reset" : null;
+    // Active | All (A), each with what it shows: decided each time the panel opens (lib openOnActive), then yours.
     const pick = (active) => { if (this.activeOnly !== active) { this.activeOnly = active; this.view = null; this.nudge = false; } };
     // On All, a dot by the Active count says Active has something for you: amber when an agent needs you, else blue.
     const lit = activeNudge(items, { onAll: !this.activeOnly, armed: this.nudge }), tone = lit === "blocked" ? t.blocked : t.working;
@@ -361,9 +380,12 @@ export default class AgentGraph extends View {
       .when(!!hint, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(hint)))
       // The view's controls sit on the right, the filter first, by refresh and expand.
       .child(h_flex().id("ag-filter").h(24).p(2).gap(2).flex_none().items_center().rounded(7).bg(t.raised)
-        .child(seg("ag-active", true, "Active", n.active, lit === "blocked" ? "An agent needs you: Active shows only what's going on (←)"
-          : lit ? "Agents are working: Active shows only what's going on (←)" : "Agents working, needing you or finished (←)"))
-        .child(seg("ag-all", false, "All", n.all, "Every agent and terminal (→)")))
+        .child(seg("ag-active", true, "Active", n.active, lit === "blocked" ? "An agent needs you: Active shows only what's going on (A)"
+          : lit ? "Agents are working: Active shows only what's going on (A)" : "Agents working, needing you or finished (A)"))
+        .child(seg("ag-all", false, "All", n.all, "Every agent and terminal (A)")))
+      // Fold every card, or open every one (history included); ←/→ fold the selected card.
+      .when(this.allFolds.length > 0, (el) => el.child(icon(button("ag-fold", this.anyOpen ? "Collapse all (←/→ one card)" : "Expand all (←/→ one card)",
+        () => this.setFold(this.allFolds, this.anyOpen))).child(svg(ICON(this.anyOpen ? "collapse" : "unfold")).size(13))))
       .child(icon(button("ag-refresh", "Refresh git and PRs", (cx) => this.refresh(cx, true)))
         .child(svg(ICON("refresh")).size(13).when(this.busy, (el) => el.spin(900))))
       .when(this.panel, (el) => el.child(icon(button("ag-expand", "Open in window", () => run("mod.open", { name: "agent-graph" })))
@@ -374,24 +396,28 @@ export default class AgentGraph extends View {
   list(t, tree) {
     const rows = [];
     const row = (id, depth) => h_flex().id(id).h(28).flex_none().pl(8 + depth * 16).pr(8).gap(8).items_center().rounded(7);
+    const dim = (text) => div().flex_none().text_size(11).text_color(t.dim).child(text);
     const agent = (a, depth) => {
       const loud = a.status === "blocked", tone = loud ? t.blocked : a.status === "working" ? t.working : null, sel = this.sel === a.id, p = a.program;
       const ic = p?.icon ? (p.tint ? svg(p.icon).size(14).flex_none().text_color(t.foreground) : image(p.icon).w(14).h(14).flex_none()) : null;
-      const sub = a.sub, warn = conflictsOf(this.ov, (id) => id === a.id), tip = sub ? this.fileTip(sub) : a.tab;
+      const sub = a.sub, warn = conflictsOf(this.ov, (id) => id === a.id), tip = this.tip(a), line = metricLine(a.history ? a.total : a.m ?? a.total);
       rows.push(row(`l:${a.id}`, depth).border_1().border_color(a.here ? t.accent : alpha(t.border, 0)).cursor_pointer()
         .when(!!tone, (el) => el.bg(alpha(tone, 0.08))).when(sel && !tone, (el) => el.bg(t.selected))
         .hover((s) => s.bg(tone ? alpha(tone, 0.14) : t.hover))
         .when(!!tip, (el) => el.tooltip(tip))
-        .on_click(() => { if (sub) this.sel = a.id; this.focusAgent(a); })
+        .on_click(() => { if (sub || a.history) this.sel = a.id; if (a.history) this.toggle(a); else this.focusAgent(a); })
+        .child(this.chevron(t, a, 1))
         .child(this.dot(t, a.status, 8))
-        .when(!!ic, (el) => el.child(ic))
-        .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(a.name))
+        .when(!!ic && !a.history, (el) => el.child(ic))
+        .child(div().flex_1().min_w(0).truncate().text_color(a.history ? t.muted : t.foreground).child(a.name))
         .when(warn.length > 0, (el) => el.child(this.warn(t, `w-${a.id}`, warn, 1, false)))
-        .child(sub // what it's doing now shares the row with its title
+        .when(!a.history, (el) => el.child(sub // what it's doing now shares the row with its title
           ? div().flex_1().min_w(0).truncate().text_right().text_size(11).text_color(t.dim).child(subState(sub, this.now))
           : div().flex_none().text_size(11).text_color(loud ? t.blocked : t.dim).when(loud, (el) => el.font_semibold())
-            .child(a.agent ? WORD[a.status] : a.kind))
-        .when(!!sub?.edited.length, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(`✎ ${sub.edited.length}`))));
+            .child(a.agent ? WORD[a.status] : a.kind)))
+        .when(!!sub?.edited.length, (el) => el.child(dim(`✎ ${sub.edited.length}`)))
+        .when(!!line, (el) => el.child(dim(line)))
+        .when(a.folded && !a.history, (el) => el.child(this.summaryChip(t, a, 1))));
       if (sub && sel) {
         for (const e of sub.edited.slice(0, MAX_FILES)) rows.push(row(`l:${a.id}|${e.path}`, depth + 1).h(22).child(this.file(t, e, 1)));
         const more = sub.edited.length - MAX_FILES;
@@ -409,11 +435,16 @@ export default class AgentGraph extends View {
       for (const w of r.worktrees) {
         const git = w.kind === "worktree";
         const ab = git && (w.ahead || w.behind) ? [w.ahead && `↑${w.ahead}`, w.behind && `↓${w.behind}`].filter(Boolean).join(" ") : "";
+        const total = this.totalLine(w.total);
         rows.push(row(`l:${w.id}`, 1).border_1().border_color(w.here ? t.accent : alpha(t.border, 0))
+          .when(this.sel === w.id, (el) => el.bg(t.selected)).on_click(() => { this.sel = w.id; })
+          .child(this.chevron(t, w, 1))
           .child(svg(ICON(git ? "branch" : "folder")).size(14).flex_none().text_color(t.muted))
           .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(git ? w.branch ?? "detached" : w.name))
-          .when(!!ab, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(ab)))
+          .when(!!ab, (el) => el.child(dim(ab)))
           .map((el) => { const f = this.worktreeConflicts(w); return f.length ? el.child(this.warn(t, `w-${w.id}`, f, 1, true)) : el; })
+          .when(!!total, (el) => el.child(dim(total).id(`lt-${w.id}`).when(w.total.estimate, (el) => el.tooltip(ESTIMATE))))
+          .when(w.folded, (el) => el.child(this.summaryChip(t, w, 1)))
           .when(!!w.pr, (el) => el.child(this.chip(t, w, 1))));
         for (const a of w.agents) agent(a, 2);
       }
@@ -505,6 +536,15 @@ export default class AgentGraph extends View {
     for (const st of [...STATUS].reverse()) if (paths.has(st)) els.push(layer(paths.get(st).build(), ink[st]));
 
     for (const n of L.nodes) els.push(this.node(t, n, X(n.x), Y(n.y), z));
+    // On a card with something under it: a chevron on its right edge; once folded, what it hides rides on its bottom
+    // edge (in the gap between rows, so folding never widens the graph). A history card is its own summary.
+    for (const n of L.nodes) if (n.data.foldable) {
+      const x = X(n.x), y = Y(n.y), w = n.w * z;
+      els.push(this.chevron(t, n.data, z).absolute().left(x + w - 9 * z).top(y + (n.h / 2 - 9) * z).size(18 * z).rounded_full().justify_center()
+        .border(1).border_color(t.border).bg(t.surface));
+      if (n.data.folded && !n.data.history) els.push(h_flex().absolute().left(x + 12 * z).top(y + (n.h - 10) * z).w(w - 36 * z).justify_end()
+        .child(this.summaryChip(t, n.data, z)));
+    }
     const open = L.nodes.find((n) => n.data.id === this.sel && n.data.sub?.edited.length);
     if (open) els.push(this.files(t, open, X(open.x), Y(open.y), z));
     // Zoom controls (⌘/ctrl-scroll and - / = zoom too): − · the zoom (click: fit) · +.
@@ -556,6 +596,8 @@ export default class AgentGraph extends View {
       const ab = git && (d.ahead || d.behind) ? `${d.ahead ? `↑${d.ahead}` : ""}${d.ahead && d.behind ? " " : ""}${d.behind ? `↓${d.behind}` : ""}` : "";
       const path = git ? d.path : (d.path ?? "").replace(home(), "~");
       return this.ring(t, this.card(t, n, x, y, z), n, z, isFoc)
+        .when(this.sel === d.id, (el) => el.bg(t.selected))
+        .on_click(() => { if (!this.drag?.moved) this.sel = d.id; })
         .child(h_flex().gap(8 * z).items_center()
           .child(svg(ICON(git ? "branch" : "folder")).size(14 * z).flex_none().text_color(t.muted))
           .child(div().flex_1().min_w(0).truncate().text_size(13 * z).text_color(t.foreground).child(git ? d.branch ?? "detached" : d.name))
@@ -563,10 +605,13 @@ export default class AgentGraph extends View {
         .child(h_flex().gap(8 * z).items_center()
           .child(div().flex_1().min_w(0).truncate().text_size(11 * z).text_color(t.dim).child(path))
           .map((el) => { const f = this.worktreeConflicts(d); return f.length ? el.child(this.warn(t, `w-${d.id}`, f, z, true)) : el; })
+          .map((el) => { const total = this.totalLine(d.total); return total ? el.child(div().id(`wt-${d.id}`).flex_none().text_size(11 * z).text_color(t.muted)
+            .when(d.total.estimate, (el) => el.tooltip(`${total}: everything under it\n${ESTIMATE}`)).child(total)) : el; })
           .when(!!d.pr, (el) => el.child(this.chip(t, d, z))));
     }
+    if (d.history) return this.historyCard(t, n, x, y, z);
     const loud = d.status === "blocked", tone = loud ? t.blocked : d.status === "working" ? t.working : null; // working stands out too
-    const sel = this.sel === d.id;
+    const sel = this.sel === d.id, line = metricLine(d.m ?? d.total), tip = this.tip(d);
     const sub = d.sub, warn = conflictsOf(this.ov, (id) => id === d.id); // sub: an in-process sub-agent (lib subItems)
     const p = d.program;
     const icon = p?.icon ? (p.tint ? svg(p.icon).size(16 * z).flex_none().text_color(t.foreground) : image(p.icon).w(16 * z).h(16 * z).flex_none()) : null;
@@ -575,7 +620,7 @@ export default class AgentGraph extends View {
       .cursor_pointer()
       .hover((s) => s.bg(tone ? mix(t.background, tone, 0.14) : sel ? t.selected : t.raised).border_color(isFoc ? t.accent : tone ?? t.input).shadow_sm())
       .on_click(() => { if (this.drag?.moved) return; if (sub) this.sel = d.id; this.focusAgent(d); }) // a pan that started on the card isn't a click
-      .when(!!sub, (el) => el.tooltip(this.fileTip(sub)))
+      .when(!!tip, (el) => el.tooltip(tip))
       .map((el) => this.ring(t, el, n, z, isFoc))
       .child(h_flex().gap(8 * z).items_center()
         .when(!!icon, (el) => el.child(icon))
@@ -588,7 +633,57 @@ export default class AgentGraph extends View {
             .child(d.agent ? WORD[d.status] : d.kind))
         .when(warn.length > 0, (el) => el.child(this.warn(t, `w-${d.id}`, warn, z, false)))
         .child(sub ? div().flex_none().text_size(11 * z).text_color(t.dim).child(sub.edited.length ? `✎ ${sub.edited.length}` : "")
-          : div().flex_1().min_w(0).truncate().text_right().text_size(11 * z).text_color(t.dim).child(d.tab ?? (d.parent ? "sub-agent" : ""))));
+          : div().flex_1().min_w(0).truncate().text_right().text_size(11 * z).text_color(t.dim).child(d.tab ?? (d.parent ? "sub-agent" : "")))
+        .when(!!line, (el) => el.child(div().flex_none().text_size(11 * z).text_color(t.dim).child(line)))); // "⚒ 66 · ≈ $1.20": its own
+  }
+
+  // One card for every sub-agent an agent ran that has finished: "12 earlier sub-agents", their calls and cost. A click
+  // (or Enter) opens it into their cards, newest first.
+  historyCard(t, n, x, y, z) {
+    const d = n.data, sel = this.sel === d.id;
+    return this.card(t, n, x, y, z).cursor_pointer()
+      .when(sel, (el) => el.bg(t.selected))
+      .hover((s) => s.bg(sel ? t.selected : t.raised).border_color(t.input).shadow_sm())
+      .on_click(() => { if (this.drag?.moved) return; this.sel = d.id; this.toggle(d); })
+      .tooltip(this.tip(d))
+      .child(div().min_w(0).truncate().text_size(13 * z).font_semibold().text_color(t.muted).child(d.name))
+      .child(h_flex().gap(6 * z).items_center()
+        .child(this.dot(t, "idle", 8 * z))
+        .child(div().flex_1().min_w(0).truncate().text_size(12 * z).text_color(t.muted).child(metricLine(d.total) || "Finished")));
+  }
+
+  // ---- Tool calls, cost, folding ----
+
+  // A worktree's total, cost first: "≈ $14 · ⚒ 900".
+  totalLine(t) {
+    return [costLabel(t), t.tools ? `⚒ ${t.tools}` : ""].filter(Boolean).join(" · ");
+  }
+
+  // A card's hover: what a sub-agent touched, else its tab; then its calls and cost, and with what's under it.
+  tip(d) {
+    const head = d.sub ? this.fileTip(d.sub) : d.history ? `${d.name}: click to ${d.folded ? "open" : "fold"}` : d.tab;
+    const own = d.m && metricLine(d.m), all = d.below && (d.below.tools || d.below.tokens) ? metricLine(d.total) : "";
+    return [head, own && `${own}${all ? " (its own)" : ""}`, all && `${d.history ? "" : "with sub-agents: "}${all}`,
+      d.total?.estimate && ESTIMATE, d.total?.unpriced && "+: some requests had no known price"].filter(Boolean).join("\n");
+  }
+
+  // ▾ open / ▸ folded, on a card with something under it (a fixed slot in the list, so rows line up).
+  chevron(t, d, z) {
+    const el = h_flex().id(`fold-${d.id}`).w(12 * z).flex_none().items_center().text_size(11 * z).text_color(t.dim);
+    return !d.foldable ? el : el.cursor_pointer().hover((s) => s.text_color(t.foreground)).tooltip(d.folded ? "Open (→)" : "Fold (←)")
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => { cx.stop_propagation(); this.toggle(d); cx.notify(); })
+      .child(d.folded ? "▸" : "▾");
+  }
+
+  // What a folded card hides: "3 agents · 5 sub-agents · ≈ $14". A click opens it.
+  summaryChip(t, d, z) {
+    return h_flex().id(`sum-${d.id}`).min_w(0).h(20 * z).px(8 * z).items_center().rounded(6 * z).border(1).border_color(t.border)
+      .bg(t.surface).text_size(11 * z).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .tooltip(d.below.estimate ? `Open (→)\n${ESTIMATE}` : "Open (→)")
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => { cx.stop_propagation(); this.toggle(d); cx.notify(); })
+      .child(div().min_w(0).truncate().child(summary(d.below) || "Folded"));
   }
 
   // ---- What sub-agents touch ----

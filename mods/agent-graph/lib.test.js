@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, sidebarCursor, openOnActive, filterCounts, activeNudge,
   RANK, subItems, subState, ago, harnessOf, subRequests, overlaps, conflictsOf, metered, own, addUp, money, tokens, costLabel, metricLine,
-  summary, fold, foldables, isFolded, CHIP } from "./lib.js";
+  summary, fold, foldables, isFolded } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -212,6 +212,7 @@ test("subState: what a sub-agent card's state line says", () => {
   expect(subState(SUB("x", false), NOW)).toBe("Finished 4m");
   expect(ago(NOW - 30000, NOW)).toBe("now");
   expect(ago(NOW - 2 * 3600000, NOW)).toBe("2h");
+  expect(ago(NOW - 50 * 3600000, NOW)).toBe("2d");
 });
 
 test("harnessOf / subRequests: local claude and omp agents with a pid, with their git top", () => {
@@ -291,13 +292,14 @@ test("fold: totals sum each card and everything under it; worktrees count their 
   expect(summary(t1.below)).toBe("3 sub-agents · ≈ $9.50");
 });
 
-test("fold: a folded worktree or agent is a leaf with its summary; layout leaves room for the chip", () => {
+test("fold: a folded worktree or agent is a leaf (its summary rides on its card), so the graph narrows", () => {
   const w = "|/r/app";
   const tree = meteredTree({ [w]: true });
   expect(tree[0].worktrees[0]).toMatchObject({ folded: true, foldable: true, agents: [] });
   const L = layout(tree);
   expect(L.nodes.map((n) => n.id)).toEqual([`w:${w}`, "r:|/r/app/.git"]);
-  expect(L.width).toBe(SIZE.repo.w + 72 + SIZE.worktree.w + CHIP.gap + CHIP.w);
+  expect(L.width).toBe(SIZE.repo.w + 72 + SIZE.worktree.w);
+  expect(layout(meteredTree({ t1: true })).width).toBe(SIZE.repo.w + SIZE.worktree.w + SIZE.agent.w + 2 * 72); // fits a 620px panel
   const t1 = agentOf(meteredTree({ t1: true }), "t1");
   expect([t1.folded, t1.children]).toEqual([true, []]);
   expect(agentOf(meteredTree({ t1: true }), "t2").foldable).toBe(false); // nothing under it: no chevron

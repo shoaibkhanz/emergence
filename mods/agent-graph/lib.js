@@ -104,7 +104,6 @@ export function buildTree(items, git, prs, { activeOnly = false, cursor = null, 
 
 export const SIZE = { repo: { w: 200, h: 64 }, worktree: { w: 252, h: 64 }, agent: { w: 268, h: 64 } };
 const GAP_X = 72, ROW = 76, REPO_GAP = 16;
-export const CHIP = { gap: 14, w: 150 }; // a folded card's summary chip, right of it where its children would be
 const statusOf = (r) => Object.keys(RANK)[r] ?? "idle";
 
 /**
@@ -125,7 +124,7 @@ export function layout(repos) {
     if (!placed.length) y += ROW;
     const n = { id: `${kind[0]}:${data.id}`, kind, x: colX(col), y: cy - s.h / 2, w: s.w, h: s.h, data };
     nodes.push(n);
-    right = Math.max(right, n.x + n.w + (data.folded ? CHIP.gap + CHIP.w : 0));
+    right = Math.max(right, n.x + n.w);
     for (const p of placed) edges.push({ from: n.id, to: p.id, status: statusOf(p.data.rank), a: { x: n.x + n.w, y: cy }, b: { x: p.x, y: mid(p) } });
     return n;
   };
@@ -189,7 +188,7 @@ export const subItems = (items, scan) => items.flatMap((i) => {
 // The agents' own metrics from subagents.py, as m on their items.
 export const metered = (items, scan) => items.map((i) => (scan?.[i.id] && !scan[i.id].error ? { ...i, m: own(scan[i.id]) } : i));
 
-export const ago = (at, now) => { const m = Math.floor((now - at) / 60000); return m < 1 ? "now" : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h`; };
+export const ago = (at, now) => { const m = Math.floor((now - at) / 60000); return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`; };
 
 // A sub-agent card's state line.
 export const subState = (s, now) => (s.running ? (s.action ? `Working · ${s.action}` : "Working") : `Finished ${ago(s.updatedAt, now)}`);
