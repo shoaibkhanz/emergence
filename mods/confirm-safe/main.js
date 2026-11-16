@@ -11,7 +11,7 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { run, props, closeOverlay, theme, home, setShared } from "herdr";
-import { shortPath, step } from "./lib.js";
+import { shortPath, step, DIALOG } from "./lib.js";
 
 // Emergence's dialog standard (RECIPE "Dialogs"): 24px padding, 16px gaps, a 22px title row with the Esc chip, 32px
 // buttons of which only the one Enter presses is filled; widths 440 / 560 / 680. Type is Herdr's (no font set).
@@ -52,7 +52,7 @@ export default class ConfirmSafe extends View {
   render() {
     const t = theme(), p = { title: "", detail: "", name: "", path: "", action: "", ...props() }; // empty: herdr-app check
     // RECIPE "Dialogs": only the selected button, the one Enter presses, is filled (solid; a destructive one in blocked), with ↵.
-    const button = (id, label, on, danger, onClick) => h_flex().id(id).h(32).px(14).gap(6).items_center().rounded(8).cursor_pointer()
+    const button = (id, label, on, danger, onClick) => h_flex().id(id).h(DIALOG.button).px(14).gap(6).items_center().rounded(8).cursor_pointer()
       .border_1().text_size(12).font_medium()
       .map((el) => on && danger ? el.bg(alpha(t.blocked, 0.18)).border_color(alpha(t.blocked, 0.5)).text_color(t.blocked)
         : on ? el.bg(t.solid).border_color(t.solid).text_color(t.solid_foreground)
@@ -61,8 +61,8 @@ export default class ConfirmSafe extends View {
     const bs = this.buttons(p).map(([label, command, red], i) => button(`b${i}`, label, this.sel === i, red, () => this.done(command)));
     const row = [p.extra ? bs[0] : null, div().flex_1(), ...bs.slice(p.extra ? 1 : 0)].filter(Boolean); // the extra stands apart, at the left
     return v_flex().id("confirm-safe").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
-      .size_full().min_h(0).p(24).gap(16).rounded(10).bg(t.popover).text_size(13)
-      .child(h_flex().h(22).flex_none().items_center().gap(12)
+      .size_full().min_h(0).p(DIALOG.pad).gap(DIALOG.gap).rounded(DIALOG.radius).bg(t.popover).text_size(13)
+      .child(h_flex().h(DIALOG.title).flex_none().items_center().gap(12)
         .child(div().flex_1().min_w(0).truncate().text_size(15).font_semibold().text_color(t.foreground).child(p.title))
         .child(div().id("cs-esc").flex_none().px(6).py(2).rounded(5).text_size(11).text_color(t.dim).cursor_pointer()
           .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => this.done(null)).child("Esc")))

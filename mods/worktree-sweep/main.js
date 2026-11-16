@@ -10,7 +10,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex, ScrollHandle } from "gpui-base";
 import { run, props, closeOverlay, theme, exec, setShared } from "herdr";
-import { step, tick, plan, tally, question, choices } from "./lib.js";
+import { step, tick, plan, tally, question, choices, DIALOG } from "./lib.js";
 
 const alpha = (c, a) => c.slice(0, 7) + Math.round(a * 255).toString(16).padStart(2, "0");
 
@@ -89,7 +89,7 @@ export default class WorktreeSweep extends View {
 
   render() {
     const t = theme(), items = props()?.items ?? [], a = this.asking, { n, d } = this.picked();
-    const button = (id, label, on, danger, onClick) => h_flex().id(id).h(32).px(14).gap(6).items_center().rounded(8).cursor_pointer()
+    const button = (id, label, on, danger, onClick) => h_flex().id(id).h(DIALOG.button).px(14).gap(6).items_center().rounded(8).cursor_pointer()
       .border_1().text_size(12).font_medium()
       .map((el) => on && danger ? el.bg(alpha(t.blocked, 0.18)).border_color(alpha(t.blocked, 0.5)).text_color(t.blocked)
         : on ? el.bg(t.solid).border_color(t.solid).text_color(t.solid_foreground)
@@ -102,8 +102,8 @@ export default class WorktreeSweep extends View {
         button("wb-ask", n ? `Delete ${n}…` : "Delete…", ready, false, (_e, cx) => { this.ask(); cx.notify(); }).when(!ready, (el) => el.opacity(0.5))];
     const row = a?.list[0][1] === "force" ? [buttons[0], div().flex_1(), ...buttons.slice(1)] : [div().flex_1(), ...buttons];
     return v_flex().id("worktree-sweep").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
-      .size_full().min_h(0).p(24).gap(16).rounded(10).bg(t.popover).text_size(13)
-      .child(h_flex().h(22).flex_none().items_center().gap(12)
+      .size_full().min_h(0).p(DIALOG.pad).gap(DIALOG.gap).rounded(DIALOG.radius).bg(t.popover).text_size(13)
+      .child(h_flex().h(DIALOG.title).flex_none().items_center().gap(12)
         .child(div().flex_1().min_w(0).truncate().text_size(15).font_semibold().text_color(t.foreground).child("Delete worktrees"))
         .child(div().id("ws-esc").flex_none().px(6).py(2).rounded(5).text_size(11).text_color(t.dim).cursor_pointer()
           .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => closeOverlay(props().overlay)).child("Esc")))

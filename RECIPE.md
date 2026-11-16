@@ -107,6 +107,13 @@ fill; the others are `raised` with an `input` border, Stop and Delete in `blocke
 at most), so asking never changes a dialog's height. A boxed subject is `surface` with a `border`. Widths: 440 (a
 question), 560 (a card), 680 (a list or palette). Centred (`kind: "dialog"`), as tall as their content where it's known
 up front, else a fixed height (or a share of the window, as the keys list's 0.9) whose lists scroll inside.
+Grouped rows (settings, the keys list) sit in one card per section: `surface`, a 1px `border`, radius 6, the header
+6px above it, 18px between sections; rows divided by 1px `border` hairlines (settings: 36px, or 52px with a one-line
+12 `muted` about, its whole text on hover) or a `p(4)` card of 28px rows (keys). The keyboard's row has the `hover`
+fill, never a ring, and starts on the first row. A switch is `accent` when on, `raised` with an `input` border when off;
+a choice is segments in a `raised` track, the chosen one `background`. Keys are 11px chips: `raised`, `input` border,
+`foreground`. A list that scrolls keeps an 18px 12 `muted` footer of its keys. Each dialog's lib exports `DIALOG`
+(pad, gap, title, radius, button); `mods/dialogs.test.js` fails when the copies disagree.
 
 ## How it behaves
 

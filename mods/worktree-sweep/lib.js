@@ -55,3 +55,6 @@ export function choices(n, d) {
   ];
   return { list, sel: d ? 1 : 0 };
 }
+
+// Emergence's dialog frame (RECIPE "Dialogs"); mods/dialogs.test.js holds every dialog's copy to it.
+export const DIALOG = { pad: 24, gap: 16, title: 22, radius: 10, button: 32 };
