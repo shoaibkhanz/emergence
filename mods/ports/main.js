@@ -174,7 +174,7 @@ export default class Ports extends View {
 
   // The port card, centred (a dialog, as confirm-safe), as tall as the lines it will show.
   card(s, who, ask = false) {
-    openOverlay({ mod: "port-card", kind: "dialog", width: CARD.width, height: cardHeight(s, who), props: { server: s, who, ask } });
+    openOverlay({ mod: "port-card", kind: "window", key: "port-card", width: CARD.width, height: cardHeight(s, who), props: { server: s, who, ask } });
   }
 
   key(k, cx) {

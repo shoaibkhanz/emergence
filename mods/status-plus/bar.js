@@ -86,7 +86,7 @@ export class Bar {
 
   open(tab) {
     const h = Math.min(POPUP.height, Math.round(window.viewport_size().height / (settings().zoom ?? 1) * POPUP.share));
-    openOverlay({ mod: "status-plus", kind: "dialog", width: POPUP.width, height: h, props: { popup: true, tab } });
+    openOverlay({ mod: "status-plus", kind: "window", key: "status-popup", width: POPUP.width, height: h, props: { popup: true, tab } });
   }
 
   render() {

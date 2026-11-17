@@ -1,1 +1,1 @@
-{"place": "none", "title": "Emergence settings", "overlay": {"kind": "dialog", "width": 560, "height": 600}}
+{"place": "none", "title": "Emergence settings", "overlay": {"kind": "window", "key": "emergence-settings", "width": 560, "height": 600}}

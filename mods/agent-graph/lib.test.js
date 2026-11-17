@@ -417,26 +417,56 @@ test("dots: Emergence settings' agent-graph.dots (0-25%) as an alpha, 25% when u
   expect(dotsAlpha("10")).toBe(0.25);
 });
 
-test("backdrop: a style's marks across the canvas, moving with the view; fewer for sparse; gravity bends toward cards", async () => {
+test("backdrop: the seven styles; layers move with the view; none is empty; unknown is sparse dots", async () => {
   const { backdrop, PATTERNS } = await import("./lib.js");
-  const W = 640, H = 480;
-  const dots = backdrop("dots", W, H, 1, 0, 0);
-  expect(dots.kind).toBe("dots");
-  const n = (W / PATTERNS.dots.gap + 2) * (H / PATTERNS.dots.gap + 2);
-  expect(dots.pts.length).toBeGreaterThan(n * 0.8);
-  expect(dots.pts.length).toBeLessThan(n * 1.2);
-  expect(backdrop("sparse", W, H, 1, 0, 0).pts.length).toBeLessThan(dots.pts.length / 2);
-  expect(backdrop("crosses", W, H, 1, 0, 0).kind).toBe("crosses");
-  expect(backdrop("nope", W, H, 1, 0, 0).gap).toBe(dots.gap); // unknown: dots
-  // panning by a whole gap draws the same marks
-  expect(backdrop("dots", W, H, 1, PATTERNS.dots.gap, 0).pts).toEqual(dots.pts);
-  // gravity: a point near a card moves toward it, never by more than half a gap; far points barely move
-  const card = { x: 300, y: 200, w: 120, h: 60 };
-  const flat = backdrop("gravity", W, H, 1, 0, 0), bent = backdrop("gravity", W, H, 1, 0, 0, [card]);
-  const shift = flat.pts.map(([x, y], i) => [bent.pts[i][0] - x, bent.pts[i][1] - y, x, y]);
-  const near = shift.find(([, , x, y]) => x > 430 && x < 470 && Math.abs(y - 230) < 20);
-  expect(near[0]).toBeLessThan(0); // pulled left, toward the card
-  expect(Math.max(...shift.map(([dx, dy]) => Math.hypot(dx, dy)))).toBeLessThanOrEqual(flat.gap / 2 + 1e-9);
-  const far = shift.find(([, , x, y]) => x < 20 && y < 20);
-  expect(Math.hypot(far[0], far[1])).toBeLessThan(2);
+  expect(Object.keys(PATTERNS)).toEqual(["none", "sparse", "gravity", "fade", "iso", "graph", "topo"]);
+  const W = 640, H = 480, polys = (b) => b.layers.flatMap((l) => l.polys ?? []);
+  const sparse = backdrop("sparse", W, H, 1, 0, 0);
+  const n = (W / PATTERNS.sparse.gap + 3) * (H / PATTERNS.sparse.gap + 3);
+  expect(polys(sparse).length).toBeGreaterThan(n * 0.8);
+  expect(polys(sparse).length).toBeLessThan(n * 1.2);
+  expect(backdrop("none", W, H, 1, 0, 0).layers).toEqual([]);
+  expect(backdrop("dots", W, H, 1, 0, 0)).toEqual(sparse); // a style no longer offered: the default
+  expect(backdrop("sparse", W, H, 1, PATTERNS.sparse.gap, 0)).toEqual(sparse); // a whole gap of pan draws the same
+  const moved = backdrop("sparse", W, H, 1, 10, 0).layers[0];
+  expect(moved.key).toBe(sparse.layers[0].key); // panning only slides the same geometry
+  expect(moved.polys).toEqual(sparse.layers[0].polys);
+  expect(moved.off[0] - sparse.layers[0].off[0]).toBe(10);
+  for (const k of Object.keys(PATTERNS)) expect(Array.isArray(backdrop(k, W, H, 1, 0, 0, [{ x: 100, y: 100, w: 120, h: 60 }]).layers)).toBe(true);
+});
+
+test("backdrop: gravity bends dots toward a card by at most half a gap; fade dims far dots; graph paper's 4th lines stronger", async () => {
+  const { backdrop } = await import("./lib.js");
+  const W = 640, H = 480, card = { x: 300, y: 200, w: 120, h: 60 };
+  const pts = (b) => b.layers[0].polys.map((q) => [(q[0][0] + q[2][0]) / 2, (q[0][1] + q[2][1]) / 2]);
+  const flat = pts(backdrop("gravity", W, H, 1, 0, 0)), bent = pts(backdrop("gravity", W, H, 1, 0, 0, [card])), gap = backdrop("gravity", W, H, 1, 0, 0).gap;
+  const shift = flat.map(([x, y], i) => [bent[i][0] - x, bent[i][1] - y, x, y]);
+  expect(shift.find(([, , x, y]) => x > 430 && x < 470 && Math.abs(y - 230) < 20)[0]).toBeLessThan(0);
+  expect(Math.max(...shift.map(([dx, dy]) => Math.hypot(dx, dy)))).toBeLessThanOrEqual(gap / 2 + 1e-9);
+  const fade = backdrop("fade", W, H, 1, 0, 0, [card]).layers;
+  expect(fade.length).toBeGreaterThan(1);
+  expect(fade[0].alpha).toBeGreaterThan(fade.at(-1).alpha);
+  const graph = backdrop("graph", W, H, 1, 0, 0).layers;
+  expect(graph.every((l) => l.stroke && l.segs.length && l.key)).toBe(true);
+  expect(graph[1].alpha).toBeGreaterThan(graph[0].alpha);
+  expect(backdrop("graph", W, H, 1, 36 * 4, 0).layers).toEqual(graph); // the major lines repeat every 4 gaps
+});
+
+test("backdrop: topographic contours surround the group: close cards share their outer rings, inner rings stay brighter", async () => {
+  const { backdrop } = await import("./lib.js");
+  const W = 800, H = 500, a = { x: 200, y: 200, w: 120, h: 60 }, b = { x: 340, y: 200, w: 120, h: 60 }; // 20px apart
+  const len = (l) => l.segs.reduce((s, [x1, y1, x2, y2]) => s + Math.hypot(x2 - x1, y2 - y1), 0);
+  expect(backdrop("topo", W, H, 1, 0, 0, []).layers).toEqual([]);
+  const one = backdrop("topo", W, H, 1, 0, 0, [a]).layers, two = backdrop("topo", W, H, 1, 0, 0, [a, b]).layers;
+  expect(one.every((l) => l.stroke && l.segs.length)).toBe(true);
+  expect(one[0].alpha).toBeGreaterThan(one.at(-1).alpha);
+  expect(len(two.at(-1))).toBeLessThan(len(one.at(-1)) * 1.6); // one merged outline, not two whole rings
+  const r = 5 * 18; // the outer ring sits rings * step from the card's edge
+  expect(Math.max(...one.at(-1).segs.flatMap(([x1, , x2]) => [x1, x2]))).toBeCloseTo(a.x + a.w + r, -1);
+  // dragging: within 120 ms the rings are reused, after that they follow
+  const at0 = backdrop("topo", W, H, 1, 0, 0, [a], 1000, true).layers, mid = backdrop("topo", W, H, 1, 0, 0, [{ ...a, x: 260 }], 1050, true).layers;
+  expect(mid[0].key).toBe(at0[0].key);
+  const later = backdrop("topo", W, H, 1, 0, 0, [{ ...a, x: 260 }], 1200, true).layers;
+  expect(later[0].key).not.toBe(at0[0].key);
+  expect(backdrop("topo", W, H, 1, 0, 0, [{ ...a, x: 260 }], 1210).layers[0].key).not.toBe(later[0].key); // let go: redrawn fine at once
 });

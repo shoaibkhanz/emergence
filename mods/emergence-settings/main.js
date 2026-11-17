@@ -48,8 +48,22 @@ export default class EmergenceSettings extends View {
       .child(div().w(14).h(14).rounded(7).bg(r.on ? t.accent_foreground : t.muted));
   }
 
-  // A choice: segments as the Agents panel's Active | All, the chosen one lifted.
+  // A choice: segments as the Agents panel's Active | All, the chosen one lifted. Past five options, a stepper:
+  // ‹ the chosen one ›, stopping at the ends like ←/→.
   choice(t, r) {
+    if (r.options.length > 5) {
+      const at = r.options.findIndex((o) => o.value === r.value);
+      // One black control, arrows included; the count says where you are in the list.
+      const step = (dir, glyph, on) => div().id(`es-s-${r.id}-${dir}`).w(26).h(24).flex().items_center().justify_center().rounded(4).text_size(14)
+        .map((el) => on ? el.cursor_pointer().text_color(t.muted).hover((s) => s.text_color(t.foreground).bg(t.hover)) : el.text_color(t.dim))
+        .on_click((_e, cx) => { if (!on) return; this.cursor = r.id; this.apply(choose(r, dir)); cx.notify(); }).child(glyph);
+      return h_flex().flex_none().p(2).items_center().rounded(6).bg(t.background).border_1().border_color(t.input)
+        .child(step(-1, "‹", at > 0))
+        .child(h_flex().w(132).h(24).gap(6).items_center().justify_center().text_size(12)
+          .child(div().text_color(t.foreground).child(r.options[at]?.label ?? ""))
+          .child(div().text_color(t.dim).child(`${at + 1}/${r.options.length}`)))
+        .child(step(1, "›", at < r.options.length - 1));
+    }
     return h_flex().flex_none().p(2).gap(2).rounded(6).bg(t.raised).border_1().border_color(t.input)
       .children(r.options.map((o) => div().id(`es-c-${r.id}-${o.value}`).h(22).px(10).flex().items_center().rounded(4).text_size(12)
         .cursor_pointer().map((el) => o.value === r.value ? el.bg(t.background).text_color(t.foreground) : el.text_color(t.muted))

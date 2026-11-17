@@ -62,14 +62,29 @@ test("sub-agent history: shown only once the Agents graph offers it; 1 day, 1 we
   expect(toggles(sections(of({ "agent-graph.historyOffered": true }), null)).map((x) => x.id)).toContain("agents.history");
 });
 
-test("background: under Agents with history; dots, sparse, crosses or gravity, dots unless chosen", () => {
+test("background: under Agents with history; seven styles, sparse dots unless chosen, the same names agent-graph draws", async () => {
   expect(row(sections(of({}), null), "agents.pattern")).toBeUndefined();
   const r = row(sections(of({ "agent-graph.historyOffered": true }), null), "agents.pattern");
-  expect(r).toMatchObject({ kind: "choice", value: "dots", name: "Background" });
-  expect(r.options.map((o) => o.label)).toEqual(["Dots", "Sparse", "Crosses", "Gravity"]);
-  expect(r.options[3].writes).toEqual([["agent-graph.pattern", "gravity"]]);
-  expect(row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.pattern": "lines" }), null), "agents.pattern").value).toBe("dots");
+  expect(r).toMatchObject({ kind: "choice", value: "sparse", name: "Background" });
+  expect(r.options.map((o) => o.label)).toEqual(["None", "Sparse dots", "Gravity", "Fading dots", "Isometric dots", "Graph paper", "Topographic"]);
+  expect(r.options[2].writes).toEqual([["agent-graph.pattern", "gravity"]]);
+  expect(row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.pattern": "dots" }), null), "agents.pattern").value).toBe("sparse");
   expect(row(sections(of({ "agent-graph.historyOffered": true }), null), "agents.dots").name).toBe("Background strength");
+  const { PATTERNS } = await import("../agent-graph/lib.js");
+  expect(r.options.map((o) => o.value)).toEqual(Object.keys(PATTERNS));
+});
+
+test("grain: under Agents, Off to 25% in steps of 5, 10% unless chosen, the same default agent-graph draws", async () => {
+  const r = row(sections(of({ "agent-graph.historyOffered": true }), null), "agents.grain");
+  expect(r).toMatchObject({ kind: "choice", value: 10, name: "Grain" });
+  expect(r.options.map((o) => o.label)).toEqual(["Off", "5%", "10%", "15%", "20%", "25%"]);
+  expect(r.options[0].writes).toEqual([["agent-graph.filmGrain", 0]]);
+  expect(row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.filmGrain": 30 }), null), "agents.grain").value).toBe(10);
+  const { grainOpacity } = await import("../agent-graph/lib.js");
+  expect(grainOpacity(undefined)).toBe(0.1);
+  expect(grainOpacity(0)).toBe(0);
+  expect(grainOpacity(25)).toBe(0.25);
+  expect(grainOpacity(30)).toBe(0.1);
 });
 
 test("dots: under Agents with history; Off to 25% in steps of 5, 25% unless chosen", () => {

@@ -105,7 +105,8 @@ fill; the others are `raised` with an `input` border, Stop and Delete in `blocke
 (confirm-safe's `extra`) stands apart at the far left in `blocked` text, ← from Cancel, never selected first, with a
 `blocked` line under the box saying what it loses. A question or status sits left of the buttons (12 `muted`, two lines
 at most), so asking never changes a dialog's height. A boxed subject is `surface` with a `border`. Widths: 440 (a
-question), 560 (a card), 680 (a list or palette). Centred (`kind: "dialog"`), as tall as their content where it's known
+question), 560 (a card), 680 (a list or palette). Movable windows (`kind: "window"` with a `key`: drag one anywhere and it opens there next time; each
+closes itself on Esc, since Herdr only does that for dialogs), centred the first time, as tall as their content where it's known
 up front, else a fixed height (or a share of the window, as the keys list's 0.9) whose lists scroll inside.
 Grouped rows (settings, the keys list) sit in one card per section: `surface`, a 1px `border`, radius 6, the header
 6px above it, 18px between sections; rows divided by 1px `border` hairlines (settings: 36px, or 52px with a one-line
@@ -303,7 +304,7 @@ a choice is segments in a `raised` track, the chosen one `background`. Keys are 
     haven't committed puts a ⚠ chip (`t.blocked`) on both cards and the file (+N) on the worktree card's chip row
     (`lib.js` `overlaps`).
   - Behind the graph, a fine film grain gives the canvas depth (`mods/agent-graph/grain.png`, 512px, light and dark
-    specks, tiled at 256px at 10% (`GRAIN_OPACITY`), fixed to the viewport); working and blocked cards are an opaque
+    specks, tiled at 256px at 10% by default (Settings → Grain, Off to 25%), fixed to the viewport); working and blocked cards are an opaque
     blend (`lib.js` `mix`), so nothing shows through them. Header icon buttons have no box, as in every panel.
 - **PRs panel.**
   - GitHub or GitLab: the likelier by the origin remote first (`forgeOrder`: a `github` host → GitHub), else the other

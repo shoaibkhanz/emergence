@@ -7,7 +7,7 @@ import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout, appHome } from "herdr";
 import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
-  subItems, dotsAlpha, backdrop, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners, worktreeNote, GONE, detailRequest, historySince } from "./lib.js";
+  subItems, dotsAlpha, grainOpacity, backdrop, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners, worktreeNote, GONE, detailRequest, historySince } from "./lib.js";
 import { Detail } from "./detail.js";
 import { list } from "./list.js";
 
@@ -66,7 +66,7 @@ async function pulls(on, cwd) {
   }
 }
 
-const GRAIN = 256, GRAIN_OPACITY = 0.1; // grain.png's tile (logical px at zoom 1) and how strong: felt more than seen
+const GRAIN = 256; // grain.png's tile (logical px at zoom 1); how strong is Settings' Grain (grainOpacity)
 // A working agent's dot breathes so it reads as running at a glance: Herdr's native loop (AGENTS.md: animate
 // natively, never with a timer), which runs without this script and stops while the graph isn't drawn.
 const BREATH = { from: 0.4, to: 1, period: 1600 };
@@ -228,7 +228,7 @@ export default class AgentGraph extends View {
     if (!req) return this.focusAgent(n);
     this.handoff = true; // the dialog takes the keyboard: the side panel mustn't (close's emergence.back)
     this.dismiss();
-    openOverlay({ mod: "agent-graph", kind: "dialog", width: 680, height: 0.9, props: { detail: req, owner: n.owner, ownerName: this.items().find((i) => i.id === n.owner)?.name ?? null, name: n.name, sub: n.sub, panel: this.panel } });
+    openOverlay({ mod: "agent-graph", kind: "window", key: "agent-details", width: 680, height: 0.9, props: { detail: req, owner: n.owner, ownerName: this.items().find((i) => i.id === n.owner)?.name ?? null, name: n.name, sub: n.sub, panel: this.panel } });
   }
 
   // Cross-mod deep link: pr-review picks this up (if < 30 s old) and selects the PR.
@@ -280,6 +280,19 @@ export default class AgentGraph extends View {
   // Enter or a click on a card with no terminal of its own (a worktree, a history card) folds or opens it.
   toggle(d) {
     if (d.foldable) this.setFold([d.id], !d.folded);
+  }
+
+  // A backdrop layer's path, kept by its key (the same key is the same geometry; only its offset moves with the pan),
+  // so a still or panned canvas doesn't rebuild thousands of marks every frame.
+  backdropPath(l) {
+    const hit = l.key && this.paths?.get(l.key);
+    if (hit) return hit;
+    let p = l.stroke ? PathBuilder.stroke(l.stroke) : PathBuilder.fill();
+    for (const q of l.polys ?? []) p = p.add_polygon(q, true);
+    for (const [a, b, c, d] of l.segs ?? []) p = p.move_to(a, b).line_to(c, d);
+    const built = p.build();
+    if (l.key) { if (!this.paths || this.paths.size > 64) this.paths = new Map(); this.paths.set(l.key, built); }
+    return built;
   }
 
   zoomAt(f, px, py) {
@@ -480,9 +493,9 @@ export default class AgentGraph extends View {
     if (!this.size) return el;
     // Film grain behind everything, for depth: grain.png (512px: light and dark specks, so any theme) tiled at one image
     // px per screen px on a 2x display, still while the graph pans and zooms.
-    const g = GRAIN / Z;
-    for (let y = 0; y < this.size.height; y += g) for (let x = 0; x < this.size.width; x += g)
-      el = el.child(image("mods/agent-graph/grain.png").absolute().left(x).top(y).w(g).h(g).opacity(GRAIN_OPACITY));
+    const g = GRAIN / Z, grain = grainOpacity(shared("agent-graph.filmGrain"));
+    if (grain) for (let y = 0; y < this.size.height; y += g) for (let x = 0; x < this.size.width; x += g)
+      el = el.child(image("mods/agent-graph/grain.png").absolute().left(x).top(y).w(g).h(g).opacity(grain));
 
     const quiet = (line, hint, action) => el.child(v_flex().absolute().left(0).top(0).size_full().px(16).items_center().justify_center().gap(8)
       .child(div().text_size(13).text_color(t.muted).child(line))
@@ -500,16 +513,14 @@ export default class AgentGraph extends View {
     const layer = (path, color) => div().absolute().left(0).top(0).w(W).h(H).child(window.paint_path(path, color));
     const els = [];
 
-    // The backdrop that moves with the drawing: Settings' Background (dots, sparse, crosses, gravity) at its strength.
+    // The backdrop that moves with the drawing: Settings' Background (lib PATTERNS) at its strength.
     const strength = dotsAlpha(shared("agent-graph.dots"));
     if (strength) {
       const cards = L.nodes.map((n) => ({ x: X(n.x), y: Y(n.y), w: n.w * z, h: n.h * z }));
-      const bd = backdrop(shared("agent-graph.pattern"), W, H, z, v.x, v.y, cards);
-      let marks = bd.kind === "crosses" ? PathBuilder.stroke(1) : PathBuilder.fill();
-      for (const [x, y] of bd.pts) marks = bd.kind === "crosses"
-        ? marks.move_to(x - bd.arm, y).line_to(x + bd.arm, y).move_to(x, y - bd.arm).line_to(x, y + bd.arm)
-        : marks.add_polygon([[x - bd.r, y - bd.r], [x + bd.r, y - bd.r], [x + bd.r, y + bd.r], [x - bd.r, y + bd.r]], true);
-      els.push(layer(marks.build(), alpha(t.foreground, strength)));
+      for (const l of backdrop(shared("agent-graph.pattern"), W, H, z, v.x, v.y, cards, Date.now(), !!this.drag?.moved).layers) {
+        const [ox, oy] = l.off ?? [0, 0];
+        els.push(div().absolute().left(ox).top(oy).w(W + 400).h(H + 400).child(window.paint_path(this.backdropPath(l), alpha(t.foreground, Math.min(1, strength * l.alpha)))));
+      }
     }
 
     // One stroke path per status colour; smooth horizontal S-curves.

@@ -314,7 +314,7 @@ export default class Spaces extends View {
     this.asked = { kind, target, keys: this.resume || this.ringed }; // asked from the keyboard (or its menu), not a click from the terminal
     const del = kind === "delete";
     // Every close (Confirm, Cancel, Esc) gives the keyboard back to Spaces if it was here (comeBack).
-    openOverlay({ mod: "confirm-safe", kind: "dialog", width: 440, height: (space ? 270 : 242) + (del ? 0 : 50) + (note ? 40 : 0), props: {
+    openOverlay({ mod: "confirm-safe", kind: "window", key: "confirm-safe", width: 440, height: (space ? 270 : 242) + (del ? 0 : 50) + (note ? 40 : 0), props: {
       title: `${del ? "Delete" : "Archive"} worktree?`, name: label,
       detail: del ? "Removes this folder from disk. Its branch stays." : "Hides it from the sidebar; the folder stays. Reopen it from ⌘E Jump.",
       path, warn: space ? "Its open space and terminals close." : null, note, action: del ? "Delete" : "Archive", danger: del,
@@ -362,7 +362,7 @@ export default class Spaces extends View {
     }
     const items = sweepItems(this.trees, opens, shared("spaces.archived") ?? {});
     this.sweepKeys = this.resume || this.ringed; // asked from the keyboard (or its menu), as ask's
-    openOverlay({ mod: "worktree-sweep", kind: "dialog", width: 680, height: Math.min(560, 200 + 32 * Math.max(1, items.length)),
+    openOverlay({ mod: "worktree-sweep", kind: "window", key: "worktree-sweep", width: 680, height: Math.min(560, 200 + 32 * Math.max(1, items.length)),
       // An open space's top can be /private/tmp where git lists /tmp: its space id finds it too.
       props: { items, ticked: items.filter((it) => target && (it.path === target.path || (target.space && it.space === target.space))).map((it) => it.key) } });
   }
