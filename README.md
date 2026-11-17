@@ -70,8 +70,9 @@ one searchable list showing where each lives.
 
 A whiteboard in the side panel, drawn natively by Herdr (no browser). Drawings are ordinary `.excalidraw` files. Dark
 themes get a black canvas, light themes a white one, with the Agents graph's background and grain underneath.
-**All drawings ⌘O** opens the library (previews, search, pin, rename, repos, a 30-day trash); **Full size** opens the
-drawing in a big window. Agents draw on it too, through the `herdr-excalidraw` skill: ask "draw how checkout works in
+**All drawings ⌘O** opens the library (previews, search, pin, rename, repos, and a Trash tab that keeps deleted drawings
+30 days, with Restore); **Full size** opens the drawing in a big window. ⌘C, ⌘X and ⌘V copy and paste shapes, also
+to and from excalidraw.com. Agents draw on it too, through the `herdr-excalidraw` skill: ask "draw how checkout works in
 Excalidraw".
 
 ### Usage (⌘⇧U)

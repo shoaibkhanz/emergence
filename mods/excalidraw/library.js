@@ -86,3 +86,7 @@ export function knownRepos(entries, here) {
   return [...(here ? [here] : []), ...[...by.values()].sort((a, b) => repoName(a.key).localeCompare(repoName(b.key)))];
 }
 export const toggleRepo = (repos, repo) => (repos.some((r) => r.key === repo.key) ? repos.filter((r) => r.key !== repo.key) : [...repos, repo]);
+
+// The Trash tab: deleted drawings, the latest first, each with the whole days left before it's removed for good.
+export const trashRows = (entries, now) => entries.filter((e) => e.deleted != null).sort((a, b) => b.deleted - a.deleted)
+  .map((e) => ({ ...e, daysLeft: Math.max(0, Math.ceil(TRASH_DAYS - (now - e.deleted) / DAY)) }));

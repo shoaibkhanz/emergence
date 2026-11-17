@@ -4,7 +4,7 @@
 // library.js TRASH_DAYS). The panel and the library window both write the index, so every write is compare-and-swap.
 
 import { exec, appHome, home, readTextFile, writeTextFile } from "herdr";
-import { observe, declaredRepos, repoKey, expired } from "./library.js";
+import { observe, declaredRepos, repoKey, expired, freeName } from "./library.js";
 import { previewSvg } from "./preview.js";
 
 export const dir = () => `${appHome()}/data/excalidraw`;
@@ -70,7 +70,7 @@ export async function scan(now = Date.now()) {
   const next = await updateIndex((ix) => {
     const out = {};
     for (const [n, e] of Object.entries(ix.files)) if (e.deleted != null && !expired(e, now)) out[n] = e; // the trash stays until its time
-    for (const [n, e] of Object.entries(seen)) out[n] = { ...ix.files[n], ...e };
+    for (const [n, e] of Object.entries(seen)) out[n] = { ...ix.files[n], ...e, deleted: null }; // a drawing in the folder isn't in the trash
     return { ...ix, files: out };
   });
   const gone = Object.entries(index.files).filter(([, e]) => e.deleted != null && expired(e, now)).map(([n]) => n);
@@ -91,6 +91,24 @@ async function preview(name, sum, elements, old) {
 export async function trash(name) {
   await exec("sh", ["-c", 'mkdir -p "$1/.trash" && mv "$1/$2" "$1/.trash/$2"', "sh", dir(), name]);
   await setEntry(name, { deleted: Date.now() });
+}
+// Back from the trash, under its name, or a free one if a drawing has taken it since. Returns the name it got.
+export async function restore(name) {
+  const taken = (await exec("ls", ["-1", dir()])).stdout.split("\n");
+  const back = taken.includes(name) ? freeName(null, name.slice(0, -EXT.length), taken) : name;
+  const r = await exec("sh", ["-c", 'mv "$1/.trash/$2" "$1/$3"', "sh", dir(), name, back]);
+  if (r.code) throw new Error(r.stderr.trim() || "couldn't restore it");
+  await updateIndex((ix) => {
+    const { [name]: was, ...files } = ix.files;
+    return { ...ix, files: { ...files, [back]: { ...was, deleted: null, updated: Date.now() } } };
+  });
+  return back;
+}
+// Out of the trash for good: the file, its preview and its entry.
+export async function deleteForever(name) {
+  const { index } = await readIndex(), preview = index.files[name]?.preview;
+  await exec("rm", ["-f", `${dir()}/.trash/${name}`, ...(preview ? [`${dir()}/${preview}`] : [])]);
+  await updateIndex((ix) => { const { [name]: _gone, ...files } = ix.files; return { ...ix, files }; });
 }
 export async function duplicate(name, copy, entry) {
   const raw = await readTextFile(`${dir()}/${name}`);

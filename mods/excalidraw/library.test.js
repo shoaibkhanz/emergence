@@ -91,3 +91,10 @@ test("toggleRepo: adds a repo the diagram lacks, removes one it has, never edits
   expect(toggleRepo(repos, { key: "k1" })).toEqual([]);
   expect(repos).toEqual([{ key: "k1" }]);
 });
+
+test("trashRows: trashed drawings only, the latest deleted first, each with the days it has left (never below 0)", async () => {
+  const { trashRows } = await import("./library.js");
+  const now = 100 * DAY;
+  const rows = trashRows([E("live"), E("old", { deleted: now - 29.5 * DAY }), E("new", { deleted: now - DAY / 2 }), E("past", { deleted: now - 40 * DAY })], now);
+  expect(rows.map((r) => [r.name, r.daysLeft])).toEqual([["new", 30], ["old", 1], ["past", 0]]);
+});

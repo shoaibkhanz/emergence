@@ -38,6 +38,7 @@ import { openWindow } from "./open.js";
 import { LibraryView } from "./library-view.js";
 import { backdrop as groundLayers, dotsAlpha, grainOpacity } from "./backdrop.js";
 import { cardsOf, alphaHex } from "./ground.js";
+import { copyText, pasted } from "./clipboard.js";
 // herdr-mods: the library; opened from the big window, what it picks opens in that window (excalidraw.window), not the panel
 const openLibrary = (fromWindow = false) => openOverlay({ mod: "excalidraw", kind: "window", key: "excalidraw-library", width: 680, height: 640, props: { library: true, ...(fromWindow && { into: "window" }) } });
 
@@ -5612,6 +5613,7 @@ var Excalidraw = class extends View {
     this.pointer = { mode: "pan", start: e4.local_position, scroll: [this.scrollX, this.scrollY] };
   }
   onMove(e4, cx) {
+    if (e4.local_position) this.hoverAt = this.toScene(e4.local_position); // herdr-mods: where ⌘V puts things
     const ptr = this.pointer;
     if (!ptr || !e4.local_position) return;
     const p2 = this.toScene(e4.local_position);
@@ -5855,6 +5857,22 @@ var Excalidraw = class extends View {
     this.scrollY += dy / s;
     cx.notify();
   }
+  // herdr-mods: ⌘V: what's on the clipboard (shapes copied here or on excalidraw.com, or plain text), under the pointer
+  // (or in the middle of the view), selected, one undo step
+  paste(cx) {
+    if (this.status !== "ready") return;
+    const at = this.hoverAt ?? this.toScene({ x: (this.size?.width ?? 800) / 2, y: (this.size?.height ?? 600) / 2 });
+    const id = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+    const els = pasted(cx.read_from_clipboard(), at, id, { fontSize: this.style.fontSize }).map(normalizeElement);
+    if (!els.length) return;
+    if (this.editing) this.endEdit(cx, {});
+    this.history.record(this.scene.getElementsIncludingDeleted());
+    for (const el of els) this.scene.insertElement(el);
+    this.selected = new Set(els.filter((e4) => !(e4.type === "text" && e4.containerId)).map((e4) => e4.id));
+    this.tool = "selection";
+    this.markDirty();
+    this.rebuild(cx);
+  }
   // herdr-mods: a trackpad pinch zooms about the fingers (as the Agents graph); one event moves it at most 2x either way
   onPinch(e4, cx) {
     const at = e4.local_position ?? (e4.bounds ? { x: e4.position.x - e4.bounds.x, y: e4.position.y - e4.bounds.y } : null);
@@ -5919,12 +5937,24 @@ var Excalidraw = class extends View {
   // ---- keys --------------------------------------------------------------------------
   onKey(e4, cx) {
     if (this.editing) {
+      if (["cmd-c", "cmd-x", "cmd-v"].includes(e4.keystroke)) cx.stop_propagation(); // herdr-mods: the text box's, not the agent's prompt's
       if (e4.key === "escape") this.endEdit(cx, {});
       return;
     }
     const k2 = e4.keystroke;
     const map = this.map();
     if (k2 === "cmd-o") return openLibrary(this.inWindow); // herdr-mods
+    // herdr-mods: copy, cut and paste are the canvas's while it has the keyboard: stopped here, so Herdr's terminal
+    // copy/paste doesn't also act on the agent's prompt
+    if (k2 === "cmd-c" || k2 === "cmd-x" || k2 === "cmd-v") cx.stop_propagation();
+    if (k2 === "cmd-c" || k2 === "cmd-x") { // herdr-mods: the selection on the clipboard (Excalidraw's own format); ⌘X takes it away too
+      const text = copyText(this.elements(), [...this.selected]);
+      if (!text) return;
+      cx.write_to_clipboard(text);
+      if (k2 === "cmd-x") { this.history.record(this.scene.getElementsIncludingDeleted()); this.deleteIds(new Set(this.selected)); this.markDirty(); this.rebuild(cx); }
+      return;
+    }
+    if (k2 === "cmd-v") return this.paste(cx); // herdr-mods
     if (k2 === "cmd-z") return this.undo(cx);
     if (k2 === "cmd-shift-z" || k2 === "cmd-y") return this.redo(cx);
     if (k2 === "cmd-a") {

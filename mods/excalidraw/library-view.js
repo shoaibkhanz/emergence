@@ -7,8 +7,8 @@
 import { div, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { props, closeOverlay, openOverlay, theme, panes, focused, watchFolder, home, setShared } from "herdr";
-import { sections, search, repoName, freeName, ago, knownRepos, toggleRepo } from "./library.js";
-import { dir, scan, readIndex, setEntry, trash, duplicate, create, repoOf } from "./store.js";
+import { sections, search, repoName, freeName, ago, knownRepos, toggleRepo, trashRows, TRASH_DAYS } from "./library.js";
+import { dir, scan, readIndex, setEntry, trash, restore, deleteForever, duplicate, create, repoOf } from "./store.js";
 import { showInPanel, openWindow } from "./open.js";
 
 const ROW = 60;
@@ -45,11 +45,14 @@ export class LibraryView {
     });
   }
   take(index) {
-    this.entries = Object.entries(index.files ?? {}).filter(([, e]) => e.deleted == null).map(([name, e]) => ({ name, title: name, repos: [], tags: [], updated: 0, ...e }));
+    const all = Object.entries(index.files ?? {}).map(([name, e]) => ({ name, title: name, repos: [], tags: [], updated: 0, ...e }));
+    this.entries = all.filter((e) => e.deleted == null);
+    this.trashed = trashRows(all, Date.now());
   }
-  // The rows in order: a search's flat list, else the sections' rows.
+  // The rows in order: the Trash tab's (searched, if typed), a search's flat list, else the sections' rows.
   view() {
     const q = this.query.value();
+    if (this.tab === "trash") return [{ key: "trash", rows: q.trim() ? search(this.trashed ?? [], q) : this.trashed ?? [] }];
     if (q.trim()) return [{ key: "results", rows: search(this.entries, q) }];
     return sections(this.entries, this.repo?.key ?? null, this.tab);
   }
@@ -68,10 +71,14 @@ export class LibraryView {
   chooseFolder() { openOverlay({ mod: "excalidraw", kind: "window", key: "excalidraw-picker", width: 560, height: 0.7, props: { picker: true } }); this.close(); }
   act(row, what, cx) {
     if (!row) return;
+    if (what === "forever" && this.confirming !== row.name) { this.confirming = row.name; return cx.notify(); } // Delete forever asks twice
+    this.confirming = null;
     cx.spawn(async (cx) => {
       if (what === "pin") await setEntry(row.name, { pinned: !row.pinned });
       if (what === "duplicate") await duplicate(row.name, freeName(null, row.name.replace(/\.excalidraw$/, "") + " copy", this.entries.map((e) => e.name)), row);
       if (what === "trash") await trash(row.name);
+      if (what === "restore") await restore(row.name);
+      if (what === "forever") await deleteForever(row.name);
       if (what?.repo) await setEntry(row.name, { repos: toggleRepo(row.repos, what.repo) });
       this.take((await readIndex()).index);
       cx.notify();
@@ -111,6 +118,8 @@ export class LibraryView {
     if (k === "escape") return this.close();
     if (k === "down") this.cursor = Math.min(rows.length - 1, this.cursor + 1);
     else if (k === "up") this.cursor = Math.max(0, this.cursor - 1);
+    else if (k === "enter" && this.tab === "trash") return this.act(row, "restore", cx);
+    else if (k === "cmd-backspace" && this.tab === "trash") return this.act(row, "forever", cx);
     else if (k === "enter") return this.open(row, cx);
     else if (k === "cmd-s") this.act(row, "pin", cx);
     else if (k === "cmd-r") { if (row) this.startRename(row); }
@@ -128,6 +137,23 @@ export class LibraryView {
       .bg(on ? t.background : t.raised).text_color(on ? t.foreground : t.muted).hover((s) => s.text_color(t.foreground))
       .on_click((_e, cx) => { this.tab = id.slice(4); this.cursor = 0; cx.notify(); }).child(label);
     let index = 0;
+    const button = (id, label, danger, on) => div().id(id).h(24).px(8).flex().items_center().rounded(5).text_size(11).text_color(danger ? t.blocked : t.muted)
+      .hover((st) => st.bg(t.raised).text_color(danger ? t.blocked : t.foreground)).on_click((_e, cx) => { cx.stop_propagation(); on(cx); }).child(label);
+    const trashRow = (r, first) => {
+      const i = index++, on = i === this.cursor;
+      return h_flex().id(`row-${r.name}`).h(ROW).flex_none().px(12).gap(12).items_center()
+        .when(!first, (el) => el.border_t_1().border_color(t.border)).when(on, (el) => el.bg(t.hover))
+        .on_mouse_move((_e, cx) => { if (this.cursor !== i) { this.cursor = i; cx.notify(); } })
+        .child(div().w(72).h(44).flex_none().rounded(4).border(1).border_color(t.border).bg(t.canvas).overflow_hidden().opacity(0.6)
+          .when(!!r.preview, (el) => el.child(image(`data/excalidraw/${r.preview}`).w(72).h(44))))
+        .child(v_flex().flex_1().min_w(0).gap(4)
+          .child(div().truncate().text_size(13).font_weight(500).text_color(t.muted).child(r.title))
+          .child(div().truncate().text_size(11).text_color(t.dim).child(`${r.nodes ?? 0} shapes · deleted ${ago(r.deleted, now)}${ago(r.deleted, now) === "now" ? "" : " ago"}`)))
+        .when(on, (el) => el.child(h_flex().gap(2)
+          .child(button(`restore-${r.name}`, "Restore", false, (cx) => this.act(r, "restore", cx)))
+          .child(button(`forever-${r.name}`, this.confirming === r.name ? "Delete forever?" : "Delete forever", true, (cx) => this.act(r, "forever", cx)))))
+        .child(div().text_size(12).text_color(r.daysLeft <= 3 ? t.blocked : t.dim).child(`${r.daysLeft}d left`));
+    };
     const row = (r, first) => {
       const i = index++, on = i === this.cursor;
       return h_flex().id(`row-${r.name}`).h(ROW).flex_none().px(12).gap(12).items_center().cursor_pointer()
@@ -153,7 +179,7 @@ export class LibraryView {
           .on_click((_e, cx) => { cx.stop_propagation(); this.pick(r, cx); }).child(r.repos.length ? "Repos" : this.repo ? `Put in ${repoName(this.repo.key)}…` : "Put in a repo…"))
         .child(div().text_size(12).text_color(t.dim).child(ago(r.updated, now)));
     };
-    const title = (s) => s.key === "results" ? `${s.rows.length} found` : s.key === "all" ? "Everything" : s.key === null ? "Unfiled"
+    const title = (s) => s.key === "trash" ? `In the trash · removed for good ${TRASH_DAYS} days after it was deleted` : s.key === "results" ? `${s.rows.length} found` : s.key === "all" ? "Everything" : s.key === null ? "Unfiled"
       : s.key === this.repo?.key ? `This repo · ${repoName(s.key)}` : repoName(s.key);
     return v_flex().id("excalidraw-library").size_full().p(24).gap(14).bg(t.popover).text_color(t.foreground)
       .track_focus(this.focus).on_key_down((e, cx) => this.key(e, cx))
@@ -171,16 +197,17 @@ export class LibraryView {
       .child(h_flex().items_center().justify_between()
         .child(h_flex().p(2).gap(2).rounded(6).border(1).border_color(t.input).bg(t.raised)
           .when(!!this.repo, (el) => el.child(segment("tab-repo", "This repo", this.tab === "repo")))
-          .child(segment("tab-pinned", "Pinned", this.tab === "pinned")).child(segment("tab-all", "All", this.tab === "all")))
+          .child(segment("tab-pinned", "Pinned", this.tab === "pinned")).child(segment("tab-all", "All", this.tab === "all"))
+          .child(segment("tab-trash", this.trashed?.length ? `Trash ${this.trashed.length}` : "Trash", this.tab === "trash")))
         .child(div().text_size(12).text_color(t.dim).child("Newest first")))
       .child(v_flex().id("library-list").flex_1().min_h(0).overflow_y_scroll().gap(12)
         .when(!all.length, (el) => el.child(div().py(24).text_center().text_size(13).text_color(t.dim)
-          .child(this.error ?? (this.query.value().trim() ? "Nothing matches." : this.tab === "pinned" ? "Nothing pinned yet: ⌘S pins the selected drawing." : "No drawings yet. Ask an agent to draw one, or make a new one."))))
+          .child(this.error ?? (this.query.value().trim() ? "Nothing matches." : this.tab === "trash" ? "The trash is empty. Trashed drawings wait here for 30 days." : this.tab === "pinned" ? "Nothing pinned yet: ⌘S pins the selected drawing." : "No drawings yet. Ask an agent to draw one, or make a new one."))))
         .children(view.filter((s) => s.rows.length).map((s) => v_flex().gap(6)
           .child(div().text_size(12).text_color(t.muted).child(title(s)))
           .child(v_flex().rounded(6).border(1).border_color(t.border).bg(t.surface).overflow_hidden()
-            .children(s.rows.flatMap((r, i) => (r.name === this.picking ? [row(r, i === 0), this.picker(t, r)] : [row(r, i === 0)])))))))
-      .child(div().text_size(12).text_color(t.dim).truncate().child("↑/↓ move · ↵ open · ⌘S pin · ⌘R rename · ⌘K repos · ⌘⌫ trash (30 days) · drag to move"));
+            .children(s.rows.flatMap((r, i) => (s.key === "trash" ? [trashRow(r, i === 0)] : r.name === this.picking ? [row(r, i === 0), this.picker(t, r)] : [row(r, i === 0)])))))))
+      .child(div().text_size(12).text_color(t.dim).truncate().child(this.tab === "trash" ? "↑/↓ move · ↵ restore · ⌘⌫ delete forever (press twice) · drag to move" : "↑/↓ move · ↵ open · ⌘S pin · ⌘R rename · ⌘K repos · ⌘⌫ trash (30 days) · drag to move"));
   }
 
   picker(t, r) {

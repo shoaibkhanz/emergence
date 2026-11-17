@@ -397,6 +397,10 @@ a choice is segments in a `raised` track, the chosen one `background`. Keys are 
     drawing in an 0.92 × 0.88 window (`open.js` openWindow, key `excalidraw-big`) with the house title row and Esc chip;
     Esc closes it once nothing is selected. Pinch and ⌘-scroll zoom about the pointer; zoom, scroll and the redrawn
     layers change in one step (at most one redraw per 40 ms, the steps in between folded in), so nothing flickers.
+  - ⌘C / ⌘X / ⌘V (`clipboard.js`): the selection with the text in its shapes as Excalidraw's clipboard JSON, so it
+    pastes between drawings and with excalidraw.com; a paste gets fresh ids, joins text, arrow ends and groups among
+    the copies, lands under the pointer; plain text pastes as a text element. The canvas stops these keys so Herdr's
+    terminal copy/paste doesn't act on the agent's prompt too. Double-clicking an arrow or its label edits the label.
   - Under the drawing, the Agents graph's background (`backdrop.js`, its copy, kept equal by a test; `ground.js`): the
     same Settings rows, Grain, Background and Background strength. Plain patterns build in render from cached tiles;
     fading dots, gravity and topographic follow the boxes (rectangles, ellipses, diamonds, images; not arrows, words or
@@ -405,8 +409,10 @@ a choice is segments in a `raised` track, the chosen one `background`. Keys are 
   - The library (`library-view.js`, ported from the retired Diagrams library: `library.js` sections, search, repo keys,
     trash; `store.js` the folder, `index.json` written compare-and-swap, fingerprints from one `stat` listing so only
     changed drawings are read; `preview.js` outline SVGs in one ink): a 680 × 640 movable window. This repo | Pinned |
-    All, search, ↵ opens in the panel (or the big window without one), ⌘S pin, ⌘R rename, ⌘K repos, ⌘⌫ trash (30
-    days); the selected row has buttons for each, Duplicate too. Herdr's global ⌘P / ⌘D are left alone. Choose
+    All | Trash, search, ↵ opens in the panel (or the big window without one; opened from the big window, its pick
+    switches that window), ⌘S pin, ⌘R rename, ⌘K repos, ⌘⌫ trash; the selected row has buttons for each, Duplicate
+    too. Trash lists deleted drawings (in `.trash/`) with the days left of their 30: Restore (↵; under a free name if
+    the name was reused) or Delete forever (⌘⌫, asked twice). A drawing whose file is in the folder is never trashed. Herdr's global ⌘P / ⌘D are left alone. Choose
     folder… opens the mod's own folder picker (`props.picker`), which sends a drawing to the panel or a new tab; never
     `pane.split`. A drawing's repos: the index's, plus any it names in `appState.herdr_repos`.
   - Agents: skill `herdr-excalidraw` (`dot2excalidraw.py`: DOT laid out by Graphviz, every box sized by the panel's text
