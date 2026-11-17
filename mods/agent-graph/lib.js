@@ -213,8 +213,8 @@ const edgeOf = (c, x, y) => Math.hypot(Math.max(0, Math.abs(c.x + c.w / 2 - x) -
 
 export function backdrop(style, W, H, z, vx, vy, cards = [], now, moving = false) {
   const p = PATTERNS[style] ?? PATTERNS.sparse;
-  if (p.rings) return { gap: 0, layers: cards.length ? topo(p, z, cards, vx, vy, now, moving) : [] };
-  if (!p.gap) return { gap: 0, layers: [] };
+  if (p.rings) return { gap: 0, layers: cards.length && z > 0 ? topo(p, z, cards, vx, vy, now, moving) : [] };
+  if (!p.gap || !(z > 0)) return { gap: 0, layers: [] }; // no zoom yet (or a bad one): nothing, never a loop that can't end
   let gap = p.gap * z;
   while (gap < p.gap * 0.6) gap *= 2;
   while (gap > p.gap * 1.6) gap /= 2;
@@ -231,20 +231,39 @@ export function backdrop(style, W, H, z, vx, vy, cards = [], now, moving = false
     for (let y = 0, row = 0; y < H + 2 * spanY; y += rowH, row++) for (let x = row % 2 && p.iso ? gap / 2 : 0; x < W + 2 * gap; x += gap) polys.push(square(x, y, p.r));
     return { gap, layers: [{ alpha: 1, polys, off: [ox - gap, (((vy % spanY) + spanY) % spanY) - spanY], key: `${PATTERNS[style] ? style : "sparse"}:${size}` }] };
   }
-  const rowH = p.iso ? gap * Math.sqrt(3) / 2 : gap, oyR = ((vy % rowH) + rowH) % rowH, pts = [];
-  for (let y = (p.iso ? oyR : oy) - rowH, row = 0; y < H + rowH; y += rowH, row++) {
-    const shift = p.iso && Math.round((y - vy) / rowH) % 2 ? gap / 2 : 0;
-    for (let x = ox - gap + shift; x < W + gap; x += gap) pts.push(p.pull && cards.length ? bend(x, y, cards, gap) : [x, y]);
-  }
-  if (p.fade) { // four steps of brightness by distance from the nearest card's edge
-    const steps = [1, 0.6, 0.35, 0.15].map((alpha) => ({ alpha, polys: [] }));
-    for (const [x, y] of pts) {
-      const e = cards.length ? Math.min(...cards.map((c) => edgeOf(c, x, y))) : Infinity;
-      steps[e < gap * 1.5 ? 0 : e < gap * 3.5 ? 1 : e < gap * 6 ? 2 : 3].polys.push(square(x, y, p.r));
+  // the grid (gravity and fading dots: plain rows), then each card touches only the dots within its reach, so the
+  // cost follows the cards' surroundings, not dots x cards
+  const cols = Math.ceil((W + 2 * gap) / gap) + 1, rows = Math.ceil((H + 2 * gap) / gap) + 1, x0 = ox - gap, y0 = oy - gap;
+  if (p.pull || p.fade) {
+    const reach = p.fade ? 6 : 4, dist = new Float32Array(cols * rows).fill(Infinity), dx = new Float32Array(cols * rows), dy = new Float32Array(cols * rows);
+    for (const c of cards) {
+      const c0 = Math.max(0, Math.floor((c.x - reach * gap - x0) / gap)), c1 = Math.min(cols - 1, Math.ceil((c.x + c.w + reach * gap - x0) / gap));
+      const r0 = Math.max(0, Math.floor((c.y - reach * gap - y0) / gap)), r1 = Math.min(rows - 1, Math.ceil((c.y + c.h + reach * gap - y0) / gap));
+      for (let r = r0; r <= r1; r++) for (let q = c0; q <= c1; q++) {
+        const x = x0 + q * gap, y = y0 + r * gap, i = r * cols + q, e = edgeOf(c, x, y);
+        if (e < dist[i]) dist[i] = e;
+        if (p.pull) { // gravity: strongest at a card's edge, gone a few gaps out
+          const ex = c.x + c.w / 2 - x, ey = c.y + c.h / 2 - y, d = Math.hypot(ex, ey) || 1, f = gap * 0.45 * Math.exp(-e / (gap * 1.1));
+          dx[i] += (ex / d) * f; dy[i] += (ey / d) * f;
+        }
+      }
     }
-    return { gap, layers: steps.filter((l) => l.polys.length) };
+    const dot = (r, q, ddx = 0, ddy = 0) => square(x0 + q * gap + ddx, y0 + r * gap + ddy, p.r);
+    if (p.fade) { // four steps of brightness by distance from the nearest card's edge
+      const steps = [1, 0.6, 0.35, 0.15].map((alpha) => ({ alpha, polys: [] }));
+      for (let r = 0; r < rows; r++) for (let q = 0; q < cols; q++) {
+        const e = dist[r * cols + q];
+        steps[e < gap * 1.5 ? 0 : e < gap * 3.5 ? 1 : e < gap * 6 ? 2 : 3].polys.push(dot(r, q));
+      }
+      return { gap, layers: steps.filter((l) => l.polys.length) };
+    }
+    const polys = []; // gravity: each dot leans toward the cards, at most half a gap
+    for (let r = 0; r < rows; r++) for (let q = 0; q < cols; q++) {
+      const i = r * cols + q, k = Math.min(1, gap / 2 / (Math.hypot(dx[i], dy[i]) || 1));
+      polys.push(dot(r, q, dx[i] * k, dy[i] * k));
+    }
+    return { gap, layers: [{ alpha: 1, polys }] };
   }
-  return { gap, layers: [{ alpha: 1, polys: pts.map(([x, y]) => square(x, y, p.r)) }] };
 }
 
 // Contour lines (marching squares on a CELL px lattice) of the distance to the nearest card's edge, at step, 2 step...
@@ -300,16 +319,6 @@ function contours(p, z, cards, CELL) {
     }
   }
   return layers;
-}
-function bend(x, y, cards, gap) {
-  let dx = 0, dy = 0;
-  for (const c of cards) {
-    const ex = c.x + c.w / 2 - x, ey = c.y + c.h / 2 - y, d = Math.hypot(ex, ey) || 1;
-    const f = gap * 0.45 * Math.exp(-edgeOf(c, x, y) / (gap * 1.1)); // strongest at the card's edge, gone a few gaps out
-    dx += (ex / d) * f; dy += (ey / d) * f;
-  }
-  const k = Math.min(1, gap / 2 / (Math.hypot(dx, dy) || 1));
-  return [x + dx * k, y + dy * k];
 }
 
 // The film grain's strength: Emergence settings' Grain (shared agent-graph.filmGrain, percent, 0 to 25).

@@ -426,6 +426,7 @@ test("backdrop: the seven styles; layers move with the view; none is empty; unkn
   expect(polys(sparse).length).toBeGreaterThan(n * 0.8);
   expect(polys(sparse).length).toBeLessThan(n * 1.2);
   expect(backdrop("none", W, H, 1, 0, 0).layers).toEqual([]);
+  for (const z of [0, -0.5, NaN]) expect(backdrop("sparse", W, H, z, 0, 0).layers).toEqual([]); // a panel not laid out yet: nothing, and no endless loop
   expect(backdrop("dots", W, H, 1, 0, 0)).toEqual(sparse); // a style no longer offered: the default
   expect(backdrop("sparse", W, H, 1, PATTERNS.sparse.gap, 0)).toEqual(sparse); // a whole gap of pan draws the same
   const moved = backdrop("sparse", W, H, 1, 10, 0).layers[0];
@@ -438,9 +439,14 @@ test("backdrop: the seven styles; layers move with the view; none is empty; unkn
 test("backdrop: gravity bends dots toward a card by at most half a gap; fade dims far dots; graph paper's 4th lines stronger", async () => {
   const { backdrop } = await import("./lib.js");
   const W = 640, H = 480, card = { x: 300, y: 200, w: 120, h: 60 };
-  const pts = (b) => b.layers[0].polys.map((q) => [(q[0][0] + q[2][0]) / 2, (q[0][1] + q[2][1]) / 2]);
-  const flat = pts(backdrop("gravity", W, H, 1, 0, 0)), bent = pts(backdrop("gravity", W, H, 1, 0, 0, [card])), gap = backdrop("gravity", W, H, 1, 0, 0).gap;
-  const shift = flat.map(([x, y], i) => [bent[i][0] - x, bent[i][1] - y, x, y]);
+  // every dot a style draws, in a fixed order (row, then x): dashed rows are a dot per dash, shapes a dot each
+  const pts = (b) => b.layers.flatMap((l) => [...(l.polys ?? []).map((q) => [(q[0][0] + q[2][0]) / 2, (q[0][1] + q[2][1]) / 2]),
+    ...(l.segs ?? []).flatMap(([x1, y, x2]) => Array.from({ length: Math.round((x2 - x1 - l.dash[0]) / (l.dash[0] + l.dash[1])) + 1 }, (_, i) => [x1 + l.dash[0] / 2 + i * (l.dash[0] + l.dash[1]), y]))])
+    .sort((p, q) => p[1] - q[1] || p[0] - q[0]);
+  const flat = pts(backdrop("gravity", W, H, 1, 0, 0)), bentAll = backdrop("gravity", W, H, 1, 0, 0, [card]), gap = backdrop("gravity", W, H, 1, 0, 0).gap;
+  // match each grid dot to its bent self: the nearest bent dot within half a gap
+  const bent = pts(bentAll), shift = flat.map(([x, y]) => { const b = bent.reduce((m, q) => (Math.hypot(q[0] - x, q[1] - y) < Math.hypot(m[0] - x, m[1] - y) ? q : m)); return [b[0] - x, b[1] - y, x, y]; });
+  expect(bent.length).toBe(flat.length);
   expect(shift.find(([, , x, y]) => x > 430 && x < 470 && Math.abs(y - 230) < 20)[0]).toBeLessThan(0);
   expect(Math.max(...shift.map(([dx, dy]) => Math.hypot(dx, dy)))).toBeLessThanOrEqual(gap / 2 + 1e-9);
   const fade = backdrop("fade", W, H, 1, 0, 0, [card]).layers;

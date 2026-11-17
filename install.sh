@@ -38,8 +38,21 @@ done
 for file in "$repo"/layouts/*.json; do
   name="$(basename "$file")"; link "$file" "$home/layouts/$name" "layouts/$name"
 done
-# Our links to files this repo no longer has (a renamed mod or layout) go.
-for l in "$home"/mods/* "$home"/layouts/*; do
+# Agent skills (skills/*: how an agent works with a mod, e.g. herdr-excalidraw) go where Claude Code finds them, when
+# it's installed. A skill of the same name that isn't this clone's link is the person's: left alone.
+skills="${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"
+if [ -n "${CLAUDE_SKILLS_DIR:-}" ] || [ -d "$HOME/.claude" ]; then
+  mkdir -p "$skills"
+  for dir in "$repo"/skills/*/; do
+    [ -d "$dir" ] || continue
+    name="$(basename "$dir")"; to="$skills/$name"
+    if [ -L "$to" ] && [ "$(readlink "$to")" = "${dir%/}" ]; then echo "ok      skills/$name"
+    elif [ -e "$to" ] || [ -L "$to" ]; then echo "kept    skills/$name (yours, not this clone's)"
+    else ln -s "${dir%/}" "$to" && echo "linked  skills/$name"; fi
+  done
+fi
+# Our links to files this repo no longer has (a renamed mod, layout or skill) go.
+for l in "$home"/mods/* "$home"/layouts/* "$skills"/*; do
   if [ -L "$l" ] && [ ! -e "$l" ]; then case "$(readlink "$l")" in "$repo"/*) rm "$l" && echo "removed $(basename "$l") (no longer in the repo)";; esac; fi
 done
 

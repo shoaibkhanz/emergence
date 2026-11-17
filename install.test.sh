@@ -15,7 +15,7 @@ is() { [ "$(val "$1" "$2" "$3")" = "$4" ] || fail "$(basename "$1") $2 $3 is $(v
 mkdir "$t/bin" "$t/src"
 printf '#!/bin/sh\necho "$*" >> "%s/herdr.log"\nif [ "$1" = status ]; then echo \047  "layout": "emergence",\047; fi\n' "$t" > "$t/bin/herdr-app"
 chmod +x "$t/bin/herdr-app"
-export PATH="$t/bin:$PATH" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$t/gitconfig" EMERGENCE_UPDATE=1
+export PATH="$t/bin:$PATH" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$t/gitconfig" EMERGENCE_UPDATE=1 CLAUDE_SKILLS_DIR="$t/claude skills"
 unset EMERGENCE_DIR HERDR_APP_HOME
 git config --global user.name test; git config --global user.email test@example.com
 git config --global init.defaultBranch main; git config --global advice.detachedHead false
@@ -30,6 +30,8 @@ clone="$t/my code/emergence"; home="$t/app home"; keys="$home/keys.json"
 install() { HERDR_APP_HOME="$home" bash "$clone/install.sh" 2>&1; }
 EMERGENCE_DIR="$clone" HERDR_APP_HOME="$home" bash < "$here/install.sh" >/dev/null
 for m in "$clone"/mods/*/; do [ "$(readlink "$home/mods/$(basename "$m")")" = "${m%/}" ] || fail "mods/$(basename "$m") not linked"; done
+for k in "$clone"/skills/*/; do [ "$(readlink "$t/claude skills/$(basename "$k")")" = "${k%/}" ] || fail "skills/$(basename "$k") not linked"; done
+mkdir -p "$t/claude skills/mine"; install >/dev/null; [ -d "$t/claude skills/mine" ] && [ ! -L "$t/claude skills/mine" ] || fail "someone's own skill was touched"
 [ "$(readlink "$home/layouts/emergence.json")" = "$clone/layouts/emergence.json" ] || fail "layout not linked"
 is "$keys" global cmd-e mod.open:jump
 is "$keys" layout:emergence cmd-b tabs-plus.rail
