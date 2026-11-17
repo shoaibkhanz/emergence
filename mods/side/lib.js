@@ -46,14 +46,16 @@ export function noticeFor(answer, harness) {
 }
 
 // The live side-N terminals are slot hosts (host.py) that never end: Herdr deletes a layout block whose terminal is
-// finished, and emergence.json is the repo's. A slot is open while an agent runs in it, or for a moment after a chat
+// finished, and emergence.json is the repo's. A slot is open while its host labels it side.chat=on (a chat runs), or for a moment after a chat
 // was handed to it (tabs[slot].at, before the host has started it); idle while its host waits; missing with no host.
 // Only slots the layout still has count.
 const PENDING_MS = 15000;
 export function slotView(terminals, layoutSlots, tabs, now) {
   const live = new Map(terminals.filter((t) => t.state === "live" && layoutSlots.includes(t.name)).map((t) => [t.name, t]));
   const ordered = SLOTS.filter((s) => layoutSlots.includes(s));
-  const open = ordered.filter((s) => live.has(s) && (live.get(s).program?.agent || now - (tabs[s]?.at ?? -Infinity) < PENDING_MS));
+  // a chat runs while its host labels the slot (host.py mark), never by Herdr's agent report, which outlives an ended chat
+  const chatting = (t) => t.labels?.["side.chat"] === "on";
+  const open = ordered.filter((s) => live.has(s) && (chatting(live.get(s)) || now - (tabs[s]?.at ?? -Infinity) < PENDING_MS));
   return { open, idle: ordered.filter((s) => live.has(s) && !open.includes(s)), missing: ordered.filter((s) => !live.has(s)) };
 }
 

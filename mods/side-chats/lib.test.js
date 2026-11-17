@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import { statusOf, rowsOf, wantOf, holdsKeys } from "./lib.js";
 
 const ALL = ["side-1", "side-2", "side-3", "side-4", "side-5", "side-6"];
-const T = (name, agent, status = null, extra = {}) => ({ name, state: "live", status, program: { agent, key: agent ? "claude" : "program" }, ...extra });
+const T = (name, agent, status = null, extra = {}) => ({ name, state: "live", status, program: { agent, key: agent ? "claude" : "program" },
+  labels: agent ? { "side.chat": "on" } : {}, ...extra });
 
 test("statusOf: working, blocked and done as they are; error needs you; anything else idle", () => {
   expect(["working", "blocked", "done"].map((s) => statusOf({ status: s }))).toEqual(["working", "blocked", "done"]);
@@ -37,4 +38,8 @@ test("wantOf: one line when empty (the section always shows); header plus rows, 
 
 test("holdsKeys: only a section with rows and an open sidebar can hold the keyboard", () => {
   expect([holdsKeys(2, false), holdsKeys(0, false), holdsKeys(2, true), holdsKeys(0, true)]).toEqual([true, false, false, false]);
+});
+
+test("rowsOf: a slot whose chat ended has no row, even with Herdr's leftover agent report", () => {
+  expect(rowsOf([T("side-1", true, "idle", { labels: {} })], ALL, {}, 99999)).toEqual([]);
 });

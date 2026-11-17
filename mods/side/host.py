@@ -97,6 +97,21 @@ def failed_at_once(code: int, took: float) -> bool:
     return code != 0 and took < FAILED_S
 
 
+def mark_argv(slot: str, on: bool) -> list:
+    return ["hc", "label", slot, f"side.chat={'on' if on else ''}"]  # `key=` removes the label
+
+
+def mark(slot: str, on: bool) -> None:
+    """Label the slot side.chat=on while a chat runs: the mod's only sign of one, because Herdr keeps an ended agent's
+    report (omp's "idle") on the terminal. A failed label is printed, never raised: the slot must never end."""
+    try:
+        r = subprocess.run(mark_argv(slot, on), capture_output=True, text=True, timeout=5)
+        if r.returncode != 0:
+            print(f"side host: hc label: {(r.stderr or r.stdout).strip()}", flush=True)
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"side host: hc label: {e}", flush=True)
+
+
 def idle() -> None:
     print(CLEAR + OPENING, end="", flush=True)
 
@@ -107,6 +122,7 @@ def serve(slot: str, d: str) -> None:
     req_path, stop_path = paths(slot, d)
     me = os.path.abspath(__file__)
     since = os.path.getmtime(me)
+    mark(slot, False)  # a host restarted mid-chat (killed, or updated) has no chat
     idle()
     while True:
         try:
@@ -120,7 +136,11 @@ def serve(slot: str, d: str) -> None:
                     os.remove(stop_path)  # a stop from before this chat
                 print(CLEAR, end="", flush=True)
                 began = time.time()
-                code = run(req, stop_path)
+                mark(slot, True)
+                try:
+                    code = run(req, stop_path)
+                finally:
+                    mark(slot, False)
                 if failed_at_once(code, time.time() - began):
                     print(f"\n  This side chat couldn't start (exit {code}); the message above says why.", flush=True)
                 else:

@@ -45,7 +45,8 @@ test("tabsOf: open slots in order, with what was saved about each", () => {
   ]);
 });
 
-const T = (name, agent, state = "live") => ({ name, state, program: { agent } });
+// agent: a chat runs in it, so its host labels it side.chat=on (host.py mark) and Herdr sees the agent
+const T = (name, agent, state = "live") => ({ name, state, program: { agent }, labels: agent ? { "side.chat": "on" } : {} });
 const ALL = ["side-1", "side-2", "side-3", "side-4", "side-5", "side-6"];
 
 test("slotView: open while an agent runs or just handed one; idle hosts; slots with no host; only the layout's slots", () => {
@@ -97,4 +98,13 @@ test("withoutStarting: a slot whose host was just started isn't offered again un
 test("withoutStale: drops switches for harnesses without an adapter (nobody can flip those), keeps the rest", () => {
   expect(withoutStale({ claude: true, opencode: false, codex: true, pi: true, omp: false }, supported)).toEqual({ claude: true, opencode: false });
   expect(withoutStale(null, supported)).toBe(null);
+});
+
+test("slotView: only the host's side.chat label says a chat runs, never Herdr's leftover agent report", () => {
+  // an omp chat ended; Herdr kept "omp idle", so the slot stayed a tab saying "Opening a side chat…" forever
+  const ghost = { name: "side-1", state: "live", program: { agent: true }, labels: {} };
+  expect(slotView([ghost], ["side-1"], {}, 99999)).toEqual({ open: [], idle: ["side-1"], missing: [] });
+  // a harness Herdr doesn't recognise as an agent still counts while its host says a chat runs
+  const unknown = { name: "side-2", state: "live", program: { agent: false }, labels: { "side.chat": "on" } };
+  expect(slotView([unknown], ["side-2"], {}, 99999).open).toEqual(["side-2"]);
 });

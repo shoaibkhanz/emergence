@@ -419,6 +419,11 @@ class HostTest(unittest.TestCase):
         import tempfile
         self.dir = tempfile.mkdtemp()
 
+    def test_mark_labels_the_slot_while_a_chat_runs(self):
+        # the mod's only sign that a chat runs: Herdr keeps an ended agent's report (omp's "idle") on the terminal
+        self.assertEqual(host.mark_argv("side-3", True), ["hc", "label", "side-3", "side.chat=on"])
+        self.assertEqual(host.mark_argv("side-3", False), ["hc", "label", "side-3", "side.chat="])  # key= removes it
+
     def test_send_then_take(self):
         host.send("side-2", self.dir, {"argv": ["claude", "--resume", "x"], "cwd": "/w"})
         req_path, _ = host.paths("side-2", self.dir)

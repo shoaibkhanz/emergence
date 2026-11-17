@@ -12,7 +12,9 @@ const PENDING_MS = 15000;
 export function slotView(terminals, layoutSlots, tabs, now) {
   const live = new Map(terminals.filter((t) => t.state === "live" && layoutSlots.includes(t.name)).map((t) => [t.name, t]));
   const ordered = SLOTS.filter((s) => layoutSlots.includes(s));
-  const open = ordered.filter((s) => live.has(s) && (live.get(s).program?.agent || now - (tabs[s]?.at ?? -Infinity) < PENDING_MS));
+  // a chat runs while its host labels the slot (host.py mark), never by Herdr's agent report, which outlives an ended chat
+  const chatting = (t) => t.labels?.["side.chat"] === "on";
+  const open = ordered.filter((s) => live.has(s) && (chatting(live.get(s)) || now - (tabs[s]?.at ?? -Infinity) < PENDING_MS));
   return { open, idle: ordered.filter((s) => live.has(s) && !open.includes(s)), missing: ordered.filter((s) => !live.has(s)) };
 }
 
