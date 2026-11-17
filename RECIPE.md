@@ -401,6 +401,17 @@ a choice is segments in a `raised` track, the chosen one `background`. Keys are 
     pastes between drawings and with excalidraw.com; a paste gets fresh ids, joins text, arrow ends and groups among
     the copies, lands under the pointer; plain text pastes as a text element. The canvas stops these keys so Herdr's
     terminal copy/paste doesn't act on the agent's prompt too. Double-clicking an arrow or its label edits the label.
+  - Connecting (`connect.js`): four dots on a hovered or selected box, ellipse or diamond; a press on one draws an
+    arrow bound there. ⌘+arrow is Excalidraw's
+    flowchart: faded previews of copies 100 away, one more per press (a new direction starts over), stacked, centred
+    and slid clear of other shapes as Excalidraw places them, each on a right-angle arrow; letting go of ⌘, ↵, a click
+    or any other key adds them (one undo), Esc drops them, and they're never saved while showing. ⌥+arrow selects the
+    connected shape that way; ↵ edits its words. While a new arrow is drawn, the shape its end will attach to has an accent outline.
+    Speed: the bundled editor found where an arrow meets a rounded corner by a Newton solve on each of the dozens of
+    curve pieces the binding gap makes, ~40 ms a line in QuickJS (releasing an arrow took 250-500 ms, dragging joined
+    shapes lagged). Patched in `main.js` (`herdr-mods:` at `np`/`ip`/`curveChordHits`): two straight-edge crossings
+    skip the curves (a line meets a convex outline at most twice), and curve pieces are cut by 8 chords, within 0.6 px
+    of the exact crossing, and both crossings where a line cuts a corner. Releasing an arrow is now ~60 ms.
   - Under the drawing, the Agents graph's background (`backdrop.js`, its copy, kept equal by a test; `ground.js`): the
     same Settings rows, Grain, Background and Background strength. Plain patterns build in render from cached tiles;
     fading dots, gravity and topographic follow the boxes (rectangles, ellipses, diamonds, images; not arrows, words or

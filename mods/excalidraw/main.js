@@ -39,6 +39,9 @@ import { LibraryView } from "./library-view.js";
 import { backdrop as groundLayers, dotsAlpha, grainOpacity } from "./backdrop.js";
 import { cardsOf, alphaHex } from "./ground.js";
 import { copyText, pasted } from "./clipboard.js";
+import { edgeDots, dotAt, flowchart, neighbour } from "./connect.js";
+const LINKABLE = new Set(["rectangle", "ellipse", "diamond"]); // herdr-mods: shapes with connection dots and ⌘+arrow
+const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); // herdr-mods: pasted and flowchart elements
 // herdr-mods: the library; opened from the big window, what it picks opens in that window (excalidraw.window), not the panel
 const openLibrary = (fromWindow = false) => openOverlay({ mod: "excalidraw", kind: "window", key: "excalidraw-library", width: 680, height: 640, props: { library: true, ...(fromWindow && { into: "window" }) } });
 
@@ -2370,13 +2373,24 @@ var Pa = (e4, t, n, i, o, r = false) => {
   for (let s of e4) {
     let a = Wi(s[0], s[1], s[2], s[3]), l = [Math.min(t[0][0], t[1][0]), Math.min(t[0][1], t[1][1]), Math.max(t[0][0], t[1][0]), Math.max(t[0][1], t[1][1])];
     if (!un2(a, l)) continue;
-    let c2 = Kt(s, t);
+    let c2 = curveChordHits(s, t); // herdr-mods: was Kt(s, t), a Newton solve per curve
     if (c2.length > 0) {
       for (let d of c2) n.push(w(d, i, o));
       if (r) return n;
     }
   }
   return n;
+};
+// herdr-mods: a line against one of a shape outline's curve pieces, by 8 chords of the piece. A rounded corner offset by
+// the binding gap is refitted as dozens of small pieces, and Kt's Newton solve on each took ~40 ms a line here (finishing
+// an arrow, dragging joined shapes); the pieces are nearly straight, so the chords are within a fraction of a pixel.
+var curveChordHits = (curve, line) => {
+  const hits = [];
+  for (let k = 0; k < 8; k++) {
+    const hit = et(v(R(curve, k / 8), R(curve, (k + 1) / 8)), line);
+    if (hit && !hits.some((q) => Math.abs(q[0] - hit[0]) + Math.abs(q[1] - hit[1]) < 1e-6)) hits.push(hit);
+  }
+  return hits; // both, where a line cuts across a corner (Kt found only one, whichever its solve hit first)
 };
 var Ia = (e4, t, n, i, o, r = false) => {
   for (let s of e4) {
@@ -2401,11 +2415,15 @@ var tp = (e4, t, n = false) => {
 };
 var np = (e4, t, n, i = 0, o = false) => {
   let r = me2(e4, t), s = w(n[0], r, -e4.angle), a = w(n[1], r, -e4.angle), l = v(s, a), [c2, d] = yn(e4, i), u2 = [];
-  return Ia(c2, l, u2, r, e4.angle, o), o && u2.length > 0 || Pa(d, l, u2, r, e4.angle, o), u2;
+  // herdr-mods: a line meets a convex outline at most twice, so two crossings on straight edges mean no corner curve is
+  // crossed: skip the curve solve (Pa), ~40 ms a call here, which made finishing an arrow and dragging joined shapes slow
+  return Ia(c2, l, u2, r, e4.angle, o), o && u2.length > 0 || u2.length >= 2 || Pa(d, l, u2, r, e4.angle, o), u2;
 };
 var ip = (e4, t, n, i = 0, o = false) => {
   let r = me2(e4, t), s = w(n[0], r, -e4.angle), a = w(n[1], r, -e4.angle), l = v(s, a), [c2, d] = bn(e4, i), u2 = [];
-  return Ia(c2, l, u2, r, e4.angle, o), o && u2.length > 0 || Pa(d, l, u2, r, e4.angle, o), u2;
+  // herdr-mods: a line meets a convex outline at most twice, so two crossings on straight edges mean no corner curve is
+  // crossed: skip the curve solve (Pa), ~40 ms a call here, which made finishing an arrow and dragging joined shapes slow
+  return Ia(c2, l, u2, r, e4.angle, o), o && u2.length > 0 || u2.length >= 2 || Pa(d, l, u2, r, e4.angle, o), u2;
 };
 var op = (e4, t, n, i = 0) => {
   let o = me2(e4, t), r = w(n[0], o, -e4.angle), s = w(n[1], o, -e4.angle);
@@ -5055,6 +5073,7 @@ var Excalidraw = class extends View {
       }
       this.lastText = text;
     }
+    this.flow = null; // herdr-mods
     this.scene.replaceAllElements(this.doc.elements);
     await this.writeImages();
     const els = this.elements();
@@ -5105,6 +5124,7 @@ var Excalidraw = class extends View {
     this.doc = doc;
     this.lastText = text;
     this.dirty = false;
+    this.flow = null; // herdr-mods: flowchart previews go with the replaced scene
     this.scene.replaceAllElements(doc.elements);
     this.fitNext = true; // herdr-mods: an agent's change (or another editor's) comes into view
     const live = this.map();
@@ -5148,11 +5168,12 @@ var Excalidraw = class extends View {
       if (ask.file !== this.file) cx.spawn(async (cx2) => { if (this.editing) this.endEdit(cx2, {}); if (this.dirty) await this.save(cx2); this.openFile(ask.file, cx2); this.fitNext = true; cx2.notify(); });
     }
     if (this.herdrZoom() !== this.builtZ) this.rebuild(cx);
-    if (this.dirty && !this.saving && Date.now() >= this.saveAt && !this.pointer && !this.editing) {
+    if (this.dirty && !this.saving && Date.now() >= this.saveAt && !this.pointer && !this.editing && !this.flow) { // herdr-mods: !flow: previews aren't saved
       cx.spawn(async (cx2) => this.save(cx2));
     }
   }
   async save(cx) {
+    if (this.flow) this.flowCommit(cx); // herdr-mods: previews are added before anything is written
     this.saving = true;
     const text = serializeDocument({ ...this.doc, elements: this.scene.getElementsIncludingDeleted() });
     const seq = this.saveAt;
@@ -5171,6 +5192,7 @@ var Excalidraw = class extends View {
     }
   }
   async close(cx) {
+    if (this.flow) this.flowCancel(cx); // herdr-mods: previews never reach the file
     this.closed = true;
     if (this.editing) this.endEdit(cx, {});
     if (this.dirty && this.status === "ready") await this.save(cx);
@@ -5265,8 +5287,10 @@ var Excalidraw = class extends View {
     }
     const bg = canvasColor(t); // herdr-mods: black in a dark theme, white in a light one
     const cursor = (el) => this.tool === "hand" || this.spaceDown ? el.cursor_grab() : this.tool === "text" ? el.cursor_text() : this.tool === "selection" ? el.cursor_default() : el.cursor_crosshair();
-    const canvas = cursor(div2().id("canvas").absolute().top(0).left(0).size_full().bg(bg).overflow_hidden()).on_mouse_down("left", (e4, cx) => this.onDown(e4, cx)).on_mouse_down("middle", (e4, cx) => this.onPanStart(e4, cx)).on_mouse_move((e4, cx) => this.onMove(e4, cx)).on_mouse_up("left", (e4, cx) => this.onUp(cx)).on_mouse_up("middle", (e4, cx) => this.onUp(cx)).on_scroll_wheel((e4, cx) => this.onWheel(e4, cx)).on_pinch((e4, cx) => this.onPinch(e4, cx)).children(this.ground(t, _cx)) /* herdr-mods: the background under the drawing */.child(div2().absolute().left(this.scrollX * this.vz).top(this.scrollY * this.vz).size_full().children([...this.visibleLayerViews(), this.liveView, ...this.textEditor()])).child(this.emptyHint());
-    const body = root.track_focus(this.focus).on_key_down((e4, cx) => this.onKey(e4, cx)).on_key_up((e4, cx) => {
+    const canvas = cursor(div2().id("canvas").absolute().top(0).left(0).size_full().bg(bg).overflow_hidden()).on_mouse_down("left", (e4, cx) => this.onDown(e4, cx)).on_mouse_down("middle", (e4, cx) => this.onPanStart(e4, cx)).on_mouse_move((e4, cx) => this.onMove(e4, cx)).on_mouse_up("left", (e4, cx) => this.onUp(cx)).on_mouse_up("middle", (e4, cx) => this.onUp(cx)).on_scroll_wheel((e4, cx) => this.onWheel(e4, cx)).on_pinch((e4, cx) => this.onPinch(e4, cx)).children(this.ground(t, _cx)) /* herdr-mods: the background under the drawing */.child(div2().absolute().left(this.scrollX * this.vz).top(this.scrollY * this.vz).size_full().children([...this.visibleLayerViews(), this.liveView, ...this.textEditor()])).children(this.connectDots(t)).children(this.bindOutline(t)) /* herdr-mods */.child(this.emptyHint());
+    const body = root.track_focus(this.focus).on_key_down((e4, cx) => this.onKey(e4, cx))
+      .on_modifiers_changed((e4, cx) => { if (this.flow && e4.modifiers?.platform === false) this.flowCommit(cx); }) // herdr-mods: letting go of ⌘ adds the previews
+      .on_key_up((e4, cx) => {
       if (e4.key === "space") {
         this.spaceDown = false;
         cx.notify();
@@ -5553,14 +5577,18 @@ var Excalidraw = class extends View {
   // ---- pointer -----------------------------------------------------------------------
   onDown(e4, cx) {
     this.focus.focus();
+    if (this.flow) this.flowCommit(cx); // herdr-mods: a click adds the flowchart previews
     if (this.editing) {
       this.endEdit(cx, {});
       return;
     }
     if (this.pointer) this.onUp(cx);
     if (!e4.local_position) return;
-    const p2 = this.toScene(e4.local_position);
-    const tool = this.spaceDown ? "hand" : this.tool;
+    let p2 = this.toScene(e4.local_position);
+    let tool = this.spaceDown ? "hand" : this.tool;
+    // herdr-mods: a press on a connection dot draws an arrow from it (bound to its shape when it ends, as the arrow tool)
+    const dot = tool === "selection" && dotAt(this.dotShapes(), p2, 10 / this.vz);
+    if (dot) { tool = "arrow"; p2 = { x: dot.x, y: dot.y }; }
     if (tool === "hand") return this.onPanStart(e4, cx);
     if (tool === "selection") return this.selectDown(e4, p2, cx);
     if (tool === "eraser") {
@@ -5614,6 +5642,7 @@ var Excalidraw = class extends View {
   }
   onMove(e4, cx) {
     if (e4.local_position) this.hoverAt = this.toScene(e4.local_position); // herdr-mods: where ⌘V puts things
+    if (!this.pointer && e4.local_position) this.hoverShapeAt(this.hoverAt, cx); // herdr-mods: the shape whose dots show
     const ptr = this.pointer;
     if (!ptr || !e4.local_position) return;
     const p2 = this.toScene(e4.local_position);
@@ -5683,6 +5712,11 @@ var Excalidraw = class extends View {
       this.scene.mutateElement(el, { points, width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys2) - Math.min(...ys2) }, { informMutation: false, isDragging: true });
     } else if (el.type === "arrow" || el.type === "line") {
       this.scene.mutateElement(el, { points: [[0, 0], [dx, dy]], width: Math.abs(dx), height: Math.abs(dy) }, { informMutation: false, isDragging: true });
+      if (el.type === "arrow") { // herdr-mods: the shape the end will attach to on release (finishNew's test), outlined meanwhile
+        const map = this.map(), others = this.elements().filter((e4) => e4.id !== el.id), at = (q2) => Wt(q2, others, map, { value: this.vz }, true);
+        const target = at({ x: o.x + dx, y: o.y + dy }), id = target && target !== at(o) ? target.id : null;
+        if (id !== (this.bindTarget ?? null)) { this.bindTarget = id; cx.notify(); }
+      }
     } else {
       if (square) {
         const m = Math.max(Math.abs(dx), Math.abs(dy));
@@ -5697,6 +5731,7 @@ var Excalidraw = class extends View {
     const ptr = this.pointer;
     if (!ptr) return;
     this.pointer = null;
+    this.bindTarget = null; // herdr-mods
     const map = this.map();
     if (ptr.mode === "pan") return;
     if (ptr.mode === "marquee") {
@@ -5857,13 +5892,90 @@ var Excalidraw = class extends View {
     this.scrollY += dy / s;
     cx.notify();
   }
+  // herdr-mods: the flowchart previews (onKey). They sit in the scene faded and unsaved (autosave waits while they show)
+  // until added or dropped; the parent carries their arrows meanwhile, put back as it was if they're dropped.
+  flowPreview(dir, cx) {
+    const map = this.map(), f = this.flow;
+    const parent = f ? map.get(f.parentId) : this.selected.size === 1 ? map.get([...this.selected][0]) : null;
+    if (!parent || !LINKABLE.has(parent.type)) return;
+    if (!f) this.history.record(this.scene.getElementsIncludingDeleted());
+    const count = f && f.dir === dir ? f.count + 1 : 1, sticky = f && f.dir === dir ? f.crossStart : null;
+    if (f) this.flowRemove();
+    const base = { ...parent, boundElements: f ? f.parentBound : parent.boundElements };
+    const { nodes, arrows, source, crossStart } = flowchart(base, dir, count, this.elements(), sticky, newId);
+    this.scene.mutateElement(parent, { boundElements: source.boundElements });
+    for (const el of [...nodes, ...arrows]) this.scene.insertElement(normalizeElement({ ...el, opacity: 35 }));
+    this.flow = { parentId: parent.id, parentBound: base.boundElements ?? null, dir, count, crossStart, ids: [...nodes, ...arrows].map((e4) => e4.id), first: nodes[0].id, opacity: parent.opacity ?? 100 };
+    this.selected = new Set([parent.id]);
+    this.reveal(nodes);
+    this.rebuild(cx);
+  }
+  // Scroll so these elements are in view, if any part of them isn't (Excalidraw's revealIfHidden).
+  reveal(els) {
+    const [x1, y1, x2, y2] = tt2(els), w = (this.size?.width ?? 800) / this.herdrZoom() / this.vz, h = (this.size?.height ?? 600) / this.herdrZoom() / this.vz;
+    if (x1 >= -this.scrollX && y1 >= -this.scrollY && x2 <= w - this.scrollX && y2 <= h - this.scrollY) return;
+    this.scrollX = w / 2 - (x1 + x2) / 2;
+    this.scrollY = h / 2 - (y1 + y2) / 2;
+  }
+  flowRemove() {
+    const ids = new Set(this.flow.ids);
+    this.scene.replaceAllElements(this.scene.getElementsIncludingDeleted().filter((e4) => !ids.has(e4.id)));
+  }
+  flowCommit(cx) {
+    const f = this.flow;
+    if (!f) return;
+    this.flow = null;
+    const map = this.map();
+    for (const id of f.ids) { const el = map.get(id); if (el) this.scene.mutateElement(el, { opacity: el.type === "arrow" ? 100 : f.opacity }); }
+    this.selected = new Set([f.first]);
+    this.markDirty();
+    this.rebuild(cx);
+  }
+  flowCancel(cx) {
+    const f = this.flow;
+    if (!f) return;
+    this.flowRemove();
+    this.flow = null;
+    const parent = this.map().get(f.parentId);
+    if (parent) this.scene.mutateElement(parent, { boundElements: f.parentBound });
+    this.history.undoStack.pop();
+    this.rebuild(cx);
+  }
+  // herdr-mods: connection dots. The hovered shape (or one near the pointer, so the dots stay while it reaches them) and a
+  // lone selected shape show a dot mid-edge; a press on one draws an arrow from it (onDown).
+  hoverShapeAt(p2, cx) {
+    const reach = 14 / this.vz, cur = this.hoverShape && this.map().get(this.hoverShape);
+    const near = (e4) => e4 && !e4.isDeleted && p2.x >= e4.x - reach && p2.x <= e4.x + e4.width + reach && p2.y >= e4.y - reach && p2.y <= e4.y + e4.height + reach;
+    const under = this.containerAt(p2), next = near(cur) && (!under || under.id === cur.id) ? cur : under && LINKABLE.has(under.type) ? under : null;
+    const dotNow = dotAt(this.dotShapes(next), p2, 10 / this.vz)?.side ?? null;
+    if ((next?.id ?? null) !== (this.hoverShape ?? null) || dotNow !== this.hoverDot) { this.hoverShape = next?.id ?? null; this.hoverDot = dotNow; cx.notify(); }
+  }
+  dotShapes(hover = this.hoverShape && this.map().get(this.hoverShape)) {
+    if (this.tool !== "selection" || this.editing || this.pointer || this.status !== "ready") return [];
+    const map = this.map(), sel = this.selected.size === 1 ? map.get([...this.selected][0]) : null;
+    return [...new Set([hover, sel])].filter((e4) => e4 && !e4.isDeleted && LINKABLE.has(e4.type));
+  }
+  // herdr-mods: an accent outline round the shape a new arrow's end will attach to (resizeNew), Excalidraw's binding hint
+  bindOutline(t) {
+    const el = this.pointer && this.bindTarget && this.map().get(this.bindTarget);
+    if (!el) return [];
+    const pad = 5, w3 = el.width * this.vz + 2 * pad, h2 = el.height * this.vz + 2 * pad;
+    return [div2().absolute().left((el.x + this.scrollX) * this.vz - pad).top((el.y + this.scrollY) * this.vz - pad).w(w3).h(h2)
+      .rounded(el.type === "ellipse" ? Math.min(w3, h2) / 2 : 10).border(3).border_color(t.accent ?? "#6965db").opacity(0.6)];
+  }
+  connectDots(t) {
+    const ui = uiColors(t), accent = t.accent ?? "#6965db", X = (x2) => (x2 + this.scrollX) * this.vz, Y = (y3) => (y3 + this.scrollY) * this.vz;
+    return this.dotShapes().flatMap((e4) => edgeDots(e4).map((d) => {
+      const on = e4.id === this.hoverShape && d.side === this.hoverDot, r = on ? 6 : 4;
+      return div2().absolute().left(X(d.x) - r).top(Y(d.y) - r).w(2 * r).h(2 * r).rounded(r).border(on ? 2 : 1.5).border_color(accent).bg(on ? accent : ui.surface);
+    }));
+  }
   // herdr-mods: ⌘V: what's on the clipboard (shapes copied here or on excalidraw.com, or plain text), under the pointer
   // (or in the middle of the view), selected, one undo step
   paste(cx) {
     if (this.status !== "ready") return;
     const at = this.hoverAt ?? this.toScene({ x: (this.size?.width ?? 800) / 2, y: (this.size?.height ?? 600) / 2 });
-    const id = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-    const els = pasted(cx.read_from_clipboard(), at, id, { fontSize: this.style.fontSize }).map(normalizeElement);
+    const els = pasted(cx.read_from_clipboard(), at, newId, { fontSize: this.style.fontSize }).map(normalizeElement);
     if (!els.length) return;
     if (this.editing) this.endEdit(cx, {});
     this.history.record(this.scene.getElementsIncludingDeleted());
@@ -5942,6 +6054,7 @@ var Excalidraw = class extends View {
       return;
     }
     const k2 = e4.keystroke;
+    if (this.flow && !/^cmd-(left|right|up|down)$/.test(k2) && k2 !== "enter" && k2 !== "escape") this.flowCommit(cx); // herdr-mods: any other key adds the previews first
     const map = this.map();
     if (k2 === "cmd-o") return openLibrary(this.inWindow); // herdr-mods
     // herdr-mods: copy, cut and paste are the canvas's while it has the keyboard: stopped here, so Herdr's terminal
@@ -5955,6 +6068,20 @@ var Excalidraw = class extends View {
       return;
     }
     if (k2 === "cmd-v") return this.paste(cx); // herdr-mods
+    // herdr-mods: Excalidraw's flowchart. ⌘+arrow shows faded previews of connected copies that way, one more per press
+    // (a new direction starts over); ↵, letting go of ⌘ or a click adds them, Esc drops them. ⌥+arrow selects the
+    // connected shape that way (↵ then edits its words).
+    if (this.flow && k2 === "enter") { cx.stop_propagation(); return this.flowCommit(cx); }
+    if (this.flow && k2 === "escape") { cx.stop_propagation(); return this.flowCancel(cx); }
+    const grow = { "cmd-left": "left", "cmd-right": "right", "cmd-up": "up", "cmd-down": "down" }[k2];
+    const go = { "alt-left": "left", "alt-right": "right", "alt-up": "up", "alt-down": "down" }[k2];
+    if (grow || go) {
+      cx.stop_propagation();
+      if (grow) return e4.is_held ? undefined : this.flowPreview(grow, cx); // a held key repeating isn't another press
+      const sel = this.selected.size === 1 ? map.get([...this.selected][0]) : null;
+      if (sel && LINKABLE.has(sel.type)) { const nb = neighbour(sel, go, this.elements()); if (nb) { this.selected = new Set([nb.id]); cx.notify(this.liveView); cx.notify(); } }
+      return;
+    }
     if (k2 === "cmd-z") return this.undo(cx);
     if (k2 === "cmd-shift-z" || k2 === "cmd-y") return this.redo(cx);
     if (k2 === "cmd-a") {
