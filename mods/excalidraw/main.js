@@ -38,7 +38,8 @@ import { openWindow } from "./open.js";
 import { LibraryView } from "./library-view.js";
 import { backdrop as groundLayers, dotsAlpha, grainOpacity } from "./backdrop.js";
 import { cardsOf, alphaHex } from "./ground.js";
-const openLibrary = () => openOverlay({ mod: "excalidraw", kind: "window", key: "excalidraw-library", width: 680, height: 640, props: { library: true } }); // herdr-mods
+// herdr-mods: the library; opened from the big window, what it picks opens in that window (excalidraw.window), not the panel
+const openLibrary = (fromWindow = false) => openOverlay({ mod: "excalidraw", kind: "window", key: "excalidraw-library", width: 680, height: 640, props: { library: true, ...(fromWindow && { into: "window" }) } });
 
 // node_modules/@excalidraw/math/dist/prod/index.js
 var y = 1e-4;
@@ -4896,7 +4897,7 @@ var Excalidraw = class extends View {
     if (p2.library || (this.overlay && !p2.file && !p2.picker && !p2.window)) { this.libraryView = new LibraryView(cx); return; }
     this.builtDark = isDark(theme()); setDark(this.builtDark); // herdr-mods
     this.inWindow = !!p2.window && !!this.overlay; // herdr-mods: the big window (⤢): takes the keyboard, Esc closes it
-    if (this.inWindow) { this.focus.focus(); cx.timer.after(150, () => this.focus.focus()); this.fitNext = true; }
+    if (this.inWindow) { this.focus.focus(); cx.timer.after(150, () => this.focus.focus()); this.fitNext = true; this.seenWindowAsk = shared("excalidraw.window")?.at ?? 0; }
     // herdr-mods: the side panel follows open.json (handoff.js): an agent opens a drawing by naming it there. It starts
     // from open.json too (the drawing last remembered only when none is asked for), and only it records what it shows.
     this.panelCopy = !!p2.panel && !this.overlay && !herdrChecking();
@@ -5140,6 +5141,11 @@ var Excalidraw = class extends View {
     if (this.status !== "ready") return;
     if (isDark(theme()) !== this.builtDark) { this.builtDark = isDark(theme()); setDark(this.builtDark); this.rebuild(cx); } // herdr-mods: theme switched
     if (this.fitNext && this.size) { this.fitNext = false; this.fitView(cx); } // herdr-mods: an agent's drawing, or its change, in view
+    const ask = this.inWindow && shared("excalidraw.window"); // herdr-mods: a drawing picked in the library opened from this window
+    if (ask?.at > this.seenWindowAsk && ask.file) {
+      this.seenWindowAsk = ask.at;
+      if (ask.file !== this.file) cx.spawn(async (cx2) => { if (this.editing) this.endEdit(cx2, {}); if (this.dirty) await this.save(cx2); this.openFile(ask.file, cx2); this.fitNext = true; cx2.notify(); });
+    }
     if (this.herdrZoom() !== this.builtZ) this.rebuild(cx);
     if (this.dirty && !this.saving && Date.now() >= this.saveAt && !this.pointer && !this.editing) {
       cx.spawn(async (cx2) => this.save(cx2));
@@ -5426,7 +5432,7 @@ var Excalidraw = class extends View {
       .hover((st) => (accent ? st.opacity(0.9) : st.bg(ui.hover))).tooltip(tip).on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); on(cx); }).child(label);
     return div2().absolute().bottom(8).right(8).flex().items_center().gap(2).p(3).rounded(9).border(1).border_color(ui.border).bg(ui.surface)
       .when(!dark, (el) => el.shadow_sm())
-      .child(btn("library", "All drawings  \u2318O", "Every drawing: search, pin, rename, trash", () => openLibrary(), true))
+      .child(btn("library", "All drawings  \u2318O", "Every drawing: search, pin, rename, trash", () => openLibrary(this.inWindow), true))
       .when(!this.inWindow && !!this.file, (el) => el.child(btn("big", "\u2922  Full size", "Open this drawing big, in a window (Esc closes it)", () => openWindow(this.file), false)));
   }
   statusBar(t) {
@@ -5437,7 +5443,7 @@ var Excalidraw = class extends View {
       this.button("zoom-in", "+", false, t, (cx) => this.zoomBy(1.2, null, cx)),
       this.button("undo", "\u21B6", false, t, (cx) => this.undo(cx)),
       this.button("redo", "\u21B7", false, t, (cx) => this.redo(cx)),
-      this.button("open", "Open\u2026", false, t, () => openLibrary()), // herdr-mods: the library (its Choose folder… is the picker)
+      this.button("open", "Open\u2026", false, t, () => openLibrary(this.inWindow)), // herdr-mods: the library (its Choose folder… is the picker)
       div2().child(`${basename(this.file)} \xB7 ${state}`)
     ]);
   }
@@ -5579,7 +5585,8 @@ var Excalidraw = class extends View {
     let hit = this.hit(p2);
     if (e4.click_count >= 2) {
       if (hit?.type === "text") return this.startText(p2, hit, cx);
-      const container = hit && CONTAINERS.includes(hit.type) ? hit : this.containerAt(p2);
+      // herdr-mods: an arrow is a container too (as in Excalidraw): a double-click on it, or its label, edits the label
+      const container = hit && (CONTAINERS.includes(hit.type) || hit.type === "arrow") ? hit : this.containerAt(p2);
       if (container) return this.startText(p2, container, cx);
       if (!hit) return this.startText(p2, null, cx);
     }
@@ -5917,7 +5924,7 @@ var Excalidraw = class extends View {
     }
     const k2 = e4.keystroke;
     const map = this.map();
-    if (k2 === "cmd-o") return openLibrary(); // herdr-mods
+    if (k2 === "cmd-o") return openLibrary(this.inWindow); // herdr-mods
     if (k2 === "cmd-z") return this.undo(cx);
     if (k2 === "cmd-shift-z" || k2 === "cmd-y") return this.redo(cx);
     if (k2 === "cmd-a") {

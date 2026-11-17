@@ -9,17 +9,25 @@ A drawing is one `.excalidraw` file (Excalidraw's JSON). Herdr's Excalidraw pane
 
 ## Steps
 
-1. **Find the file.** Read `open.json`. When the user means the drawing in front of them ("on this", "add to it"), that file is yours: read it. For a new drawing, use `~/.config/herdr-app/data/excalidraw/<repo>-<topic>.excalidraw`, lower case with hyphens, one that isn't taken: the user's library (All drawings ⌘O) lists that folder. Done when you know which file you'll write.
+1. **Find the file.** Read `open.json`: the drawing it names is yours, and new work goes into free space beside what's already there, every time you're asked to draw. Start a new file only when the user asks for a new drawing, or `open.json` names nothing that exists: then `~/.config/herdr-app/data/excalidraw/<repo>-<topic>.excalidraw`, lower case with hyphens, one that isn't taken (the user's library, All drawings ⌘O, lists that folder). Done when you know which file you'll write.
 2. **Plan the picture.** One question it answers, one main direction, boxes grouped into frames. Budget: about 12 boxes per drawing and 6 per frame; past that, two drawings (an overview and a close-up).
 3. **Draw it.**
-   - Boxes and arrows (most diagrams): write DOT and let the converter lay it out. It sizes every box for its words, has Graphviz place the boxes and route the arrows, binds arrows to boxes, turns clusters into frames, and puts the new group to the right of anything already drawn:
+   - Boxes and arrows (most diagrams): write DOT and let the converter lay it out. It sizes every box for its words, has Graphviz place the boxes and route the arrows around them, puts each arrow's label beside it, binds arrows to boxes, turns clusters into frames, and puts the new group to the right of anything already drawn:
      ```sh
-     python3 ~/.claude/skills/herdr-excalidraw/dot2excalidraw.py diagram.dot --into "$FILE" --open   # add to a drawing
-     python3 ~/.claude/skills/herdr-excalidraw/dot2excalidraw.py diagram.dot -o "$FILE" --open       # a new one
+     python3 ~/.claude/skills/herdr-excalidraw/dot2excalidraw.py diagram.dot --into "$FILE" --open   # into the open drawing (the usual)
+     python3 ~/.claude/skills/herdr-excalidraw/dot2excalidraw.py diagram.dot -o "$FILE" --open       # a new drawing, when asked for one
      ```
    - A small change (a note, one box, a colour, a move): edit the JSON yourself, by the rules below.
-4. **Check it.** `python3 -m json.tool "$FILE" > /dev/null` passes; ids are unique; every bound text and arrow is listed back by its shape. Done when all three hold.
+4. **Check it.** `python3 ~/.claude/skills/herdr-excalidraw/dot2excalidraw.py --check "$FILE"` lists anything that breaks the layout rules below (shapes overlapping, an arrow through a shape, words on an arrow or half over a shape); ids are unique; every bound text and arrow is listed back by its shape. Done when the check prints `ok: nothing overlaps` and the rest hold; fix and check again until then.
 5. **Tell the user** what you drew and that it's in the Excalidraw panel.
+
+## Layout rules
+
+These hold for every drawing, converted or by hand, and the check enforces them:
+
+- **Nothing overlaps.** Shapes keep at least 40px apart; words sit inside their shape or in clear space; new work goes into empty space beside what's drawn, never over it.
+- **Arrows find their way.** An arrow runs around shapes, never through one it doesn't start or end at. By hand, give it extra points to bend around what's in the way.
+- **Labels sit beside their arrow, never on the line.** Free text next to the arrow's middle, in clear space, grouped with the arrow (the same `groupIds`) so they move together.
 
 ## DOT for the converter
 
@@ -54,8 +62,7 @@ digraph {
 - **The file is shared.** Keep every element you didn't add, change only yours, and write the whole file back in one write. If the user had unsaved strokes, the panel keeps them in its undo.
 - **Elements** need `id` (unique), `type` (`rectangle`, `ellipse`, `diamond`, `text`, `arrow`, `line`), `x`, `y`, `width`, `height`; give `strokeColor`, `backgroundColor` (`"transparent"` or a palette fill), `fillStyle: "solid"`, `strokeWidth: 2`, `roughness: 1`, and `roundness: {"type": 3}` on rectangles. The panel fills in the rest.
 - **Words in a shape** are a `text` element with `containerId` set to the shape's id, `textAlign: "center"`, `verticalAlign: "middle"`, `fontSize: 16`, `fontFamily: 5`, and the shape lists it in `boundElements` as `{"id": <text id>, "type": "text"}`. Make the shape big enough: width at least characters × 8.8 + 40, height at least lines × 20 + 28.
-- **An arrow** has `x`, `y` at its start and `points` relative to that, the first `[0, 0]`. It binds with `startBinding` / `endBinding` = `{"elementId": <shape id>, "focus": 0, "gap": 6}`, and each bound shape lists `{"id": <arrow id>, "type": "arrow"}` in `boundElements`.
-- **Room:** at least 40px between shapes; nothing overlaps.
+- **An arrow** has `x`, `y` at its start and `points` relative to that, the first `[0, 0]`. It binds with `startBinding` / `endBinding` = `{"elementId": <shape id>, "focus": 0, "gap": 6}`, and each bound shape lists `{"id": <arrow id>, "type": "arrow"}` in `boundElements`. Its label is a free `text` element (`containerId: null`, `fontSize: 14`) beside its middle, sharing a `groupIds` entry with the arrow.
 - **Its repo:** the converter files a drawing under the repo you ran it in (`appState.herdr_repos`, comma separated, `~` paths). Making one by hand, set that yourself, e.g. `"appState": {"viewBackgroundColor": "#ffffff", "herdr_repos": "~/code/shop"}`.
 
 ## Reference

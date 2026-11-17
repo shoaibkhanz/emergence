@@ -26,8 +26,12 @@ import time
 FONT, ARROW_FONT, TITLE_FONT, LINE = 16, 14, 20, 1.25  # px; Excalidraw's line height for Excalifont
 EXCALIFONT = 5
 PAD_X, PAD_Y, MIN_W, MIN_H = 20, 14, 120, 56  # room around a label inside its box; the smallest box
+FRAME_ROOM = 28  # px a frame keeps around its boxes (Graphviz's own cluster margin is 8)
+FRAME_TITLE_MEASURE = 22  # frame titles drawn at 16 are measured at this, so their strip clears the boxes below
 INK, FRAME_LINE, FRAME_FILL, FRAME_INK = "#1e1e1e", "#ced4da", "#f8f9fa", "#495057"
-LAYOUT = ["-Gnodesep=0.8", "-Granksep=1.1", "-Gsplines=spline"]  # roomy defaults; a file's own values win
+# roomy defaults (a file's own values win); arrow labels measured a size up from the 14 they're drawn at, so Graphviz
+# leaves them room beside their arrow
+LAYOUT = ["-Gnodesep=0.8", "-Granksep=1.1", "-Gsplines=spline", "-Efontname=Helvetica", "-Efontsize=17"]
 # a shape's share of its box that's usable for text: an ellipse's inscribed rectangle, a diamond's
 ROOM = {"rectangle": 1.0, "ellipse": 1 / math.sqrt(2), "diamond": 0.5}
 ELLIPSES = {"ellipse", "oval", "circle", "doublecircle", "point", "egg"}
@@ -130,6 +134,9 @@ def convert(dot: str, prefix: str | None = None) -> list[dict]:
     nodes = [o for o in objs if "nodes" not in o and "name" in o and not o["name"].startswith("cluster")]
     sizes = {o["name"]: box_size(_kind(o.get("shape")), _label(o)) for o in nodes}
     fixed = "".join(f"  {_q(n)} [width={w / 72:.3f}, height={h / 72:.3f}, fixedsize=true];\n" for n, (w, h) in sizes.items())
+    # every frame reopened with room around its boxes and under its title (a bigger margin of the file's own stays)
+    fixed += "".join(f"  subgraph {_q(o['name'])} {{ graph [margin={max(FRAME_ROOM, float(o.get('margin') or 0)):g}, fontsize={FRAME_TITLE_MEASURE}, labeljust=l]; }}\n"
+                     for o in objs if "nodes" in o and o.get("name", "").startswith("cluster"))
     end = dot.rstrip().rfind("}")
     laid = graphviz(dot[:end] + fixed + dot[end:])  # Graphviz places the boxes at the sizes their text needs
     height = float(laid.get("bb", "0,0,0,0").split(",")[3])
@@ -176,18 +183,92 @@ def convert(dot: str, prefix: str | None = None) -> list[dict]:
         a = _base(pid(f"e{i}"), "arrow", x0, y0, max(xs) - min(xs), max(ys) - min(ys), points=rel, strokeColor=e.get("color") or INK,
                   strokeStyle="dashed" if "dashed" in style else "dotted" if "dotted" in style else "solid", roundness={"type": 2},
                   startBinding={"elementId": boxes[tail]["id"], "focus": 0, "gap": 6}, endBinding={"elementId": boxes[head]["id"], "focus": 0, "gap": 6},
-                  startArrowhead=None, endArrowhead="arrow", elbowed=False)
+                  startArrowhead=None, endArrowhead="arrow", elbowed=False, groupIds=[pid(f"g{i}")])
         boxes[tail]["boundElements"].append({"id": a["id"], "type": "arrow"})
         boxes[head]["boundElements"].append({"id": a["id"], "type": "arrow"})
         arrows.append(a)
-        if e.get("label"):
+        if e.get("label"):  # beside the arrow where Graphviz put it, grouped with it so they move together
             lx, ly = at(*map(float, e["lp"].split(","))) if e.get("lp") else pts[len(pts) // 2]
             lw, lh = text_size(_label({"name": "", "label": e["label"]}), ARROW_FONT)
-            t = _text(a["id"] + "-label", _label({"name": "", "label": e["label"]}), lx - lw / 2, ly - lh / 2, ARROW_FONT, a["id"])
-            a["boundElements"].append({"id": t["id"], "type": "text"})
-            words.append(t)
+            words.append({**_text(a["id"] + "-label", _label({"name": "", "label": e["label"]}), lx - lw / 2, ly - lh / 2, ARROW_FONT, None),
+                          "groupIds": [pid(f"g{i}")]})
     title = [_text(pid("title"), first["label"], 0, -TITLE_FONT * 2.5, TITLE_FONT, None, INK, "left")] if first.get("label") else []
-    return title + frames + list(boxes.values()) + arrows + words
+    out = title + frames + list(boxes.values()) + arrows + words
+    return _clear_labels(out)
+
+
+def _clear_labels(elements: list[dict]) -> list[dict]:
+    """An arrow label Graphviz left on another arrow or a shape moves to the nearest clear spot around it."""
+    out = list(elements)
+    for i, e in enumerate(out):
+        if e["type"] != "text" or not e["id"].endswith("-label") or not problems_of(out, e):
+            continue
+        h = e["height"]
+        for step in range(1, 7):
+            spots = [(0, -step * h), (0, step * h), (-step * h, 0), (step * h, 0)]
+            moved = next((m for m in ({**e, "x": e["x"] + dx, "y": e["y"] + dy} for dx, dy in spots) if not problems_of(out[:i] + [m] + out[i + 1:], m)), None)
+            if moved:
+                out[i] = moved
+                break
+    return out
+
+
+def problems_of(elements: list[dict], e: dict) -> list[str]:
+    """The check's findings about one text element."""
+    return [p for p in problems(elements) if f'text "{e.get("text", "")}"' in p]
+
+
+# --- the check (the skill's last step): nothing overlaps, arrows go around shapes, words sit off arrows ---
+def _box(e: dict) -> tuple[float, float, float, float]:
+    return e["x"], e["y"], e["x"] + e.get("width", 0), e["y"] + e.get("height", 0)
+
+
+def _meets(a: tuple, b: tuple) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def _holds(outer: tuple, inner: tuple) -> bool:
+    return outer[0] <= inner[0] and outer[1] <= inner[1] and outer[2] >= inner[2] and outer[3] >= inner[3]
+
+
+def _crosses(p: tuple, q: tuple, box: tuple) -> bool:
+    """Does the segment p-q pass through the box (Liang-Barsky)?"""
+    t0, t1, dx, dy = 0.0, 1.0, q[0] - p[0], q[1] - p[1]
+    for d, lo, hi, v in ((dx, box[0], box[2], p[0]), (dy, box[1], box[3], p[1])):
+        if d == 0:
+            if not lo < v < hi:
+                return False
+            continue
+        a, b = (lo - v) / d, (hi - v) / d
+        t0, t1 = max(t0, min(a, b)), min(t1, max(a, b))
+        if t0 >= t1:
+            return False
+    return True
+
+
+def problems(elements: list[dict]) -> list[str]:
+    """What's wrong with a drawing's layout: shapes that overlap, arrows through a shape they don't start or end at,
+    words on an arrow or half over a shape. A rectangle holding other shapes is a frame: arrows and its title may cross
+    it."""
+    live = [e for e in elements if not e.get("isDeleted")]
+    shapes = [e for e in live if e["type"] in ("rectangle", "ellipse", "diamond", "image")]
+    box = {e["id"]: _box(e) for e in shapes}
+    frames = {e["id"] for e in shapes if e["type"] == "rectangle" and any(o is not e and _holds(box[e["id"]], box[o["id"]]) for o in shapes)}
+    plain = [e for e in shapes if e["id"] not in frames]
+    arrows = [e for e in live if e["type"] in ("arrow", "line") and len(e.get("points") or []) > 1]
+    path = {a["id"]: [(a["x"] + px, a["y"] + py) for px, py in a["points"]] for a in arrows}
+    on = lambda a, b: any(_crosses(path[a["id"]][k], path[a["id"]][k + 1], b) for k in range(len(path[a["id"]]) - 1))  # noqa: E731
+    out = []
+    for i, a in enumerate(plain):
+        out += [f"shapes {a['id']} and {b['id']} overlap" for b in plain[i + 1:] if _meets(box[a["id"]], box[b["id"]])]
+    for a in arrows:
+        ends = {(a.get("startBinding") or {}).get("elementId"), (a.get("endBinding") or {}).get("elementId")}
+        out += [f"arrow {a['id']} crosses shape {s['id']}" for s in plain if s["id"] not in ends and on(a, box[s["id"]])]
+    for w in (e for e in live if e["type"] == "text" and not e.get("containerId")):
+        wb = _box(w)
+        out += [f'text "{w.get("text", "")}" sits on arrow {a["id"]}' for a in arrows if on(a, wb)]
+        out += [f'text "{w.get("text", "")}" overlaps shape {s["id"]}' for s in plain if _meets(wb, box[s["id"]]) and not _holds(box[s["id"]], wb)]
+    return out
 
 
 def place_beside(existing: list[dict], new: list[dict], gap: float = 160) -> list[dict]:
@@ -226,7 +307,13 @@ def main() -> None:
     p.add_argument("-o", "--out", help="write a new drawing here")
     p.add_argument("--into", help="add to this drawing, beside what's there")
     p.add_argument("--open", action="store_true", help="show the drawing in Herdr's Excalidraw panel")
+    p.add_argument("--check", metavar="FILE", help="list what overlaps in a drawing (exit 1 if anything does)")
     a = p.parse_args()
+    if a.check:
+        with open(a.check) as f:
+            found = problems(json.load(f).get("elements", []))
+        print("\n".join(found) or "ok: nothing overlaps")
+        sys.exit(1 if found else 0)
     if a.dot:
         with open(a.dot) as f:
             dot = f.read()

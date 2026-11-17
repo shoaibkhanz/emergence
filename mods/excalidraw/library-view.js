@@ -6,7 +6,7 @@
 
 import { div, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { props, closeOverlay, openOverlay, theme, panes, focused, watchFolder, home } from "herdr";
+import { props, closeOverlay, openOverlay, theme, panes, focused, watchFolder, home, setShared } from "herdr";
 import { sections, search, repoName, freeName, ago, knownRepos, toggleRepo } from "./library.js";
 import { dir, scan, readIndex, setEntry, trash, duplicate, create, repoOf } from "./store.js";
 import { showInPanel, openWindow } from "./open.js";
@@ -56,11 +56,12 @@ export class LibraryView {
   rows() { return this.view().flatMap((s) => s.rows); }
 
   close() { closeOverlay(props().overlay); }
-  // Opens in the Excalidraw side panel (shown if hidden), else in the big window.
+  // Opens in the big window it was opened from (props.into), else the Excalidraw side panel (shown if hidden), else a big window.
   open(row, cx) {
     if (!row) return;
     const file = `${dir()}/${row.name}`;
     setEntry(row.name, { opened: Date.now() });
+    if (props()?.into === "window") { setShared("excalidraw.window", { file, at: Date.now() }); return this.close(); }
     cx.spawn(async () => { if (!(await showInPanel(file))) openWindow(file); this.close(); });
   }
   // The folder picker (the mod's own, for drawings outside the library's folder).
