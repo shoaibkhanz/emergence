@@ -3,7 +3,7 @@ import { openOverlay, run, layout, readTextFile, writeTextFile, appHome } from "
 import { OPEN, openRecord } from "./handoff.js";
 
 // The layout's stack holding the Excalidraw block (the side panel), if it has one.
-export function panelStack() {
+function panelStack() {
   const find = (n) => (n?.children?.some((c) => c.id === "excalidraw") ? n : n?.children?.map(find).find(Boolean));
   return find(layout());
 }

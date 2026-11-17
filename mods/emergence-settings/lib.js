@@ -48,20 +48,20 @@ function patternRow(get) {
 }
 
 // The film grain under the Agents graph's and the Excalidraw canvas's background, 0 (off) to 25%. Both read agent-graph.filmGrain.
-const GRAIN = [0, 5, 10, 15, 20, 25];
+const PERCENTS = [0, 5, 10, 15, 20, 25]; // Grain and Background strength, off to 25%
 function grainRow(get) {
-  const v = get("agent-graph.filmGrain"), value = GRAIN.includes(v) ? v : 10;
+  const v = get("agent-graph.filmGrain"), value = PERCENTS.includes(v) ? v : 10;
   return { id: "agents.grain", name: "Grain", kind: "choice", value, about: "Fine film grain over the Agents graph and the Excalidraw canvas.",
-    options: GRAIN.map((p) => ({ value: p, label: p ? `${p}%` : "Off", writes: [["agent-graph.filmGrain", p]] })) };
+    options: PERCENTS.map((p) => ({ value: p, label: p ? `${p}%` : "Off", writes: [["agent-graph.filmGrain", p]] })) };
 }
 
 // How strongly the background behind the Agents graph and the Excalidraw canvas shows, 0 (off) to 25%. Both read agent-graph.dots.
-export const DOTS = [0, 5, 10, 15, 20, 25], DOTS_DEFAULT = 25;
+export const DOTS_DEFAULT = 25;
 function dotsRow(get) {
-  const v = get("agent-graph.dots"), value = DOTS.includes(v) ? v : DOTS_DEFAULT;
+  const v = get("agent-graph.dots"), value = PERCENTS.includes(v) ? v : DOTS_DEFAULT;
   return { id: "agents.dots", name: "Background strength", kind: "choice", value,
     about: "How strongly the background shows.",
-    options: DOTS.map((p) => ({ value: p, label: p ? `${p}%` : "Off", writes: [["agent-graph.dots", p]] })) };
+    options: PERCENTS.map((p) => ({ value: p, label: p ? `${p}%` : "Off", writes: [["agent-graph.dots", p]] })) };
 }
 
 export function sections(get, known) {

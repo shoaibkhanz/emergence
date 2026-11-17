@@ -31,8 +31,6 @@ export class LibraryView {
     this.pathInput = InputState.new(); // the repo picker's "add a folder"
     this.pathInput.on("submit", (_e, cx) => this.addRepoPath(cx));
     cx.timer.after(150, () => this.query.focus());
-    this.query.on("focus", () => { this.typing = true; });
-    this.query.on("blur", () => { this.typing = false; });
     cx.spawn(async (cx) => {
       const pane = panes().find((x) => x.id === focused()?.pane && x.cwd) ?? panes().find((x) => x.cwd);
       this.repo = await repoOf(pane?.cwd).catch(() => null);

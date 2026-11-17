@@ -1,6 +1,6 @@
 // The library's pure parts: repo keys, the index entries, grouping and search, file names, the trash.
 import { test, expect } from "bun:test";
-import { repoKey, repoName, declaredRepos, observe, sections, search, freeName, expired, ago, TRASH_DAYS, knownRepos, toggleRepo, shortTitle } from "./library.js";
+import { repoKey, repoName, declaredRepos, observe, sections, search, freeName, expired, ago, TRASH_DAYS, knownRepos, toggleRepo } from "./library.js";
 
 const DAY = 86400000;
 
@@ -22,12 +22,12 @@ test("declaredRepos: the agent's herdr_repos graph attribute, comma separated, ~
 test("observe: a new file gets an entry; a changed sum moves updated and says who; repos from the file are kept and merged", () => {
   const now = 1000 * DAY;
   const a = observe(undefined, { name: "shop-checkout.excalidraw", sum: "s1", title: "Checkout", nodes: 9, repos: [{ key: "k1", path: "/a" }], now });
-  expect(a).toMatchObject({ title: "Checkout", nodes: 9, created: now, updated: now, by: "agent", edited: "agent", pinned: false, repos: [{ key: "k1", path: "/a" }] });
+  expect(a).toMatchObject({ title: "Checkout", nodes: 9, created: now, updated: now, by: "agent", pinned: false, repos: [{ key: "k1", path: "/a" }] });
   const same = observe(a, { name: "shop-checkout.excalidraw", sum: "s1", title: "Checkout", nodes: 9, repos: [], now: now + 5 });
   expect(same.updated).toBe(now); // nothing changed: nothing moves, and repos the file no longer says stay
   expect(same.repos).toEqual([{ key: "k1", path: "/a" }]);
   const canvas = observe({ ...a, wrote: "s2" }, { name: "shop-checkout.excalidraw", sum: "s2", title: "Checkout", nodes: 10, repos: [{ key: "k2", path: "/b" }], now: now + 9 });
-  expect(canvas).toMatchObject({ updated: now + 9, edited: "canvas", nodes: 10 });
+  expect(canvas).toMatchObject({ updated: now + 9, nodes: 10 });
   expect(canvas.repos.map((r) => r.key)).toEqual(["k1", "k2"]);
   expect(observe({ ...a, title: "Renamed", named: true }, { name: "x", sum: "s3", title: "Checkout", nodes: 1, repos: [], now }).title).toBe("Renamed"); // a rename in the library sticks
 });
@@ -90,12 +90,4 @@ test("toggleRepo: adds a repo the diagram lacks, removes one it has, never edits
   expect(toggleRepo(repos, { key: "k2" }).map((r) => r.key)).toEqual(["k1", "k2"]);
   expect(toggleRepo(repos, { key: "k1" })).toEqual([]);
   expect(repos).toEqual([{ key: "k1" }]);
-});
-
-test("shortTitle: a page tab shows the topic before the colon or dash; a plain title stays whole", () => {
-  expect(shortTitle("Side chats: how a side chat opens beside an agent")).toBe("Side chats");
-  expect(shortTitle("Checkout — how an order is placed")).toBe("Checkout");
-  expect(shortTitle("How Emergence works")).toBe("How Emergence works");
-  expect(shortTitle("ratio 1:2 test")).toBe("ratio 1:2 test"); // only a colon followed by a space splits
-  expect(shortTitle(": oops")).toBe(": oops");
 });

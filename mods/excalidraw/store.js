@@ -17,7 +17,7 @@ export async function readIndex() {
   try { if (raw) index = { v: 1, files: {}, ...JSON.parse(raw) }; } catch { /* a broken index is rebuilt from the files */ }
   return { raw, index };
 }
-export async function updateIndex(change) {
+async function updateIndex(change) {
   for (let tries = 0; ; tries++) {
     const { raw, index } = await readIndex();
     const next = change(JSON.parse(JSON.stringify(index)));

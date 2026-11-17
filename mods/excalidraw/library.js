@@ -1,6 +1,6 @@
 // The Excalidraw library's pure parts (ported from the retired Diagrams library). Drawings are *.excalidraw files in one
 // folder (<appHome>/data/excalidraw); the mod keeps index.json beside them, the durable record of what it has seen:
-// title, repos, tags, pinned, who made and last edited each, and when. A drawing may declare its repos itself
+// title, repos, tags, pinned, who made it, and when it was made and changed. A drawing may declare its repos itself
 // (appState.herdr_repos = "~/code/a,~/code/b"); those are merged in on every change, never removed. Nothing expires but
 // deleted drawings: they sit in .trash/ for TRASH_DAYS.
 
@@ -19,8 +19,7 @@ export const repoName = (key) => String(key ?? "").replace(/\/\.git\/?$/, "").re
 export const declaredRepos = (graph, home) => String(graph?.herdr_repos ?? "").split(",").map((s) => s.trim()).filter(Boolean)
   .map((p) => (p.startsWith("~/") ? home + p.slice(1) : p));
 
-// What the mod saw of a file now -> its new index entry. `sum` is the file's hash; prev.wrote is the hash of the
-// last text the canvas wrote, so a change that matches it was the canvas's. `named` marks a title the person set in
+// What the mod saw of a file now -> its new index entry. `sum` is the file's fingerprint. `named` marks a title the person set in
 // the library, which the file's own label no longer overrides.
 export function observe(prev, { sum, title, nodes, repos = [], tags = [], now }) {
   const changed = !prev || prev.sum !== sum;
@@ -32,7 +31,6 @@ export function observe(prev, { sum, title, nodes, repos = [], tags = [], now })
     nodes, sum, repos: merged,
     tags: [...new Set([...(prev?.tags ?? []), ...tags])],
     updated: changed ? now : prev.updated,
-    edited: changed ? (prev?.wrote === sum ? "canvas" : "agent") : prev.edited ?? "agent",
   };
 }
 
@@ -88,6 +86,3 @@ export function knownRepos(entries, here) {
   return [...(here ? [here] : []), ...[...by.values()].sort((a, b) => repoName(a.key).localeCompare(repoName(b.key)))];
 }
 export const toggleRepo = (repos, repo) => (repos.some((r) => r.key === repo.key) ? repos.filter((r) => r.key !== repo.key) : [...repos, repo]);
-
-// A page tab's name: agent titles read "Topic: what it shows", so the topic; a title without one stays whole.
-export const shortTitle = (title) => String(title).split(/: | — | - /)[0].trim() || String(title);
