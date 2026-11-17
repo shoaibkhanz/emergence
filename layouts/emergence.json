@@ -195,6 +195,16 @@
                       }
                     },
                     {
+                      "id": "excalidraw",
+                      "type": "block",
+                      "content": {
+                        "mod": "excalidraw",
+                        "props": {
+                          "panel": true
+                        }
+                      }
+                    },
+                    {
                       "id": "prs",
                       "type": "block",
                       "content": {

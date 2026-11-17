@@ -385,6 +385,32 @@ a choice is segments in a `raised` track, the chosen one `background`. Keys are 
     (Herdr can't place a window, so the left and top stay put), pressing gives it the keyboard so Esc still closes it,
     min 640×420, never past the screen; the size is kept in `shared("pr-review.wsize")`. A window `mod.open` puts up
     (agent-graph's deep link, the CLI) hands over to a centred one at once.
+- **Excalidraw panel.**
+  - The whiteboard (`mods/excalidraw`, SOURCE.md): open drawing, tools across the top, zoom and file at the bottom. It
+    follows `data/excalidraw/open.json`: that names the drawing it shows, it starts from it (the last drawing only when
+    none is named), and writing another path there opens that one, fitted to view; an outside change to the open file
+    reloads it, fitted. Only the panel copy reads or writes the file.
+  - Theme: a dark theme draws on black, panels in the theme's colours, every colour through Excalidraw's dark-mode
+    filter (`theme.js`: invert 93%, hue-rotate 180°; files keep their own colours); a light theme draws on white in
+    Excalidraw's own light panels. A theme switch rebuilds the canvas.
+  - Bottom right, a card: **All drawings ⌘O** (also `mod.open:excalidraw`, "Open…") and, in the panel, **Full size**: the
+    drawing in an 0.92 × 0.88 window (`open.js` openWindow, key `excalidraw-big`) with the house title row and Esc chip;
+    Esc closes it once nothing is selected. Pinch and ⌘-scroll zoom about the pointer; zoom, scroll and the redrawn
+    layers change in one step (at most one redraw per 40 ms, the steps in between folded in), so nothing flickers.
+  - Under the drawing, the Agents graph's background (`backdrop.js`, its copy, kept equal by a test; `ground.js`): the
+    same Settings rows, Grain, Background and Background strength. Plain patterns build in render from cached tiles;
+    fading dots, gravity and topographic follow the boxes (rectangles, ellipses, diamonds, images; not arrows, words or
+    frames around other boxes), build with their paths in a timer step of their own (topographic at full size ~15 ms,
+    paths ~13 ms), slide with any pan since and hide while a zoom catches up. Ink: the panels' foreground.
+  - The library (`library-view.js`, ported from the retired Diagrams library: `library.js` sections, search, repo keys,
+    trash; `store.js` the folder, `index.json` written compare-and-swap, fingerprints from one `stat` listing so only
+    changed drawings are read; `preview.js` outline SVGs in one ink): a 680 × 640 movable window. This repo | Pinned |
+    All, search, ↵ opens in the panel (or the big window without one), ⌘S pin, ⌘R rename, ⌘K repos, ⌘⌫ trash (30
+    days); the selected row has buttons for each, Duplicate too. Herdr's global ⌘P / ⌘D are left alone. Choose
+    folder… opens the mod's own folder picker (`props.picker`), which sends a drawing to the panel or a new tab; never
+    `pane.split`. A drawing's repos: the index's, plus any it names in `appState.herdr_repos`.
+  - Agents: skill `herdr-excalidraw` (`dot2excalidraw.py`: DOT laid out by Graphviz, every box sized by the panel's text
+    metric and fixed, arrows bound, clusters as frames; `--into` adds beside what's drawn, `--open` shows it).
 - **Library panel.**
   - Skills and Plugins tabs. Plugins are the installed Claude Code plugins; open one to see the skills it ships.
   - A skill opens in one reusable, frameless window (SKILL.md, references, scripts) that resizes from the right and bottom
@@ -481,6 +507,9 @@ a choice is segments in a `raised` track, the chosen one `background`. Keys are 
 - **`mods/worktree-sweep`**: the bulk delete dialog. Props `{ items, ticked }` from spaces-plus, `exec` (`git status
   --porcelain` per row), `setShared("spaces.sweep" | "emergence.over")`, `run("spaces-plus.sweep")`. `lib.js`
   (`plan`, `tally`, `question`, `choices`, `tick`, `step`) is pure and tested.
+- **`mods/excalidraw`**: coyaSONG's Excalidraw mod (MIT) as copied from herdr-orca, bundling `@excalidraw/math`,
+  `common` and `element`; our parts are `theme.js` and `handoff.js` (tested in `excalidraw.test.js`), called from lines
+  in `main.js` marked `// herdr-mods:`.
 - **`mods/agent-graph`**: `lib.js` builds the tree and lays it out. It runs `git rev-parse` per folder (30s cache) and
   `gh pr list` per repo (60s), and draws edges with `PathBuilder` + `window.paint_path`. `subagents.py` (python3
   stdlib, tested by `test_subagents.py`) takes the local claude and omp agents (`{address, pid, harness, top}`) and

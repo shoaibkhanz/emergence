@@ -38,6 +38,8 @@ jobs:
         run: python3 mods/side/test_side.py
       - name: Agents graph sub-agent reader tests
         run: python3 mods/agent-graph/test_subagents.py
+      - name: Excalidraw skill converter tests (skipped without Graphviz)
+        run: python3 skills/herdr-excalidraw/test_dot2excalidraw.py
       - name: Installer and updater against throwaway homes
         run: bash install.test.sh
       - name: shellcheck

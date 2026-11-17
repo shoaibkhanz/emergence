@@ -9,6 +9,7 @@ const PANELS = [
   ["files", "Files", "mods/files/file.svg", 368],
   ["changes", "Changes", "mods/changes/changes.svg", 368],
   ["graph", "Agents", "mods/tabs-plus/graph.svg", 620],
+  ["excalidraw", "Excalidraw", "mods/tabs-plus/excalidraw.svg", 760], // mods/excalidraw: a whiteboard agents draw on too (skills/herdr-excalidraw)
   ["prs", "PRs", "mods/tabs-plus/pr.svg", 860],
   ["skills", "Library", "mods/tabs-plus/skills.svg", 440],
   ["usage", "Usage", "mods/tabs-plus/usage.svg", 760],

@@ -36,26 +36,26 @@ function historyRow(get) {
     options: HISTORY.map(([d, label]) => ({ value: d, label, writes: [["agent-graph.history", d]] })) };
 }
 
-// What's drawn behind the Agents graph: agent-graph lib PATTERNS, by name (a test keeps the two lists equal).
-// agent-graph reads agent-graph.pattern. More than a few options show as a ‹ name › stepper.
+// What's drawn behind the Agents graph and the Excalidraw canvas: agent-graph lib PATTERNS, by name (a test keeps the
+// two lists equal). agent-graph and excalidraw read agent-graph.pattern. More than a few options show as a ‹ name › stepper.
 export const PATTERN = [["none", "None"], ["sparse", "Sparse dots"], ["gravity", "Gravity"], ["fade", "Fading dots"],
   ["iso", "Isometric dots"], ["graph", "Graph paper"], ["topo", "Topographic"]];
 function patternRow(get) {
   const v = get("agent-graph.pattern"), value = PATTERN.some(([k]) => k === v) ? v : "sparse";
   return { id: "agents.pattern", name: "Background", kind: "choice", value,
-    about: "What's drawn behind the Agents graph.",
+    about: "What's drawn behind the Agents graph and the Excalidraw canvas.",
     options: PATTERN.map(([k, label]) => ({ value: k, label, writes: [["agent-graph.pattern", k]] })) };
 }
 
-// The film grain under the Agents graph's background, 0 (off) to 25%. agent-graph reads agent-graph.filmGrain.
+// The film grain under the Agents graph's and the Excalidraw canvas's background, 0 (off) to 25%. Both read agent-graph.filmGrain.
 const GRAIN = [0, 5, 10, 15, 20, 25];
 function grainRow(get) {
   const v = get("agent-graph.filmGrain"), value = GRAIN.includes(v) ? v : 10;
-  return { id: "agents.grain", name: "Grain", kind: "choice", value, about: "Fine film grain over the whole canvas.",
+  return { id: "agents.grain", name: "Grain", kind: "choice", value, about: "Fine film grain over the Agents graph and the Excalidraw canvas.",
     options: GRAIN.map((p) => ({ value: p, label: p ? `${p}%` : "Off", writes: [["agent-graph.filmGrain", p]] })) };
 }
 
-// How strongly the background behind the Agents graph shows, 0 (off) to 25%. agent-graph reads agent-graph.dots.
+// How strongly the background behind the Agents graph and the Excalidraw canvas shows, 0 (off) to 25%. Both read agent-graph.dots.
 export const DOTS = [0, 5, 10, 15, 20, 25], DOTS_DEFAULT = 25;
 function dotsRow(get) {
   const v = get("agent-graph.dots"), value = DOTS.includes(v) ? v : DOTS_DEFAULT;

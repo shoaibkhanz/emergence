@@ -65,6 +65,21 @@ it; it also opens in its own window.
 Every skill in `~/.agents`, `~/.claude`, `~/.codex`, `~/.config/opencode` and the repo, plus Claude Code plugins, in
 one searchable list showing where each lives.
 
+### Excalidraw
+
+A whiteboard in the side panel: Excalidraw's shapes, arrows, freehand pen, text and eraser, drawn by Herdr itself (the
+mod bundles Excalidraw's drawing engine; no browser). Drawings are ordinary `.excalidraw` files, so they also open on
+excalidraw.com. A dark theme gets a black canvas and the drawing as Excalidraw's dark mode shows it; a light theme, a
+white canvas. Under the drawing sit the Agents graph's background and grain (Settings: Background, Background strength,
+Grain).
+
+**All drawings ⌘O** opens the library: every drawing with a preview, this repo's first, search, pin, rename, duplicate,
+file under repos, trash (back for 30 days); **Full size** opens the drawing big, in a window (Esc closes it).
+
+Agents draw on it too: the `herdr-excalidraw` skill (linked by `install.sh`) has them add to the drawing you have open,
+or start one and show it. For boxes and arrows they write a small DOT graph and the skill's converter lays it out with
+Graphviz, sizing every box to its words. Ask "draw how checkout works in Excalidraw".
+
 ### Usage (⌘⇧U)
 
 Cost and output across omp, Claude Code, Codex, OpenCode and pi, from their local logs and your git history. Any
@@ -176,6 +191,8 @@ Not ⌘⇧J (Homerow's scroll mode); not ⌘⇧B (Blueprint).
   ran; never prompts), cached in Herdr's `data/usage/`; `output.py` runs `git log` (diffing each commit once), `gh`/`glab` and `git worktree list`.
 - **Spaces**: `git rev-parse`, `rev-list`, `worktree list`, `for-each-ref`; delete runs `git worktree remove`.
 - **Tab bar**: an hourly `git fetch` of `main` into your clone, for the [Update](#update-or-remove) chip.
+- **Excalidraw**: reads and writes the open drawing and `~/.config/herdr-app/data/excalidraw/open.json`; the skill's
+  converter runs `dot` (Graphviz).
 - **Inbox**: nothing outside Herdr.
 - **Status bar**: `ps`, `vm_stat`, `sysctl` every 5 s; `df` and `pmset` each minute. System, while open: the same, plus
   `lsof` once and, on Disk, `git worktree list` and `du -sk` per worktree (kept 5 minutes).
@@ -244,4 +261,6 @@ above but `herdr-app check` on each push, and `main` is never force-pushed (clon
 Edits need a reload: switch to `main`, then back to `emergence`. Read [`docs/platform-notes.md`](docs/platform-notes.md)
 first.
 
-MIT ([`LICENSE`](LICENSE)). Icons: [Lucide](https://lucide.dev) (ISC); omp's icon is its own (MIT).
+MIT ([`LICENSE`](LICENSE)). Icons: [Lucide](https://lucide.dev) (ISC); omp's icon is its own (MIT). The Excalidraw mod is coyaSONG's
+(MIT), copied from [herdr-orca](https://github.com/VladTemp27/herdr-orca); it bundles Excalidraw (MIT) and Excalifont
+(OFL): see [`mods/excalidraw/SOURCE.md`](mods/excalidraw/SOURCE.md).
