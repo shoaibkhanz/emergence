@@ -17,9 +17,10 @@ Or run it yourself:
 curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/emergence/main/install.sh | bash
 ```
 
-It clones to `~/code/emergence` (`EMERGENCE_DIR` moves it), links every mod, adds the [keys](#keys) and switches to
-the `emergence` layout (`⌘⇧L` cycles back). Old copies of its mods are moved to `~/.config/herdr-app/replaced/`. Needs
-Herdr 0.1.15+, `git`, `python3`; `gh` (or `glab`) for pull requests. To update later, see [Update](#update-or-remove).
+It clones to `~/code/emergence` (`EMERGENCE_DIR` moves it), links every mod and its agent skill (into
+`~/.claude/skills`), adds the [keys](#keys) and switches to the `emergence` layout (`⌘⇧L` cycles back). Old copies of its mods are moved to
+`~/.config/herdr-app/replaced/`. Needs Herdr 0.1.15+, `git`, `python3`; `gh` (or `glab`) for pull requests; Graphviz
+(`brew install graphviz`) for agents' Excalidraw drawings. To update later, see [Update](#update-or-remove).
 
 ## What you get
 
@@ -67,18 +68,11 @@ one searchable list showing where each lives.
 
 ### Excalidraw
 
-A whiteboard in the side panel: Excalidraw's shapes, arrows, freehand pen, text and eraser, drawn by Herdr itself (the
-mod bundles Excalidraw's drawing engine; no browser). Drawings are ordinary `.excalidraw` files, so they also open on
-excalidraw.com. A dark theme gets a black canvas and the drawing as Excalidraw's dark mode shows it; a light theme, a
-white canvas. Under the drawing sit the Agents graph's background and grain (Settings: Background, Background strength,
-Grain).
-
-**All drawings ⌘O** opens the library: every drawing with a preview, this repo's first, search, pin, rename, duplicate,
-file under repos, trash (back for 30 days); **Full size** opens the drawing big, in a window (Esc closes it).
-
-Agents draw on it too: the `herdr-excalidraw` skill (linked by `install.sh`) has them add to the drawing you have open,
-or start one and show it. For boxes and arrows they write a small DOT graph and the skill's converter lays it out with
-Graphviz, sizing every box to its words. Ask "draw how checkout works in Excalidraw".
+A whiteboard in the side panel, drawn natively by Herdr (no browser). Drawings are ordinary `.excalidraw` files. Dark
+themes get a black canvas, light themes a white one, with the Agents graph's background and grain underneath.
+**All drawings ⌘O** opens the library (previews, search, pin, rename, repos, a 30-day trash); **Full size** opens the
+drawing in a big window. Agents draw on it too, through the `herdr-excalidraw` skill: ask "draw how checkout works in
+Excalidraw".
 
 ### Usage (⌘⇧U)
 
@@ -191,8 +185,7 @@ Not ⌘⇧J (Homerow's scroll mode); not ⌘⇧B (Blueprint).
   ran; never prompts), cached in Herdr's `data/usage/`; `output.py` runs `git log` (diffing each commit once), `gh`/`glab` and `git worktree list`.
 - **Spaces**: `git rev-parse`, `rev-list`, `worktree list`, `for-each-ref`; delete runs `git worktree remove`.
 - **Tab bar**: an hourly `git fetch` of `main` into your clone, for the [Update](#update-or-remove) chip.
-- **Excalidraw**: reads and writes the open drawing and `~/.config/herdr-app/data/excalidraw/open.json`; the skill's
-  converter runs `dot` (Graphviz).
+- **Excalidraw**: reads and writes drawings in `~/.config/herdr-app/data/excalidraw`; the agent skill runs `dot`.
 - **Inbox**: nothing outside Herdr.
 - **Status bar**: `ps`, `vm_stat`, `sysctl` every 5 s; `df` and `pmset` each minute. System, while open: the same, plus
   `lsof` once and, on Disk, `git worktree list` and `du -sk` per worktree (kept 5 minutes).
@@ -206,10 +199,11 @@ hourly). Click it: it pulls, relinks new mods and keys, and reloads the layout. 
 with no commits of its own; otherwise pull yourself and rerun the install command above.
 
 **Remove**: `herdr-app do layout.switch --name main`, delete the links
-(`find ~/.config/herdr-app/mods ~/.config/herdr-app/layouts -maxdepth 1 -lname "$HOME/code/emergence/*" -delete`, with
-your `EMERGENCE_DIR` if you moved it), then remove the `tabs-plus.*`, `mod.open:jump`, `mod.open:emergence-keys`,
-`mod.open:emergence-settings`, `mod:spaces-plus`, `mod:inbox` and `mod:ports` entries from
-`~/.config/herdr-app/keys.json` and `omp` from `programs.json`, and delete the clone.
+(`find ~/.config/herdr-app/mods ~/.config/herdr-app/layouts ~/.claude/skills -maxdepth 1 -lname "$HOME/code/emergence/*" -delete`,
+with your `EMERGENCE_DIR` if you moved it), then remove the `tabs-plus.*`, `side.chat`, `mod.open:jump`,
+`mod.open:emergence-keys`, `mod.open:emergence-settings`, `mod:spaces-plus`, `mod:inbox`, `mod:ports` and
+`mod:side-chats` entries from `~/.config/herdr-app/keys.json` and `omp` from `programs.json`, and delete the clone.
+Drawings stay in `~/.config/herdr-app/data/excalidraw`.
 
 ## Optional: ctrl-h/j/k/l between panes
 
@@ -233,7 +227,8 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/edi
 
 | Path | What |
 |---|---|
-| `mods/agent-graph`, `pr-review`, `skills`, `usage` | the four panels |
+| `mods/agent-graph`, `pr-review`, `skills`, `usage`, `excalidraw` | the side panels |
+| `mods/side`, `side-chats` | side chats beside an agent, and their rows in the sidebar |
 | `mods/inbox`, `spaces-plus`, `ports` | the sidebar |
 | `mods/port-card` | a port's card |
 | `mods/status-plus` | the status bar and its System popup |
@@ -243,6 +238,7 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/edi
 | `mods/emergence-settings` | ⌘⌥, |
 | `mods/confirm-safe`, `row-menu`, `worktree-sweep` | Cancel-first confirm; right-click menu; bulk worktree delete |
 | `mods/nav-keys` | ctrl-h/j/k/l |
+| `skills/herdr-excalidraw` | the agent skill for drawing on Excalidraw |
 | `layouts/emergence.json` | the layout |
 | `RECIPE.md` | how to rebuild it |
 
@@ -251,7 +247,8 @@ curl -fsSL https://raw.githubusercontent.com/shoaibkhanz/herdr-nav-plus/main/edi
 ```sh
 herdr-app check ~/.config/herdr-app/mods/<name>   # load and render once
 (cd mods && bun test)                              # every mod; also python3 mods/usage/test_scan.py,
-                                                  # python3 mods/agent-graph/test_subagents.py
+                                                  # python3 mods/agent-graph/test_subagents.py, python3 mods/side/test_side.py,
+                                                  # python3 skills/herdr-excalidraw/test_dot2excalidraw.py
 bash install.test.sh                              # the installer and updater, in throwaway homes
 ```
 
