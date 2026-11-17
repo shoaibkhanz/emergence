@@ -194,6 +194,41 @@ export const subItems = (items, scan, since = 0) => items.flatMap((i) => {
     ...done.map((s) => card(s, hid))];
 });
 
+// The canvas backdrop: Emergence settings' Background (shared agent-graph.pattern). Marks sit on a grid that moves with
+// the view; its gap follows the zoom, halved or doubled to stay near the style's own. Gravity is dots that lean toward
+// the cards (strongest at a card's edge, gone a few gaps out, at most half a gap), so dragging a card drags the dots.
+export const PATTERNS = {
+  dots: { gap: 36, r: 0.75 },
+  sparse: { gap: 64, r: 1 },
+  crosses: { gap: 72, arm: 3.5 },
+  gravity: { gap: 36, r: 0.75, pull: true },
+};
+export function backdrop(style, W, H, z, vx, vy, cards = []) {
+  const p = PATTERNS[style] ?? PATTERNS.dots;
+  let gap = p.gap * z;
+  while (gap < p.gap * 0.6) gap *= 2;
+  while (gap > p.gap * 1.6) gap /= 2;
+  const ox = ((vx % gap) + gap) % gap, oy = ((vy % gap) + gap) % gap, pts = [];
+  for (let y = oy - gap; y < H + gap; y += gap)
+    for (let x = ox - gap; x < W + gap; x += gap) pts.push(p.pull && cards.length ? bend(x, y, cards, gap) : [x, y]);
+  return { kind: p.arm ? "crosses" : "dots", r: p.r, arm: p.arm, gap, pts };
+}
+function bend(x, y, cards, gap) {
+  let dx = 0, dy = 0;
+  for (const c of cards) {
+    const ex = c.x + c.w / 2 - x, ey = c.y + c.h / 2 - y, d = Math.hypot(ex, ey) || 1;
+    const edge = Math.hypot(Math.max(0, Math.abs(ex) - c.w / 2), Math.max(0, Math.abs(ey) - c.h / 2)); // 0 inside the card
+    const f = gap * 0.45 * Math.exp(-edge / (gap * 1.1)); // strongest at the card's edge, gone a few gaps out
+    dx += (ex / d) * f; dy += (ey / d) * f;
+  }
+  const k = Math.min(1, gap / 2 / (Math.hypot(dx, dy) || 1));
+  return [x + dx * k, y + dy * k];
+}
+
+// The dot grid's strength: Emergence settings' Background dots (shared agent-graph.dots, percent, 0 to 25).
+export const DOTS_DEFAULT = 25;
+export const dotsAlpha = (p) => (Number.isFinite(p) && p >= 0 && p <= 25 ? p : DOTS_DEFAULT) / 100;
+
 // The oldest finished sub-agent shown: Emergence settings' Sub-agent history (shared agent-graph.history: 1, 7 or
 // 30 days), 30 at most since Claude Code deletes transcripts after that.
 export const historySince = (days, now) => now - ([1, 7, 30].includes(days) ? days : 30) * 86_400_000;

@@ -7,7 +7,7 @@ import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout, appHome } from "herdr";
 import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
-  subItems, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners, worktreeNote, GONE, detailRequest, historySince } from "./lib.js";
+  subItems, dotsAlpha, backdrop, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners, worktreeNote, GONE, detailRequest, historySince } from "./lib.js";
 import { Detail } from "./detail.js";
 import { list } from "./list.js";
 
@@ -451,6 +451,12 @@ export default class AgentGraph extends View {
         else this.view = { ...v, x: v.x + e.delta.x / Z, y: v.y + e.delta.y / Z };
         cx.notify();
       })
+      .on_pinch((e, cx) => { // trackpad pinch zooms about the fingers
+        if (!this.fitted) return;
+        const r = e.local_position ?? (e.bounds ? { x: e.position.x - e.bounds.x, y: e.position.y - e.bounds.y } : null);
+        this.zoomAt(1 + e.delta, r ? r.x / Z : this.size.width / 2, r ? r.y / Z : this.size.height / 2);
+        cx.notify();
+      })
       .on_mouse_down("left", (e) => {
         if (this.fitted) this.drag = { x: e.position.x, y: e.position.y, v: { ...(this.view ?? this.fitted) }, moved: false };
       })
@@ -494,14 +500,17 @@ export default class AgentGraph extends View {
     const layer = (path, color) => div().absolute().left(0).top(0).w(W).h(H).child(window.paint_path(path, color));
     const els = [];
 
-    // Dot grid that moves with the drawing.
-    let s = 24 * z;
-    while (s < 14) s *= 2;
-    while (s > 40) s /= 2;
-    const ox = ((v.x % s) + s) % s, oy = ((v.y % s) + s) % s, d = 1.5;
-    let grid = PathBuilder.stroke(d).dash_array([d, s - d]);
-    for (let y = oy; y < H; y += s) grid = grid.move_to(ox - d / 2, y).line_to(W + s, y);
-    els.push(layer(grid.build(), alpha(t.foreground, 0.07)));
+    // The backdrop that moves with the drawing: Settings' Background (dots, sparse, crosses, gravity) at its strength.
+    const strength = dotsAlpha(shared("agent-graph.dots"));
+    if (strength) {
+      const cards = L.nodes.map((n) => ({ x: X(n.x), y: Y(n.y), w: n.w * z, h: n.h * z }));
+      const bd = backdrop(shared("agent-graph.pattern"), W, H, z, v.x, v.y, cards);
+      let marks = bd.kind === "crosses" ? PathBuilder.stroke(1) : PathBuilder.fill();
+      for (const [x, y] of bd.pts) marks = bd.kind === "crosses"
+        ? marks.move_to(x - bd.arm, y).line_to(x + bd.arm, y).move_to(x, y - bd.arm).line_to(x, y + bd.arm)
+        : marks.add_polygon([[x - bd.r, y - bd.r], [x + bd.r, y - bd.r], [x + bd.r, y + bd.r], [x - bd.r, y + bd.r]], true);
+      els.push(layer(marks.build(), alpha(t.foreground, strength)));
+    }
 
     // One stroke path per status colour; smooth horizontal S-curves.
     const ink = { blocked: t.blocked, done: alpha(t.done, 0.75), working: alpha(t.working, 0.75), idle: t.border };
@@ -523,7 +532,7 @@ export default class AgentGraph extends View {
       if (n.data.folded && !n.data.history) els.push(h_flex().absolute().left(x + 12 * z).top(y + (n.h - 10) * z).w(w - 36 * z).justify_end()
         .child(this.summaryChip(t, n.data, z)));
     }
-    // Zoom controls (⌘/ctrl-scroll and - / = zoom too): − · the zoom (click: fit) · +.
+    // Zoom controls (pinch, ⌘/ctrl-scroll and - / = zoom too): − · the zoom (click: fit) · +.
     const zb = (id, tip, label, onClick) => h_flex().id(id).h(24).px(8).items_center().justify_center().text_size(12).text_color(t.muted)
       .cursor_pointer().tooltip(tip).hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { onClick(); cx.notify(); }).child(label);

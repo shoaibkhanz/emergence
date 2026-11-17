@@ -36,10 +36,29 @@ function historyRow(get) {
     options: HISTORY.map(([d, label]) => ({ value: d, label, writes: [["agent-graph.history", d]] })) };
 }
 
+// What's drawn behind the Agents graph (agent-graph lib PATTERNS): dots, sparse dots, crosses, or dots that lean
+// toward the cards (gravity). agent-graph reads agent-graph.pattern.
+const PATTERN = [["dots", "Dots"], ["sparse", "Sparse"], ["crosses", "Crosses"], ["gravity", "Gravity"]];
+function patternRow(get) {
+  const v = get("agent-graph.pattern"), value = PATTERN.some(([k]) => k === v) ? v : "dots";
+  return { id: "agents.pattern", name: "Background", kind: "choice", value,
+    about: "What's drawn behind the Agents graph.",
+    options: PATTERN.map(([k, label]) => ({ value: k, label, writes: [["agent-graph.pattern", k]] })) };
+}
+
+// How strongly the background behind the Agents graph shows, 0 (off) to 25%. agent-graph reads agent-graph.dots.
+export const DOTS = [0, 5, 10, 15, 20, 25], DOTS_DEFAULT = 25;
+function dotsRow(get) {
+  const v = get("agent-graph.dots"), value = DOTS.includes(v) ? v : DOTS_DEFAULT;
+  return { id: "agents.dots", name: "Background strength", kind: "choice", value,
+    about: "How strongly the background shows.",
+    options: DOTS.map((p) => ({ value: p, label: p ? `${p}%` : "Off", writes: [["agent-graph.dots", p]] })) };
+}
+
 export function sections(get, known) {
   const dots = get("sidebar.folded") === "dots", split = get("pr-review.split") === true, big = get("skills.big") === true;
   return [
-    ...(get("agent-graph.historyOffered") ? [{ title: "Agents", rows: [historyRow(get)] }] : []),
+    ...(get("agent-graph.historyOffered") ? [{ title: "Agents", rows: [historyRow(get), patternRow(get), dotsRow(get)] }] : []),
     { title: "Sidebar", rows: [flip("sidebar.dots", "Fold to dots",
       "⌘B folds the sidebar to a square per space, not a rail of avatars (⌘⌥B steps).",
       dots, [["sidebar.folded", dots ? "rail" : "dots"]])] },

@@ -62,6 +62,27 @@ test("sub-agent history: shown only once the Agents graph offers it; 1 day, 1 we
   expect(toggles(sections(of({ "agent-graph.historyOffered": true }), null)).map((x) => x.id)).toContain("agents.history");
 });
 
+test("background: under Agents with history; dots, sparse, crosses or gravity, dots unless chosen", () => {
+  expect(row(sections(of({}), null), "agents.pattern")).toBeUndefined();
+  const r = row(sections(of({ "agent-graph.historyOffered": true }), null), "agents.pattern");
+  expect(r).toMatchObject({ kind: "choice", value: "dots", name: "Background" });
+  expect(r.options.map((o) => o.label)).toEqual(["Dots", "Sparse", "Crosses", "Gravity"]);
+  expect(r.options[3].writes).toEqual([["agent-graph.pattern", "gravity"]]);
+  expect(row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.pattern": "lines" }), null), "agents.pattern").value).toBe("dots");
+  expect(row(sections(of({ "agent-graph.historyOffered": true }), null), "agents.dots").name).toBe("Background strength");
+});
+
+test("dots: under Agents with history; Off to 25% in steps of 5, 25% unless chosen", () => {
+  expect(row(sections(of({}), null), "agents.dots")).toBeUndefined();
+  const r = row(sections(of({ "agent-graph.historyOffered": true }), null), "agents.dots");
+  expect(r).toMatchObject({ kind: "choice", value: 25 });
+  expect(r.options.map((o) => o.label)).toEqual(["Off", "5%", "10%", "15%", "20%", "25%"]);
+  expect(r.options[5].writes).toEqual([["agent-graph.dots", 25]]);
+  expect(row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.dots": 0 }), null), "agents.dots").value).toBe(0);
+  expect(row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.dots": 40 }), null), "agents.dots").value).toBe(25); // past the cap
+  expect(choose({ ...r, value: 25 }, 1)).toEqual([]);
+});
+
 test("choose: ←/→ step a choice, stopping at its ends; ↵ (0) goes round; a switch just flips", () => {
   const r = row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.history": 7 }), null), "agents.history");
   expect(choose(r, -1)).toEqual([["agent-graph.history", 1]]);

@@ -122,7 +122,7 @@ session it has read.
 <img src="docs/images/settings.png" alt="Emergence settings" width="400">
 
 Every switch the mods keep, in one dialog, saved as you change it: how far back Agents lists finished sub-agents
-(1 day, 1 week or 30 days), the sidebar's fold, side-by-side diffs, the Library's window size, and which harnesses a
+(1 day, 1 week or 30 days), what's behind the Agents graph (dots, sparse dots, crosses, or gravity: dots that lean toward the cards) and how strongly it shows, the sidebar's fold, side-by-side diffs, the Library's window size, and which harnesses a
 side chat (⌘⌥/) opens for.
 
 ### Status bar

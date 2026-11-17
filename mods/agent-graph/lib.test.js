@@ -405,3 +405,38 @@ test("subItems since / historySince: finished sub-agents older than the window d
   expect(historySince(undefined, now)).toBe(now - 30 * DAY); // 30 unless chosen
   expect(historySince(90, now)).toBe(now - 30 * DAY); // never past what's kept
 });
+
+test("dots: Emergence settings' agent-graph.dots (0-25%) as an alpha, 25% when unset or out of range, same default both sides", async () => {
+  const { dotsAlpha, DOTS_DEFAULT } = await import("./lib.js");
+  const settings = await import("../emergence-settings/lib.js");
+  expect(DOTS_DEFAULT).toBe(settings.DOTS_DEFAULT);
+  expect(dotsAlpha(25)).toBe(0.25);
+  expect(dotsAlpha(0)).toBe(0);
+  expect(dotsAlpha(undefined)).toBe(0.25);
+  expect(dotsAlpha(40)).toBe(0.25);
+  expect(dotsAlpha("10")).toBe(0.25);
+});
+
+test("backdrop: a style's marks across the canvas, moving with the view; fewer for sparse; gravity bends toward cards", async () => {
+  const { backdrop, PATTERNS } = await import("./lib.js");
+  const W = 640, H = 480;
+  const dots = backdrop("dots", W, H, 1, 0, 0);
+  expect(dots.kind).toBe("dots");
+  const n = (W / PATTERNS.dots.gap + 2) * (H / PATTERNS.dots.gap + 2);
+  expect(dots.pts.length).toBeGreaterThan(n * 0.8);
+  expect(dots.pts.length).toBeLessThan(n * 1.2);
+  expect(backdrop("sparse", W, H, 1, 0, 0).pts.length).toBeLessThan(dots.pts.length / 2);
+  expect(backdrop("crosses", W, H, 1, 0, 0).kind).toBe("crosses");
+  expect(backdrop("nope", W, H, 1, 0, 0).gap).toBe(dots.gap); // unknown: dots
+  // panning by a whole gap draws the same marks
+  expect(backdrop("dots", W, H, 1, PATTERNS.dots.gap, 0).pts).toEqual(dots.pts);
+  // gravity: a point near a card moves toward it, never by more than half a gap; far points barely move
+  const card = { x: 300, y: 200, w: 120, h: 60 };
+  const flat = backdrop("gravity", W, H, 1, 0, 0), bent = backdrop("gravity", W, H, 1, 0, 0, [card]);
+  const shift = flat.pts.map(([x, y], i) => [bent.pts[i][0] - x, bent.pts[i][1] - y, x, y]);
+  const near = shift.find(([, , x, y]) => x > 430 && x < 470 && Math.abs(y - 230) < 20);
+  expect(near[0]).toBeLessThan(0); // pulled left, toward the card
+  expect(Math.max(...shift.map(([dx, dy]) => Math.hypot(dx, dy)))).toBeLessThanOrEqual(flat.gap / 2 + 1e-9);
+  const far = shift.find(([, , x, y]) => x < 20 && y < 20);
+  expect(Math.hypot(far[0], far[1])).toBeLessThan(2);
+});
