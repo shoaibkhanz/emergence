@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { harnessOf, decide, noticeFor, tabsOf, SLOTS, slotView, claim, bannerOf, withoutTab, INTRO, withoutStarting, withoutStale } from "./lib.js";
+import { harnessOf, decide, noticeFor, tabsOf, SLOTS, slotView, started, claim, bannerOf, withoutTab, INTRO, withoutStarting, withoutStale } from "./lib.js";
 
 const installed = { claude: true, opencode: true, codex: true, pi: false, omp: true };
 const supported = ["claude", "opencode"];
@@ -57,6 +57,19 @@ test("slotView: open while an agent runs or just handed one; idle hosts; slots w
   });
   // a slot Herdr dropped from the layout is never offered
   expect(slotView([], ["side-2", "side-5"], {}, 0)).toEqual({ open: [], idle: [], missing: ["side-2", "side-5"] });
+});
+
+test("slotView: a chat that started and ended is idle at once, not after the hand-over window", () => {
+  const tabs = { "side-1": { at: 10000, started: true } }; // handed 2s ago, ran, ended
+  expect(slotView([T("side-1", false)], ALL, tabs, 12000).open).toEqual([]);
+  expect(slotView([T("side-1", false)], ALL, { "side-1": { at: 10000 } }, 12000).open).toEqual(["side-1"]); // not yet started
+});
+
+test("started: marks handed tabs whose chat is running; null when nothing changes", () => {
+  const tabs = { "side-1": { at: 5, label: "a" }, "side-2": { at: 6 }, "side-3": { at: 7, started: true } };
+  expect(started(tabs, [T("side-1", true), T("side-2", false), T("side-3", true)]))
+    .toEqual({ ...tabs, "side-1": { at: 5, label: "a", started: true } });
+  expect(started({ "side-3": { at: 7, started: true } }, [T("side-3", true)])).toBe(null);
 });
 
 test("claim: reuse an idle host first, else start one in a slot with none, else nothing", () => {

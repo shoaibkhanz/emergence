@@ -55,8 +55,17 @@ export function slotView(terminals, layoutSlots, tabs, now) {
   const ordered = SLOTS.filter((s) => layoutSlots.includes(s));
   // a chat runs while its host labels the slot (host.py mark), never by Herdr's agent report, which outlives an ended chat
   const chatting = (t) => t.labels?.["side.chat"] === "on";
-  const open = ordered.filter((s) => live.has(s) && (chatting(live.get(s)) || now - (tabs[s]?.at ?? -Infinity) < PENDING_MS));
+  // the hand-over window covers only the wait for the chat to start: once seen running (started), its end is the end
+  const handed = (s) => !tabs[s]?.started && now - (tabs[s]?.at ?? -Infinity) < PENDING_MS;
+  const open = ordered.filter((s) => live.has(s) && (chatting(live.get(s)) || handed(s)));
   return { open, idle: ordered.filter((s) => live.has(s) && !open.includes(s)), missing: ordered.filter((s) => !live.has(s)) };
+}
+
+// Tabs whose chat is now running, marked started (slotView then stops holding them open); null when none changed.
+export function started(tabs, terminals) {
+  const on = new Set(terminals.filter((t) => t.labels?.["side.chat"] === "on").map((t) => t.name));
+  const fresh = Object.keys(tabs).filter((s) => on.has(s) && !tabs[s].started);
+  return fresh.length ? { ...tabs, ...Object.fromEntries(fresh.map((s) => [s, { ...tabs[s], started: true }])) } : null;
 }
 
 // Where a new side chat goes: an idle host first, else a slot that needs one started; null when all six are open.

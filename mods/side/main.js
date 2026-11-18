@@ -15,7 +15,7 @@ import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, hc, run, theme, props, nextCommand, focused, panes, agents, terminals, spaces, knownAgents, notify,
   openOverlay, closeOverlay, appHome, home, layout, shared, setShared } from "herdr";
-import { NAMES, harnessOf, decide, noticeFor, tabsOf, slotView, claim, bannerOf, withoutTab, INTRO, withoutStarting, withoutStale } from "./lib.js";
+import { NAMES, harnessOf, decide, noticeFor, tabsOf, slotView, started, claim, bannerOf, withoutTab, INTRO, withoutStarting, withoutStale } from "./lib.js";
 
 const SUPPORTED = ["claude", "opencode", "pi", "omp"]; // harnesses with an adapter in side.py; codex comes next
 const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(c, id)).find(Boolean));
@@ -164,6 +164,8 @@ export default class Side extends View {
   }
 
   renderPanel(t) {
+    const marked = started(shared("side.tabs") ?? {}, terminals()); // a running chat: its end closes the panel at once
+    if (marked) setShared("side.tabs", marked);
     const { open } = view(), stack = find(layout(), "side-slots");
     // A chat that ended by itself (/exit, Ctrl-D) leaves its slot: move to another open one, or close the panel as ✕
     // does (never show an idle one).
