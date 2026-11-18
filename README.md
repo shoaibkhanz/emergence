@@ -113,7 +113,8 @@ session it has read.
 
 ![The sidebar at its three sizes](docs/images/sidebar.png)
 
-- **Spaces**: every worktree under its repo, with ↑/↓ commits and agent status; greyed ones aren't open yet (↵ opens).
+- **Spaces**: every worktree under its repo, with ↑/↓ commits and agent status. Worktrees with no space open fold into
+  **Other worktrees** (→ or ↵ lists them greyed, ↵ opens one); its **Clean up…** opens the bulk delete with the merged ones ticked.
   On a worktree, ← deletes it (`git worktree remove`; refused with uncommitted changes, branch kept) and → archives it
   (hidden, still on disk; reopen from ⌘E). Right-click for the same. Both ask first (Cancel selected), then leave
   the keyboard in Spaces.

@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, settings, shared, setShared, watchFolder, window, layout, nextCommand, focused, notify } from "herdr";
-import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn, repoName, sweepItems, sweepReport, onlyHereArgs, keptNote, HEADER_H, ROW_H, SUB_ROW_H, LIST_PAD } from "./lib.js";
+import { parseWorktrees, parseTrack, mergedBranches, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn, repoName, sweepItems, sweepReport, onlyHereArgs, keptNote, HEADER_H, ROW_H, SUB_ROW_H, LIST_PAD } from "./lib.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -35,7 +35,7 @@ function place(s, ps) {
   const tabs = new Set((s.tabs ?? []).map((c) => c.id));
   return ps.find((p) => tabs.has(p.tab) && p.cwd)?.cwd || s.folder;
 }
-const rowHeight = ({ tree, kind }) => (tree || kind === "wt" ? SUB_ROW_H : ROW_H);
+const rowHeight = ({ tree, kind }) => (tree || (kind && kind !== "space") ? SUB_ROW_H : ROW_H); // worktree, Others, Clean up: sub rows
 const machineOf = (r) => (r.w ? r.w.machine : r.on) ?? null;
 const RAIL_CELL = 32;
 const railCell = (el) => h_flex().flex_none().justify_center().child(el);
@@ -89,7 +89,8 @@ export default class Spaces extends View {
     for (const state of Object.values(this.reconnecting)) state.busy = false;
     this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
     this.foldedSpaces = new Set(JSON.parse(localStorage.getItem("spaces.folded") ?? "[]"));
-    this.trees = {}; // repo -> { list, track }: its worktrees and their branches' ahead/behind
+    this.trees = {}; // repo -> { list, track, merged }: its worktrees, their branches' ahead/behind, the merged branches
+    this.othersOpen = new Set(JSON.parse(localStorage.getItem("spaces.others") ?? "[]")); // repos (main space ids) showing Other worktrees
     // The keyboard (mod.json focusable): pane.go or spaces-plus.focus gives it; ⌘B asks toggle whether it's here.
     this.fh = cx.focus_handle();
     this.cur = null; // the cursor's row key
@@ -268,11 +269,16 @@ export default class Spaces extends View {
       // Its worktrees, from the main checkout (a bare repo has none: from any of them). A machine that stops
       // answering keeps the last list.
       if (!info.linked || !repo.endsWith("/.git")) {
-        const [list, track] = await Promise.all([
+        const [list, track, merged, head] = await Promise.all([
           exec("git", ["worktree", "list", "--porcelain"], { cwd, on }),
           exec("git", ["for-each-ref", "--format=%(refname:short) %(upstream:track)", "refs/heads"], { cwd, on }),
+          // for Clean up's ticks; a failure ticks nothing, never costs the list
+          exec("git", ["for-each-ref", "--merged", "HEAD", "--format=%(refname:lstrip=2) %(objectname)", "refs/heads"], { cwd, on }).catch(() => null),
+          exec("git", ["rev-parse", "HEAD"], { cwd, on }).catch(() => null),
         ]);
-        if (list.code === 0 && track.code === 0) this.trees[info.repo] = { list: parseWorktrees(list.stdout), track: parseTrack(track.stdout) };
+        // ponytail: merged into the main checkout's HEAD (squash merges aren't seen): Clean up ticks less, never more
+        if (list.code === 0 && track.code === 0) this.trees[info.repo] = { list: parseWorktrees(list.stdout), track: parseTrack(track.stdout),
+          merged: merged?.code === 0 && head?.code === 0 ? mergedBranches(merged.stdout, head.stdout) : new Set() };
       }
     } catch {
       // Couldn't ask (the machine is away): keep what it showed, look again later.
@@ -354,7 +360,7 @@ export default class Spaces extends View {
 
   // ⇧← (or the row menu): tick several worktrees to delete at once (worktree-sweep), every repo's in one list, `target`
   // ticked. The dialog sends its plan back in shared "spaces.sweep" and runs spaces-plus.sweep.
-  askSweep(target) {
+  askSweep(target, ticks = []) {
     const ps = panes(), opens = [];
     for (const s of spaces()) {
       const g = this.git[where(s, ps)];
@@ -362,9 +368,10 @@ export default class Spaces extends View {
     }
     const items = sweepItems(this.trees, opens, shared("spaces.archived") ?? {});
     this.sweepKeys = this.resume || this.ringed; // asked from the keyboard (or its menu), as ask's
-    openOverlay({ mod: "worktree-sweep", kind: "window", key: "worktree-sweep", width: 680, height: Math.min(560, 200 + 32 * Math.max(1, items.length)),
+    // as tall as the list needs, up to most of the window (it scrolls past that)
+    openOverlay({ mod: "worktree-sweep", kind: "window", key: "worktree-sweep", width: 760, height: items.length > 10 ? 0.85 : 200 + 32 * Math.max(1, items.length),
       // An open space's top can be /private/tmp where git lists /tmp: its space id finds it too.
-      props: { items, ticked: items.filter((it) => target && (it.path === target.path || (target.space && it.space === target.space))).map((it) => it.key) } });
+      props: { items, ticked: items.filter((it) => ticks.includes(it.key) || (target && (it.path === target.path || (target.space && it.space === target.space)))).map((it) => it.key) } });
   }
 
   // The bulk delete's plan: close their open spaces, then `git worktree remove` each, --force only where the plan
@@ -442,7 +449,7 @@ export default class Spaces extends View {
   grouped(t, collapsed) {
     const archived = shared("spaces.archived") ?? {}, open = this.ordered(), back = reopened(archived, open);
     if (back.length) setShared("spaces.archived", Object.fromEntries(Object.entries(archived).filter(([k]) => !back.includes(k))));
-    const rows = collapsed ? open : addWorktrees(open, this.trees, this.foldedSpaces, archived);
+    const rows = collapsed ? open : addWorktrees(open, this.trees, this.foldedSpaces, archived, this.othersOpen);
     const remote = [...new Set([...rows.map(machineOf).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
     // A folded machine draws only its header, a rebuilt one only its header: their rows aren't the cursor's.
     const hidden = (m) => remote.length > 0 && (this.folded.has(m) || (!collapsed && (!!this.reconnecting[m] || this.rebuilt(this.machines.find((k) => k.name === m)))));
@@ -461,7 +468,8 @@ export default class Spaces extends View {
       publish(lights() + 16 + rows.length * 22);
       return rows.map((r) => this.dot(r, t));
     }
-    const draw = (r) => out(r.key, collapsed ? this.compact(r, t) : r.kind === "wt" ? this.worktreeRow(r, t) : this.row(r, t));
+    const rowOf = { wt: this.worktreeRow, others: this.othersRow, clean: this.cleanRow };
+    const draw = (r) => out(r.key, collapsed ? this.compact(r, t) : (rowOf[r.kind] ?? this.row).call(this, r, t));
     publish(HEADER_H + LIST_PAD + lights() + shown.reduce((h, r) => h + (collapsed ? 26 : rowHeight(r)), 0) + (remote.length ? (remote.length + 1) * 26 : 0));
     const loading = m => {
       const layout = machines().find(k => k.name === m)?.layout;
@@ -638,6 +646,32 @@ export default class Spaces extends View {
       .when(r.behind > 0, (el) => el.child(div().flex_none().text_size(11.5).child(`\u2193${r.behind}`)));
   }
 
+  // A repo's worktrees with no space, folded into one row (open: listed under it, then Clean up).
+  othersRow(r, t) {
+    return h_flex().id(`others-${r.key}`).px(8).h(28).flex_none().rounded(8).gap(9).items_center().text_color(t.dim)
+      .hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .when(this.ring(r.key), (el) => el.border_1().border_color(t.accent))
+      .on_click((_e, cx) => this.toggleOthers(r.id, cx))
+      .child(svg(`mods/workspace-chrome/chevron-${r.open ? "down" : "right"}.svg`).size(12).ml(22).flex_none())
+      .child(div().flex_1().min_w(0).truncate().text_size(12.5).child("Other worktrees"))
+      .child(div().flex_none().text_size(11.5).child(String(r.n)));
+  }
+
+  // Clean up: the Delete worktrees dialog with this repo's merged ones ticked; it shows changes and asks.
+  cleanRow(r, t) {
+    return h_flex().id(`clean-${r.key}`).px(8).h(28).flex_none().rounded(8).items_center().text_color(t.dim)
+      .hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .when(this.ring(r.key), (el) => el.border_1().border_color(t.accent))
+      .on_click(() => this.askSweep(null, r.ticks))
+      .child(div().ml(43).text_size(12.5).child("Clean up\u2026"));
+  }
+
+  toggleOthers(id, cx) {
+    this.othersOpen.has(id) ? this.othersOpen.delete(id) : this.othersOpen.add(id);
+    localStorage.setItem("spaces.others", JSON.stringify([...this.othersOpen]));
+    cx.notify();
+  }
+
   ring(key) {
     return this.cur === key && this.ringed;
   }
@@ -678,6 +712,8 @@ export default class Spaces extends View {
     if (k === "up" || k === "down") this.cur = rows[Math.max(0, Math.min(rows.length - 1, i + (k === "up" ? -1 : 1)))]?.key ?? null;
     else if (!r) return;
     else if ((k === "left" || k === "right") && actionTarget(r)) this.ask(k === "left" ? "delete" : "archive", actionTarget(r), cx);
+    else if (r.kind === "others" && (k === "enter" || (k === "right" && !r.open) || (k === "left" && r.open))) this.toggleOthers(r.id, cx); // → opens, ← closes
+    else if (r.kind === "clean" && k === "enter") this.askSweep(null, r.ticks);
     else if (k === "right" && r.kids && this.foldedSpaces.has(r.w.id)) this.fold(r.w.id, cx);
     else if (k === "left" && r.parent) this.cur = r.parent;
     else if (k === "left" && r.kids && !this.foldedSpaces.has(r.w.id)) this.fold(r.w.id, cx);

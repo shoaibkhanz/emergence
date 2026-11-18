@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn, sweepItems, sweepReport, onlyHereArgs, keptNote } from "./lib.js";
+import { parseWorktrees, parseTrack, mergedBranches, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn, sweepItems, sweepReport, onlyHereArgs, keptNote } from "./lib.js";
 
 const PORCELAIN = ["worktree /r", "HEAD a", "branch refs/heads/main", "",
   "worktree /w/feat", "HEAD b", "branch refs/heads/feat/x", "",
@@ -32,9 +32,9 @@ const fixture = (fTop = "/w/feat") => [
 const TREES = { [R]: { list: parseWorktrees(PORCELAIN), track: parseTrack("main \nfeat/x [ahead 1]\nold [gone]\n") } };
 
 test("addWorktrees: open worktree once, greyed after nested, main not repeated, prunable and bare skipped", () => {
-  const out = addWorktrees(fixture(), TREES, new Set());
-  expect(out.map((r) => r.key)).toEqual(["s:T", "s:F", 'p:[null,"/w/det"]', "s:D"]);
-  const [T, F, det, D] = out;
+  const out = addWorktrees(fixture(), TREES, new Set(), {}, new Set(["T"]));
+  expect(out.map((r) => r.key)).toEqual(["s:T", "s:F", "o:T", 'p:[null,"/w/det"]', "c:T", "s:D"]);
+  const [T, F, , det, , D] = out;
   expect([T.kind, T.kids, T.parent]).toEqual(["space", 2, null]);
   expect([F.kind, F.parent]).toEqual(["space", "s:T"]);
   expect(det).toEqual({ kind: "wt", key: 'p:[null,"/w/det"]', parent: "s:T", on: null, path: "/w/det", label: "det", branch: null, ahead: 0, behind: 0 }); // detached: no branch
@@ -42,13 +42,13 @@ test("addWorktrees: open worktree once, greyed after nested, main not repeated, 
 });
 
 test("addWorktrees: path differs but branch matches an open space -> not greyed", () => {
-  const out = addWorktrees(fixture("/private/w/feat"), TREES, new Set());
+  const out = addWorktrees(fixture("/private/w/feat"), TREES, new Set(), {}, new Set(["T"]));
   expect(out.filter((r) => r.kind === "wt").map((r) => r.path)).toEqual(["/w/det"]);
 });
 
 test("addWorktrees: greyed rows carry their branch's ahead/behind", () => {
   const trees = { [R]: { list: parseWorktrees("worktree /r\nbranch refs/heads/main\n\nworktree /w/fix\nbranch refs/heads/fix/y\n"), track: parseTrack("fix/y [ahead 2, behind 1]\n") } };
-  const wt = addWorktrees(fixture(), trees, new Set()).find((r) => r.kind === "wt");
+  const wt = addWorktrees(fixture(), trees, new Set(), {}, new Set(["T"])).find((r) => r.kind === "wt");
   expect([wt.label, wt.ahead, wt.behind]).toEqual(["fix/y", 2, 1]);
 });
 
@@ -65,15 +65,15 @@ test("addWorktrees: linked space without its main stays top-level, no greyed row
 
 test("addWorktrees: a second space at the main checkout gets no rows of its own", () => {
   const rows = [...fixture(), space("T2", { repo: R, branch: "main", linked: false, top: "/r" })];
-  const out = addWorktrees(rows, TREES, new Set());
-  expect(out.map((r) => r.key)).toEqual(["s:T", "s:F", 'p:[null,"/w/det"]', "s:D", "s:T2"]);
+  const out = addWorktrees(rows, TREES, new Set(), {}, new Set(["T"]));
+  expect(out.map((r) => r.key)).toEqual(["s:T", "s:F", "o:T", 'p:[null,"/w/det"]', "c:T", "s:D", "s:T2"]);
   expect(out.at(-1).kids).toBe(0);
 });
 
 test("addWorktrees: remote repo rows carry on, no tree yet -> nested spaces only", () => {
   const RB = JSON.stringify(["box", "/r/.git"]);
   const rows = [space("T", { repo: RB, branch: "main", linked: false, top: "/r" }), space("F", { repo: RB, branch: "feat/x", linked: true, top: "/w/feat" }, "└─")];
-  expect(addWorktrees(rows, { [RB]: TREES[R] }, new Set()).find((r) => r.kind === "wt").key).toBe('p:["box","/w/det"]');
+  expect(addWorktrees(rows, { [RB]: TREES[R] }, new Set(), {}, new Set(["T"])).find((r) => r.kind === "wt").key).toBe('p:["box","/w/det"]');
   expect(addWorktrees(rows, {}, new Set()).map((r) => [r.key, r.kids])).toEqual([["s:T", 1], ["s:F", 0]]);
 });
 
@@ -89,8 +89,8 @@ test("addWorktrees: bare repo (no main checkout) -> its first space shows the wo
   const B = JSON.stringify([null, "/b.git"]);
   const rows = [space("F1", { repo: B, branch: "feat/a", linked: true, top: "/w/a" }), space("F2", { repo: B, branch: "feat/c", linked: true, top: "/w/c" })];
   const trees = { [B]: { list: parseWorktrees("worktree /b.git\nbare\n\nworktree /w/a\nbranch refs/heads/feat/a\n\nworktree /w/b\nbranch refs/heads/feat/b\n\nworktree /w/c\nbranch refs/heads/feat/c\n"), track: {} } };
-  const out = addWorktrees(rows, trees, new Set());
-  expect(out.map((r) => [r.key, r.kids, r.parent])).toEqual([["s:F1", 1, null], ['p:[null,"/w/b"]', undefined, "s:F1"], ["s:F2", 0, null]]);
+  const out = addWorktrees(rows, trees, new Set(), {}, new Set(["F1"]));
+  expect(out.map((r) => [r.key, r.kids, r.parent])).toEqual([["s:F1", 1, null], ["o:F1", undefined, "s:F1"], ['p:[null,"/w/b"]', undefined, "s:F1"], ["c:F1", undefined, "s:F1"], ["s:F2", 0, null]]);
 });
 
 test("addWorktrees: an archived worktree isn't listed", () => {
@@ -99,8 +99,60 @@ test("addWorktrees: an archived worktree isn't listed", () => {
   expect(out[0].kids).toBe(1);
 });
 
+test("addWorktrees: greyed worktrees fold into one Others row by default", () => {
+  const out = addWorktrees(fixture(), TREES, new Set());
+  expect(out.map((r) => r.key)).toEqual(["s:T", "s:F", "o:T", "s:D"]);
+  expect(out[2]).toEqual({ kind: "others", key: "o:T", parent: "s:T", on: null, id: "T", n: 1, open: false });
+  expect(out[0].kids).toBe(2);
+});
+
+test("addWorktrees: Others open lists the greyed rows, then Clean up", () => {
+  const out = addWorktrees(fixture(), TREES, new Set(), {}, new Set(["T"]));
+  expect(out.filter((r) => r.parent === "s:T").map((r) => r.kind)).toEqual(["space", "others", "wt", "clean"]);
+  expect(out.find((r) => r.kind === "others").open).toBe(true);
+});
+
+test("addWorktrees: Clean up ticks only merged worktrees", () => {
+  const list = parseWorktrees("worktree /r\nbranch refs/heads/main\n\nworktree /w/a\nbranch refs/heads/a\n\nworktree /w/b\nbranch refs/heads/b\n");
+  const clean = (merged) => addWorktrees(fixture(), { [R]: { list, track: {}, merged } }, new Set(), {}, new Set(["T"])).find((r) => r.kind === "clean");
+  expect(clean(new Set(["a"]))).toEqual({ kind: "clean", key: "c:T", parent: "s:T", on: null, ticks: [JSON.stringify([null, "/w/a"])] });
+  expect(clean(undefined).ticks).toEqual([]);
+});
+
+test("addWorktrees: no greyed worktrees, no Others row", () => {
+  const trees = { [R]: { list: parseWorktrees("worktree /r\nbranch refs/heads/main\n\nworktree /w/feat\nbranch refs/heads/feat/x\n"), track: {} } };
+  const out = addWorktrees(fixture(), trees, new Set(), {}, new Set(["T"]));
+  expect(out.map((r) => r.key)).toEqual(["s:T", "s:F", "s:D"]);
+});
+
+test("addWorktrees: archived worktrees aren't counted in Others", () => {
+  const out = addWorktrees(fixture(), TREES, new Set(), { [JSON.stringify([null, "/w/det"])]: null }, new Set(["T"]));
+  expect(out.some((r) => r.kind === "others" || r.kind === "clean")).toBe(false);
+});
+
+test("addWorktrees: folded repo hides Others, keeps the full count", () => {
+  const out = addWorktrees(fixture(), TREES, new Set(["T"]), {}, new Set(["T"]));
+  expect(out.map((r) => r.key)).toEqual(["s:T", "s:D"]);
+  expect(out[0].kids).toBe(2);
+});
+
+test("cursorOf: Others and Clean up rows ring nothing", () => {
+  expect(cursorOf({ kind: "others", key: "o:T", id: "T" })).toBe(null);
+  expect(cursorOf({ kind: "clean", key: "c:T", ticks: [] })).toBe(null);
+});
+
+test("nearest: a folded Others takes the cursor of its rows", () => {
+  expect(nearest(["s:T", "o:T"], ["s:T", "o:T", "p:x", "c:T"], "p:x")).toBe("o:T");
+});
+
+test("mergedBranches: merged into HEAD, but not ones still at HEAD (new, untouched)", () => {
+  const out = "main aaa\nfeat/done bbb\nfresh aaa\n\n";
+  expect([...mergedBranches(out, "aaa\n")]).toEqual(["feat/done"]);
+  expect([...mergedBranches("", "aaa")]).toEqual([]);
+});
+
 test("actionTarget: greyed worktree and open linked space; not the main checkout or a plain folder", () => {
-  const [T, F, det, D] = addWorktrees(fixture(), TREES, new Set());
+  const [T, F, , det, , D] = addWorktrees(fixture(), TREES, new Set(), {}, new Set(["T"]));
   expect(actionTarget(det)).toEqual({ on: null, path: "/w/det", label: "det", branch: null, space: null });
   expect(actionTarget(F)).toEqual({ on: null, path: "/w/feat", label: "feat/x", branch: "feat/x", space: "F" });
   expect(actionTarget(T)).toBe(null);

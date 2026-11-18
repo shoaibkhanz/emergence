@@ -26,11 +26,20 @@ export function parseTrack(text) {
   return out;
 }
 
+// `git for-each-ref --merged HEAD --format="%(refname:lstrip=2) %(objectname)" refs/heads` and `git rev-parse HEAD` ->
+// the branches merged into the main checkout, less those still at HEAD: a new worktree (a sub-agent's) isn't done.
+export function mergedBranches(refs, head) {
+  const at = head.trim();
+  return new Set(refs.split("\n").map((l) => l.trim().split(" ")).filter(([b, sha]) => b && sha !== at).map(([b]) => b));
+}
+
 // ordered() rows ({w, i, g, tree}) -> rows with keys, each repo's worktrees that have no space yet (greyed) after
 // the nested spaces of its first main space (a bare repo has none: after its first space). An open worktree is
 // matched by path or branch: git and rev-parse can print one path two ways (/tmp vs /private/tmp).
 // `archived`: JSON [machine, path] -> the space closed by archiving it (or null); those aren't listed.
-export function addWorktrees(rows, trees, folded, archived = {}) {
+// The worktrees with no space fold into one "others" row (open when `othersOpen` has the repo's space id), then
+// "clean": Clean up, ticking those whose branch is in the tree's `merged` (keys as worktree-sweep's items).
+export function addWorktrees(rows, trees, folded, archived = {}, othersOpen = new Set()) {
   const out = [];
   const placed = new Set();
   for (let n = 0; n < rows.length; n++) {
@@ -40,7 +49,7 @@ export function addWorktrees(rows, trees, folded, archived = {}) {
     out.push(row);
     if (!r.g || (r.g.linked && !trees[r.g.repo]?.list.some((wt) => wt.bare)) || placed.has(r.g.repo)) continue;
     placed.add(r.g.repo);
-    const kids = [];
+    const kids = [], rest = [];
     for (let k = n + 1; k < rows.length && rows[k].tree; k++) kids.push({ ...rows[k], kind: "space", key: `s:${rows[k].w.id}`, kids: 0, parent: row.key });
     const same = rows.filter((s) => s.g?.repo === r.g.repo);
     const tops = new Set(same.map((s) => s.g.top)), branches = new Set(same.map((s) => s.g.branch));
@@ -50,9 +59,15 @@ export function addWorktrees(rows, trees, folded, archived = {}) {
       if (wt.bare || wt.prunable || tops.has(wt.path) || (wt.branch && branches.has(wt.branch))) continue;
       if (JSON.stringify([on, wt.path]) in archived) continue;
       const track = (wt.branch && tree.track[wt.branch]) || { ahead: 0, behind: 0 };
-      kids.push({ kind: "wt", key: `p:${JSON.stringify([on, wt.path])}`, parent: row.key, on, path: wt.path, label: wt.branch ?? base(wt.path), branch: wt.branch ?? null, ahead: track.ahead, behind: track.behind });
+      rest.push({ kind: "wt", key: `p:${JSON.stringify([on, wt.path])}`, parent: row.key, on, path: wt.path, label: wt.branch ?? base(wt.path), branch: wt.branch ?? null, ahead: track.ahead, behind: track.behind });
     }
-    row.kids = kids.length;
+    row.kids = kids.length + rest.length;
+    if (rest.length) {
+      const open = othersOpen.has(r.w.id), merged = tree.merged ?? new Set();
+      kids.push({ kind: "others", key: `o:${r.w.id}`, parent: row.key, on, id: r.w.id, n: rest.length, open });
+      if (open) kids.push(...rest, { kind: "clean", key: `c:${r.w.id}`, parent: row.key, on,
+        ticks: rest.filter((w) => w.branch && merged.has(w.branch)).map((w) => JSON.stringify([w.on, w.path])) });
+    }
     if (!folded.has(r.w.id)) out.push(...kids);
   }
   return out;
