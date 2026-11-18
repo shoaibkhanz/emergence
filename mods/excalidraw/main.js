@@ -27,7 +27,7 @@ globalThis.Path2D ??= class Path2D { constructor(d) { this.d = d; } };
 // src/main.js
 import { View, div as div2, PathBuilder as PathBuilder2, image, svg } from "gpui-kit";
 import { TextareaState, Textarea } from "gpui-base";
-import { props, settings, theme, readTextFile, writeTextFile as writeTextFile2, watchFolder, notify, home as home2, appHome, run, focused, panes, closeOverlay, openOverlay, shared } from "herdr";
+import { props, settings, theme, readTextFile, writeTextFile as writeTextFile2, watchFolder, notify, home as home2, appHome, run, focused, panes, closeOverlay, openOverlay, shared, nextCommand } from "herdr";
 import { Buffer } from "buffer";
 import * as fs2 from "fs/promises";
 // herdr-mods: our theme and agent handoff (SOURCE.md)
@@ -35,6 +35,7 @@ import { setDark, ink, isDark, canvasColor, uiColors } from "./theme.js";
 import { DIR as HANDOFF_DIR, OPEN as HANDOFF_OPEN, requestedFile, openRecord } from "./handoff.js";
 import { layout as herdrLayout, checking as herdrChecking } from "herdr";
 import { openWindow, panelShown } from "./open.js";
+import { holder } from "./keyboard.js";
 import { LibraryView } from "./library-view.js";
 import { backdrop as groundLayers, dotsAlpha, grainOpacity } from "./backdrop.js";
 import { cardsOf, alphaHex } from "./ground.js";
@@ -4920,6 +4921,10 @@ var Excalidraw = class extends View {
     // herdr-mods: the side panel follows open.json (handoff.js): an agent opens a drawing by naming it there. It starts
     // from open.json too (the drawing last remembered only when none is asked for), and only it records what it shows.
     this.panelCopy = !!p2.panel && !this.overlay && !herdrChecking();
+    if (this.panelCopy) { // herdr-mods: one keyboard rule set (shared/keyboard.js): opened, windows closing, pane.go's focus
+      this.kb = holder({ id: "excalidraw", panel: true, focus: () => this.focus.focus(), held: () => this.focus.is_focused(), shown: panelShown });
+      cx.spawn(async () => { for (;;) this.kb.command(await nextCommand()); });
+    }
     if (this.panelCopy) cx.spawn(async (cx2) => {
       const dir = HANDOFF_DIR(appHome());
       await fs2.mkdir(dir, { recursive: true }).catch(() => {});
@@ -5157,17 +5162,9 @@ var Excalidraw = class extends View {
     this.dirty = true;
     this.saveAt = Date.now() + 400;
   }
-  // herdr-mods: the panel takes the keyboard when opened on purpose (⌘⇧E, its tab: tabs-plus's emergence.opened) and
-  // when a window of its own closes (the library, after opening a drawing here: emergence.back), as the other panels do.
-  takeKeys() {
-    const o = shared("emergence.opened"), back = shared("emergence.back"), now = Date.now();
-    const asked = (o?.id === "excalidraw" && o.at !== this.openedAt && now - o.at < 3000) || (back && back !== this.backAt && now - back < 3000);
-    this.openedAt = o?.at; this.backAt = back;
-    if (asked && panelShown()) setTimeout(() => this.focus.focus(), 80);
-  }
   tick(cx) {
     globalThis.__runDueTimers();
-    if (this.panelCopy) this.takeKeys(); // herdr-mods
+    this.kb?.tick(cx); // herdr-mods: the panel's keyboard (shared/keyboard.js)
     if (this.status !== "ready") return;
     if (isDark(theme()) !== this.builtDark) { this.builtDark = isDark(theme()); setDark(this.builtDark); this.rebuild(cx); } // herdr-mods: theme switched
     if (this.fitNext && this.size) { this.fitNext = false; this.fitView(cx); } // herdr-mods: an agent's drawing, or its change, in view
