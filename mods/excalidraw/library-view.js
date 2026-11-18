@@ -58,7 +58,8 @@ export class LibraryView {
   }
   rows() { return this.view().flatMap((s) => s.rows); }
 
-  close() { closeOverlay(props().overlay); }
+  // Closing gives the keyboard back to the Excalidraw panel it was opened from (emergence.back); a big window keeps its own.
+  close() { if (props()?.into !== "window") setShared("emergence.back", Date.now()); closeOverlay(props().overlay); }
   // Opens in the big window it was opened from (props.into), else the Excalidraw side panel (shown if hidden), else a big window.
   open(row, cx) {
     if (!row) return;

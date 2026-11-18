@@ -704,6 +704,7 @@ export default class Spaces extends View {
   // a keyboard pane.go gave, not one this mod took (spaces-plus.focus, ⌘B): so ctrl-j goes to the inbox by name, and
   // ctrl-l / Esc focus the pane focused() still reports, the one you came from.
   key(k, cx) {
+    k = { j: "down", k: "up" }[k] ?? k; // vim-style, beside ↑/↓
     if (k === "ctrl-j") return run("inbox.focus");
     if (k === "ctrl-l" || k === "escape") return back();
     if (narrow()) return;

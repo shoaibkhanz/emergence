@@ -34,7 +34,7 @@ import * as fs2 from "fs/promises";
 import { setDark, ink, isDark, canvasColor, uiColors } from "./theme.js";
 import { DIR as HANDOFF_DIR, OPEN as HANDOFF_OPEN, requestedFile, openRecord } from "./handoff.js";
 import { layout as herdrLayout, checking as herdrChecking } from "herdr";
-import { openWindow } from "./open.js";
+import { openWindow, panelShown } from "./open.js";
 import { LibraryView } from "./library-view.js";
 import { backdrop as groundLayers, dotsAlpha, grainOpacity } from "./backdrop.js";
 import { cardsOf, alphaHex } from "./ground.js";
@@ -5157,8 +5157,17 @@ var Excalidraw = class extends View {
     this.dirty = true;
     this.saveAt = Date.now() + 400;
   }
+  // herdr-mods: the panel takes the keyboard when opened on purpose (⌘⇧E, its tab: tabs-plus's emergence.opened) and
+  // when a window of its own closes (the library, after opening a drawing here: emergence.back), as the other panels do.
+  takeKeys() {
+    const o = shared("emergence.opened"), back = shared("emergence.back"), now = Date.now();
+    const asked = (o?.id === "excalidraw" && o.at !== this.openedAt && now - o.at < 3000) || (back && back !== this.backAt && now - back < 3000);
+    this.openedAt = o?.at; this.backAt = back;
+    if (asked && panelShown()) setTimeout(() => this.focus.focus(), 80);
+  }
   tick(cx) {
     globalThis.__runDueTimers();
+    if (this.panelCopy) this.takeKeys(); // herdr-mods
     if (this.status !== "ready") return;
     if (isDark(theme()) !== this.builtDark) { this.builtDark = isDark(theme()); setDark(this.builtDark); this.rebuild(cx); } // herdr-mods: theme switched
     if (this.fitNext && this.size) { this.fitNext = false; this.fitView(cx); } // herdr-mods: an agent's drawing, or its change, in view

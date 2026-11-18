@@ -7,6 +7,11 @@ function panelStack() {
   const find = (n) => (n?.children?.some((c) => c.id === "excalidraw") ? n : n?.children?.map(find).find(Boolean));
   return find(layout());
 }
+// The Excalidraw panel is on screen: the side panel shown, on its Excalidraw tab.
+export function panelShown() {
+  const stack = panelStack(), find = (n, id) => n?.id === id ? n : n?.children?.map((c) => find(c, id)).find(Boolean);
+  return !!stack && stack.active === "excalidraw" && !find(layout(), "panel")?.hidden;
+}
 // A drawing in the side panel (open.json, which the panel follows; shown if hidden). False when there's no panel.
 export async function showInPanel(file) {
   const stack = panelStack();
