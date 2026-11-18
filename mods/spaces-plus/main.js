@@ -368,8 +368,8 @@ export default class Spaces extends View {
     }
     const items = sweepItems(this.trees, opens, shared("spaces.archived") ?? {});
     this.sweepKeys = this.resume || this.ringed; // asked from the keyboard (or its menu), as ask's
-    // as tall as the list needs, up to most of the window (it scrolls past that)
-    openOverlay({ mod: "worktree-sweep", kind: "window", key: "worktree-sweep", width: 760, height: items.length > 10 ? 0.85 : 200 + 32 * Math.max(1, items.length),
+    // a large window, to read the whole list (it scrolls past what fits)
+    openOverlay({ mod: "worktree-sweep", kind: "window", key: "worktree-sweep", width: 0.7, height: 0.85,
       // An open space's top can be /private/tmp where git lists /tmp: its space id finds it too.
       props: { items, ticked: items.filter((it) => ticks.includes(it.key) || (target && (it.path === target.path || (target.space && it.space === target.space)))).map((it) => it.key) } });
   }
