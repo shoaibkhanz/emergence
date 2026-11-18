@@ -1,6 +1,6 @@
 // Delete several worktrees at once: a 680px dialog Spaces opens (⇧← in Spaces, or "Delete worktrees…" on a
 // worktree's right-click), props { items, ticked } from spaces-plus lib's sweepItems. Each row: a checkbox, the
-// branch, its repo (and "open" / "archived"), and its uncommitted changes, counted here with `git status --porcelain`
+// branch, its repo (and "open" / "archived"), its uncommitted changes and Open (O: go there, to look first), counted here with `git status --porcelain`
 // (red dot and count; "clean"). ↑/↓ move, Space or a click ticks, ↵ asks: the line under the list turns into the
 // question and the buttons into Back (selected), Delete N clean and, at the far left in red, Delete permanently,
 // including N with changes (←/→/Tab as confirm-safe). The plan (lib.js) goes to Spaces in shared "spaces.sweep",
@@ -35,7 +35,7 @@ export default class WorktreeSweep extends View {
     });
   }
 
-  async close() { setShared("emergence.over", { at: Date.now(), open: false }); }
+  async close() { setShared("emergence.over", { at: Date.now(), open: false, went: !!this.went }); } // went: Open took you there
 
   picked() {
     const items = props()?.items ?? [];
@@ -66,10 +66,18 @@ export default class WorktreeSweep extends View {
     else if (e.key === "up" || e.key === "down") this.cur = Math.max(0, Math.min(items.length - 1, this.cur + (e.key === "up" ? -1 : 1)));
     else if ((e.key === "space" || e.key_char === " ") && items[this.cur]) this.ticked = tick(this.ticked, items[this.cur].key);
     else if (e.key === "enter") this.ask();
+    else if (e.key === "o" && items[this.cur]) return this.open(items[this.cur]);
     else return;
     this.list.scroll_to_item(this.cur);
     cx.stop_propagation();
     cx.notify();
+  }
+
+  // Open: to the worktree, to look before deleting: its space if one is open, else a new space there.
+  open(it) {
+    run(it.space ? "space.select" : "space.new", it.space ? { id: it.space } : { folder: it.path, machine: it.on ?? "" });
+    this.went = true;
+    closeOverlay(props().overlay);
   }
 
   row(it, i, t) {
@@ -90,7 +98,10 @@ export default class WorktreeSweep extends View {
         .when(on, (el) => el.child(svg("mods/workspace-chrome/check.svg").size(10).text_color(t.solid_foreground))))
       .child(div().flex_shrink(1).min_w(0).truncate().font_medium().text_color(t.foreground).child(it.label))
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(tag))
-      .child(div().flex_none().text_size(12).child(changes));
+      .child(div().flex_none().text_size(12).child(changes))
+      .child(div().id(`wopen-${i}`).flex_none().px(8).py(2).rounded(5).text_size(12).text_color(t.muted).border_1().border_color(t.input)
+        .hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .on_click((_e, cx) => { cx.stop_propagation(); if (!this.asking) this.open(it); }).child("Open"));
   }
 
   render() {
@@ -114,7 +125,7 @@ export default class WorktreeSweep extends View {
         .child(div().id("ws-esc").flex_none().px(6).py(2).rounded(5).text_size(11).text_color(t.dim).cursor_pointer()
           .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => closeOverlay(props().overlay)).child("Esc")))
       .child(v_flex().flex_1().min_h(0).gap(8)
-        .child(div().h(18).flex_none().text_size(12).text_color(t.muted).child("Space ticks, ↑/↓ move, ↵ deletes the ticked. Branches stay."))
+        .child(div().h(18).flex_none().text_size(12).text_color(t.muted).child("Space ticks, ↑/↓ move, O opens one to look, ↵ deletes the ticked. Branches stay."))
         .child(v_flex().id("ws-list").flex_1().min_h(0).p(4).rounded(6).bg(t.surface).border_1().border_color(t.border)
           .overflow_y_scrollbar().track_scroll(this.list)
           .when(!items.length, (el) => el.child(div().p(8).text_color(t.dim).child("No worktrees to delete.")))
