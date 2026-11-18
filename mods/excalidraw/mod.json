@@ -1,1 +1,11 @@
-{ "place": "none", "title": "Excalidraw", "overlay": { "kind": "window", "key": "excalidraw-library", "width": 680, "height": 640 } }
+{
+ "place": "none",
+ "title": "Excalidraw",
+ "overlay": {
+  "kind": "window",
+  "key": "excalidraw-library",
+  "width": 680,
+  "height": 640
+ },
+ "focusable": true
+}
