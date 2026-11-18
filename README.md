@@ -66,7 +66,7 @@ it; it also opens in its own window.
 Every skill in `~/.agents`, `~/.claude`, `~/.codex`, `~/.config/opencode` and the repo, plus Claude Code plugins, in
 one searchable list showing where each lives.
 
-### Excalidraw
+### Excalidraw (⌘⇧E)
 
 A whiteboard in the side panel, drawn natively by Herdr (no browser). Drawings are ordinary `.excalidraw` files. Dark
 themes get a black canvas, light themes a white one, with the Agents graph's background and grain underneath.
@@ -161,7 +161,7 @@ or menu to Spaces, the Inbox or the panel you opened it from; a panel's window o
 | ⌘E | everywhere | Jump |
 | ⌘⇧/ | layout | every Emergence key (⌘/ is Herdr's) |
 | ⌘⌥, | layout | Emergence settings |
-| ⌘⇧A · ⌘⇧R · ⌘⇧K · ⌘⇧U | layout | Agents · PRs · Library · Usage |
+| ⌘⇧F · ⌘⇧G · ⌘⇧A · ⌘⇧E · ⌘⇧R · ⌘⇧K · ⌘⇧U · ⌘⇧S | layout | the side panel's tabs, open or close: Files · Changes · Agents · Excalidraw · PRs · Library · Usage · Side |
 | ⌘⇧I | layout | keyboard into the Inbox |
 | ⌘⇧O | layout | worktrees of this repo |
 | ⌘B · ⌘⌥B | layout | sidebar open/fold · one size thinner |

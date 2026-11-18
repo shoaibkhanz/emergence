@@ -2,10 +2,14 @@
 
 export const GROUPS = [
   ["Panels", [
+    [{ action: "tabs-plus.files" }, "Files: the repo's files"],
+    [{ action: "tabs-plus.changes" }, "Changes: what's changed in the repo"],
     [{ action: "tabs-plus.graph" }, "Agents: every agent, its worktree and PR"],
+    [{ action: "tabs-plus.excalidraw" }, "Excalidraw: the whiteboard, open or closed"],
     [{ action: "tabs-plus.prs" }, "PRs: review pull requests and compare branches"],
     [{ action: "tabs-plus.skills" }, "Library: every skill and plugin"],
     [{ action: "tabs-plus.usage" }, "Usage: what your agents cost and deliver"],
+    [{ action: "tabs-plus.side" }, "Side: your side chats"],
     [{ action: "side.chat" }, "Side chat: ask the focused agent something, in a copy beside it"],
     [{ keys: "↑ ↓ · ← → · ↵ · Esc" }, "In a panel: step through · switch tabs · open · step back, then to the terminal"],
   ]],

@@ -4,6 +4,10 @@
   },
   "layout:emergence": {
     "cmd-shift-a": "tabs-plus.graph",
+    "cmd-shift-e": "tabs-plus.excalidraw",
+    "cmd-shift-f": "tabs-plus.files",
+    "cmd-shift-g": "tabs-plus.changes",
+    "cmd-shift-s": "tabs-plus.side",
     "cmd-shift-r": "tabs-plus.prs",
     "cmd-shift-k": "tabs-plus.skills",
     "cmd-shift-i": "tabs-plus.attention",
