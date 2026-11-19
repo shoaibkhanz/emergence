@@ -60,7 +60,7 @@ export default class Ports extends View {
     this.rows = [];
     this.roots = new Map(); // agent folder -> git top-level (null: not a repo), asked once per folder
     this.fh = cx.focus_handle();
-    this.kb = holder({ id: "ports", panel: false, focus: () => this.fh.focus(), held: () => this.ringed }); // dialogs give the keyboard back (shared/keyboard.js)
+    this.kb = holder({ id: "ports", panel: false, focus: () => this.fh.focus(), held: () => this.fh.is_focused() }); // dialogs give the keyboard back (shared/keyboard.js)
     this.list = ScrollHandle.new();
     this.cur = null; // the cursor's row key
     this.openAt = shared("ports.open")?.at; // a request from before this load isn't for us

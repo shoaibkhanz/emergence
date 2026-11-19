@@ -94,7 +94,7 @@ export default class Spaces extends View {
     this.othersOpen = new Set(JSON.parse(localStorage.getItem("spaces.others") ?? "[]")); // repos (main space ids) showing Other worktrees
     // The keyboard (mod.json focusable): pane.go or spaces-plus.focus gives it; ⌘B asks toggle whether it's here.
     this.fh = cx.focus_handle();
-    this.kb = holder({ id: "spaces-plus", panel: false, focus: () => this.fh.focus(), held: () => this.ringed }); // dialogs give the keyboard back (shared/keyboard.js)
+    this.kb = holder({ id: "spaces-plus", panel: false, focus: () => this.fh.focus(), held: () => this.fh.is_focused() }); // dialogs give the keyboard back (shared/keyboard.js)
     this.cur = null; // the cursor's row key
     this.keys = [];
     this.list = ScrollHandle.new();
