@@ -8,6 +8,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { exec, home, agents, terminals, panes, spaces, layout, run, theme, settings, shared, setShared, nextCommand, focused, openOverlay } from "herdr";
+import { holder, listKey } from "./keyboard.js";
 import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago, basename, byLine, ownerLines, stopFact, folderLabel, blockHeight, subAgents, cardHeight, isLocal, rootOf, CARD, ROW_H, HEADER_H, EMPTY_H, FOOT_H } from "./lib.js";
 
 const POLL_MS = 5000;
@@ -59,6 +60,7 @@ export default class Ports extends View {
     this.rows = [];
     this.roots = new Map(); // agent folder -> git top-level (null: not a repo), asked once per folder
     this.fh = cx.focus_handle();
+    this.kb = holder({ id: "ports", panel: false, focus: () => this.fh.focus(), held: () => this.ringed, shown: () => true }); // dialogs give the keyboard back (shared/keyboard.js)
     this.list = ScrollHandle.new();
     this.cur = null; // the cursor's row key
     this.openAt = shared("ports.open")?.at; // a request from before this load isn't for us
@@ -178,6 +180,7 @@ export default class Ports extends View {
   }
 
   key(k, cx) {
+    if (k !== "h" && k !== "l") k = listKey(k, false); // j/k beside ↑/↓; not h/l: ← opens a port's card (Stop is there)
     if (k === "ctrl-k") return run("inbox.focus");
     if (k === "ctrl-j") return run("side-chats.down");
     if (k === "ctrl-l" || k === "escape") return back();
@@ -200,19 +203,6 @@ export default class Ports extends View {
     this.openAt = want.at;
     const r = rows.find((x) => x.key === want.key);
     if (r) cx.timer.after(OPEN_AFTER_MS, () => this.card(r, this.who(r, this.model())));
-  }
-
-  // A dialog of ours took the keyboard from here: it comes back when that closes (as inbox's comeBack).
-  comeBack(cx, held, focus) {
-    const ov = shared("emergence.over");
-    if (!ov || ov.at === this.ovAt) return;
-    this.ovAt = ov.at;
-    if (ov.open) this.resume ||= held;
-    else if (this.resume) cx.timer.after(80, (cx) => {
-      if (shared("emergence.over")?.open) return;
-      this.resume = false;
-      if (!ov.went) { focus(); cx.notify(); }
-    });
   }
 
   // The owner's program mark (programs.json), at half strength when the owner is only probable; a hollow ring when
@@ -277,7 +267,7 @@ export default class Ports extends View {
     this.cur = rows[i]?.key ?? null;
     this.curI = Math.max(i, 0);
     if (!rows.some((r) => r.key === this.hovered)) this.hovered = null;
-    this.comeBack(cx, this.ringed, () => this.fh.focus());
+    this.kb.tick(cx);
     this.ringed = this.fh.is_focused();
     this.openAsked(cx, rows);
     const root = v_flex().id("ports").size_full().min_h(0).bg(t.chrome).text_size(13)

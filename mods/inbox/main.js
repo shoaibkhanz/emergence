@@ -7,6 +7,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { subAgents, columnHeight, splitColumn, inboxHeight, HEADER_H, ROW_H, EMPTY_H, LIST_PAD, CARD_GAP, FOOT_H, SHELF_MAX, SHELF_PAD } from "./lib.js";
 import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared, setShared, nextCommand, focused } from "herdr";
+import { holder, listKey } from "./keyboard.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -56,6 +57,7 @@ export default class Inbox extends View {
     cx.timer.every(30000, (cx) => cx.notify()); // the ages
     // The keyboard (mod.json focusable), as in spaces-plus; toggle is ⌘B's question "is it here?".
     this.fh = cx.focus_handle();
+    this.kb = holder({ id: "inbox", panel: false, focus: () => this.fh.focus(), held: () => this.ringed, shown: () => true }); // dialogs give the keyboard back (shared/keyboard.js)
     this.cur = null; // the cursor's agent address
     this.list = ScrollHandle.new();
     cx.spawn(async (cx) => {
@@ -71,6 +73,7 @@ export default class Inbox extends View {
   }
 
   key(k, cx) {
+    k = listKey(k, false); // h/j/k/l beside the arrows
     if (k === "ctrl-k") return run("spaces-plus.focus");
     if (k === "ctrl-l" || k === "escape") return back();
     const i = this.cards.findIndex((a) => a.address === this.cur);
@@ -95,19 +98,6 @@ export default class Inbox extends View {
   go(a) {
     if (a.sub) run("terminal.peek", { terminal: a.address });
     else { run("agent.focus", { terminal: a.address }); run("pane.focus", { terminal: a.address }); }
-  }
-
-  // A dialog of ours took the keyboard from here: it comes back when that closes (as spaces-plus comeBack).
-  comeBack(cx, held, focus) {
-    const ov = shared("emergence.over");
-    if (!ov || ov.at === this.ovAt) return;
-    this.ovAt = ov.at;
-    if (ov.open) this.resume ||= held;
-    else if (this.resume) cx.timer.after(80, (cx) => {
-      if (shared("emergence.over")?.open) return; // the next one is up already (menu, then confirm)
-      this.resume = false;
-      if (!ov.went) { focus(); cx.notify(); }
-    });
   }
 
   // The column is shared by Spaces, this inbox, Side chats and Ports (lib.js splitColumn): Side chats exactly what its
@@ -205,7 +195,7 @@ export default class Inbox extends View {
     this.cards = cards;
     this.cur = cards[i]?.address ?? null;
     this.curI = Math.max(i, 0);
-    this.comeBack(cx, this.ringed, () => this.fh.focus());
+    this.kb.tick(cx);
     this.ringed = this.fh.is_focused();
     this.shareCursor("inbox.cursor", this.ringed && this.cur ? { kind: "agent", id: this.cur } : null);
     if (!cards.some((a) => a.address === this.hovered)) this.hovered = null; // gone without a hover-out

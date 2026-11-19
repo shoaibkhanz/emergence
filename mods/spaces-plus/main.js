@@ -8,6 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, settings, shared, setShared, watchFolder, window, layout, nextCommand, focused, notify } from "herdr";
+import { holder, listKey } from "./keyboard.js";
 import { parseWorktrees, parseTrack, mergedBranches, addWorktrees, nearest, actionTarget, reopened, cursorOf, changeCount, forceWarn, repoName, sweepItems, sweepReport, onlyHereArgs, keptNote, HEADER_H, ROW_H, SUB_ROW_H, LIST_PAD } from "./lib.js";
 
 function find(node, id) {
@@ -93,6 +94,7 @@ export default class Spaces extends View {
     this.othersOpen = new Set(JSON.parse(localStorage.getItem("spaces.others") ?? "[]")); // repos (main space ids) showing Other worktrees
     // The keyboard (mod.json focusable): pane.go or spaces-plus.focus gives it; ⌘B asks toggle whether it's here.
     this.fh = cx.focus_handle();
+    this.kb = holder({ id: "spaces-plus", panel: false, focus: () => this.fh.focus(), held: () => this.ringed, shown: () => true }); // dialogs give the keyboard back (shared/keyboard.js)
     this.cur = null; // the cursor's row key
     this.keys = [];
     this.list = ScrollHandle.new();
@@ -317,9 +319,9 @@ export default class Spaces extends View {
       if (st.code !== 0) return notify({ title: `Couldn't check ${label}`, body: st.stderr.trim(), level: "error" });
       if (st.stdout.trim()) return notify({ title: `${label} has uncommitted changes`, body: "Not deleted. → archives it, or deletes it permanently.", level: "warning" });
     }
-    this.asked = { kind, target, keys: this.resume || this.ringed }; // asked from the keyboard (or its menu), not a click from the terminal
+    this.asked = { kind, target, keys: this.kb.resume || this.ringed }; // asked from the keyboard (or its menu), not a click from the terminal
     const del = kind === "delete";
-    // Every close (Confirm, Cancel, Esc) gives the keyboard back to Spaces if it was here (comeBack).
+    // Every close (Confirm, Cancel, Esc) gives the keyboard back to Spaces if it was here (shared/keyboard.js).
     openOverlay({ mod: "confirm-safe", kind: "window", key: "confirm-safe", width: 440, height: (space ? 270 : 242) + (del ? 0 : 50) + (note ? 40 : 0), props: {
       title: `${del ? "Delete" : "Archive"} worktree?`, name: label,
       detail: del ? "Removes this folder from disk. Its branch stays." : "Hides it from the sidebar; the folder stays. Reopen it from ⌘E Jump.",
@@ -367,7 +369,7 @@ export default class Spaces extends View {
       if (g?.linked) opens.push({ repo: g.repo, top: g.top, branch: g.branch, id: s.id });
     }
     const items = sweepItems(this.trees, opens, shared("spaces.archived") ?? {});
-    this.sweepKeys = this.resume || this.ringed; // asked from the keyboard (or its menu), as ask's
+    this.sweepKeys = this.kb.resume || this.ringed; // asked from the keyboard (or its menu), as ask's
     // a large window, to read the whole list (it scrolls past what fits)
     openOverlay({ mod: "worktree-sweep", kind: "window", key: "worktree-sweep", width: 0.7, height: 0.85,
       // An open space's top can be /private/tmp where git lists /tmp: its space id finds it too.
@@ -676,21 +678,6 @@ export default class Spaces extends View {
     return this.cur === key && this.ringed;
   }
 
-  // A dialog or menu of ours (shared emergence.over: Jump, the keys, a confirm, the row menu) took the keyboard from
-  // here: it comes back when that closes, unless that went somewhere (a jump, a menu item). Herdr gives it to the
-  // terminal. `held`: the keyboard was here at the last frame.
-  comeBack(cx, held, focus) {
-    const ov = shared("emergence.over");
-    if (!ov || ov.at === this.ovAt) return;
-    this.ovAt = ov.at;
-    if (ov.open) this.resume ||= held;
-    else if (this.resume) cx.timer.after(80, (cx) => {
-      if (shared("emergence.over")?.open) return; // the next one is up already (menu, then confirm)
-      this.resume = false;
-      if (!ov.went) { focus(); cx.notify(); }
-    });
-  }
-
   // The Agents graph rings where this cursor is (agent-graph lib's ringed): shared only while this list has the
   // keyboard, and only when it changes (setShared writes to disk and redraws every mod).
   shareCursor(key, value) {
@@ -704,7 +691,8 @@ export default class Spaces extends View {
   // a keyboard pane.go gave, not one this mod took (spaces-plus.focus, ⌘B): so ctrl-j goes to the inbox by name, and
   // ctrl-l / Esc focus the pane focused() still reports, the one you came from.
   key(k, cx) {
-    k = { j: "down", k: "up" }[k] ?? k; // vim-style, beside ↑/↓
+    const vim = k === "h" || k === "l";
+    k = listKey(k, false); // h/j/k/l beside the arrows; h/l only move and fold, never delete or archive
     if (k === "ctrl-j") return run("inbox.focus");
     if (k === "ctrl-l" || k === "escape") return back();
     if (narrow()) return;
@@ -712,7 +700,7 @@ export default class Spaces extends View {
     if (k === "shift-left") return this.askSweep(r && actionTarget(r)); // ← deletes one; ⇧← ticks several
     if (k === "up" || k === "down") this.cur = rows[Math.max(0, Math.min(rows.length - 1, i + (k === "up" ? -1 : 1)))]?.key ?? null;
     else if (!r) return;
-    else if ((k === "left" || k === "right") && actionTarget(r)) this.ask(k === "left" ? "delete" : "archive", actionTarget(r), cx);
+    else if (!vim && (k === "left" || k === "right") && actionTarget(r)) this.ask(k === "left" ? "delete" : "archive", actionTarget(r), cx);
     else if (r.kind === "others" && (k === "enter" || (k === "right" && !r.open) || (k === "left" && r.open))) this.toggleOthers(r.id, cx); // → opens, ← closes
     else if (r.kind === "clean" && k === "enter") this.askSweep(null, r.ticks);
     else if (k === "right" && r.kids && this.foldedSpaces.has(r.w.id)) this.fold(r.w.id, cx);
@@ -770,7 +758,7 @@ export default class Spaces extends View {
       changed = true;
     }
     if (changed) setShared("space.colors", kept);
-    this.comeBack(cx, this.ringed, () => this.fh.focus());
+    this.kb.tick(cx);
     this.ringed = this.fh.is_focused();
     this.shareCursor("spaces.cursor", this.ringed && !narrow() ? cursorOf((this.rows ?? []).find((r) => r.key === this.cur)) : null);
     return v_flex().id("spaces").size_full().min_h(0).bg(t.chrome).text_size(13).on_size_change((size) => this.shown(size)) // the id: on_size_change needs one

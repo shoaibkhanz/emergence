@@ -8,6 +8,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { run, theme, settings, layout, terminals, shared, setShared, nextCommand, focused } from "herdr";
+import { holder, listKey } from "./keyboard.js";
 import { rowsOf, wantOf, holdsKeys, HEADER_H, ROW_H, EMPTY_H } from "./lib.js";
 
 const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(c, id)).find(Boolean));
@@ -35,6 +36,7 @@ function show(slot) {
 export default class SideChats extends View {
   init(_props, cx) {
     this.fh = cx.focus_handle();
+    this.kb = holder({ id: "side-chats", panel: false, focus: () => this.fh.focus(), held: () => this.ringed, shown: () => true }); // dialogs give the keyboard back (shared/keyboard.js)
     this.list = ScrollHandle.new();
     this.cur = null; // the cursor's slot
     this.rows = [];
@@ -54,6 +56,7 @@ export default class SideChats extends View {
   }
 
   key(k, cx) {
+    k = listKey(k, false); // h/j/k/l beside the arrows
     if (k === "ctrl-l" || k === "escape") return back();
     const i = this.rows.findIndex((r) => r.slot === this.cur);
     if (k === "up" || k === "down") {
@@ -99,12 +102,13 @@ export default class SideChats extends View {
       .child(this.status(t, r.status));
   }
 
-  render() {
+  render(cx) {
     const t = theme();
     const slots = (find(layout(), "side-slots")?.children ?? []).map((c) => c.id);
     const rows = rowsOf(terminals(), slots, shared("side.tabs") ?? {}, Date.now());
     this.rows = rows;
     if (!rows.some((r) => r.slot === this.cur)) this.cur = rows[0]?.slot ?? null;
+    this.kb.tick(cx);
     this.ringed = this.fh.is_focused();
     const hidden = folded();
     if (this.ringed && !holdsKeys(rows.length, hidden)) back(); // its last chat ended, or the sidebar folded, while it had the keys

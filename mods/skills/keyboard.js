@@ -7,6 +7,7 @@
 // id: a panel's layout block id (tabs-plus's emergence.opened), or the mod's name for a sidebar list (panel: false).
 import { shared } from "herdr";
 import { seed, decide, settle } from "./keyboard-lib.js";
+export { listKey } from "./keyboard-lib.js"; // a mod imports everything from here
 
 const signals = (o) => ({ id: o.id, panel: !!o.panel, shown: o.shown(), held: o.held(),
   opened: shared("emergence.opened"), back: shared("emergence.back"), over: shared("emergence.over") });
