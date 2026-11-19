@@ -2,6 +2,7 @@
 import { test, expect } from "bun:test";
 import { isDark, darkInk, canvasColor, uiColors, LIGHT_UI } from "./theme.js";
 import { requestedFile, openRecord } from "./handoff.js";
+import { placed } from "./placed.js";
 
 test("isDark: from the theme's background colour", () => {
   expect(isDark({ background: "#0b0b0c" })).toBe(true);
@@ -63,4 +64,13 @@ test("alphaHex: the dot ink at a strength, nothing when it would be invisible", 
   expect(alphaHex("#fafafaff", 1)).toBe("#fafafaff");
   expect(alphaHex("#fafafa", 0.001)).toBe(null);
   expect(alphaHex("not a colour", 0.5)).toBe(null);
+});
+
+test("placed: an element without finite coordinates (NaN saves as null) can't come in: one would make every bound NaN", () => {
+  expect(placed({ x: 10, y: -4 })).toBe(true);
+  expect(placed({ x: 0, y: 0, points: [[0, 0], [3.5, -2]] })).toBe(true);
+  expect(placed({ x: null, y: 5 })).toBe(false);
+  expect(placed({ x: 5, y: NaN })).toBe(false);
+  expect(placed({ y: 5 })).toBe(false);
+  expect(placed({ x: 1, y: 1, points: [[0, 0], [null, 2]] })).toBe(false);
 });

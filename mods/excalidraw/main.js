@@ -41,6 +41,7 @@ import { backdrop as groundLayers, dotsAlpha, grainOpacity } from "./backdrop.js
 import { cardsOf, alphaHex } from "./ground.js";
 import { copyText, pasted } from "./clipboard.js";
 import { edgeDots, dotAt, flowchart, neighbour } from "./connect.js";
+import { placed } from "./placed.js";
 const LINKABLE = new Set(["rectangle", "ellipse", "diamond"]); // herdr-mods: shapes with connection dots and ⌘+arrow
 const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); // herdr-mods: pasted and flowchart elements
 // herdr-mods: the library; opened from the big window, what it picks opens in that window (excalidraw.window), not the panel
@@ -4659,7 +4660,7 @@ function parseDocument(text) {
     throw new Error('not an Excalidraw file (expected type "excalidraw" with an elements array)');
   }
   return {
-    elements: data.elements.filter((e4) => e4 && typeof e4 === "object" && e4.type && e4.id).map(normalizeElement),
+    elements: data.elements.filter((e4) => e4 && typeof e4 === "object" && e4.type && e4.id).map(normalizeElement).filter(placed), // herdr-mods: placed.js
     // Kept whole so saving round-trips settings this editor doesn't use.
     appState: { viewBackgroundColor: "#ffffff", ...data.appState ?? {} },
     files: data.files ?? {},
@@ -5591,6 +5592,7 @@ var Excalidraw = class extends View {
     if (this.pointer) this.onUp(cx);
     if (!e4.local_position) return;
     let p2 = this.toScene(e4.local_position);
+    if (!placed(p2)) return; // herdr-mods: never create an element at a NaN point (placed.js)
     let tool = this.spaceDown ? "hand" : this.tool;
     // herdr-mods: a press on a connection dot draws an arrow from it (bound to its shape when it ends, as the arrow tool)
     const dot = tool === "selection" && dotAt(this.dotShapes(), p2, 10 / this.vz);
@@ -5981,7 +5983,7 @@ var Excalidraw = class extends View {
   paste(cx) {
     if (this.status !== "ready") return;
     const at = this.hoverAt ?? this.toScene({ x: (this.size?.width ?? 800) / 2, y: (this.size?.height ?? 600) / 2 });
-    const els = pasted(cx.read_from_clipboard(), at, newId, { fontSize: this.style.fontSize }).map(normalizeElement);
+    const els = pasted(cx.read_from_clipboard(), at, newId, { fontSize: this.style.fontSize }).map(normalizeElement).filter(placed); // herdr-mods: placed.js
     if (!els.length) return;
     if (this.editing) this.endEdit(cx, {});
     this.history.record(this.scene.getElementsIncludingDeleted());
