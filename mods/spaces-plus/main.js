@@ -94,7 +94,7 @@ export default class Spaces extends View {
     this.othersOpen = new Set(JSON.parse(localStorage.getItem("spaces.others") ?? "[]")); // repos (main space ids) showing Other worktrees
     // The keyboard (mod.json focusable): pane.go or spaces-plus.focus gives it; ⌘B asks toggle whether it's here.
     this.fh = cx.focus_handle();
-    this.kb = holder({ id: "spaces-plus", panel: false, focus: () => this.fh.focus(), held: () => this.ringed, shown: () => true }); // dialogs give the keyboard back (shared/keyboard.js)
+    this.kb = holder({ id: "spaces-plus", panel: false, focus: () => this.fh.focus(), held: () => this.ringed }); // dialogs give the keyboard back (shared/keyboard.js)
     this.cur = null; // the cursor's row key
     this.keys = [];
     this.list = ScrollHandle.new();
@@ -692,7 +692,7 @@ export default class Spaces extends View {
   // ctrl-l / Esc focus the pane focused() still reports, the one you came from.
   key(k, cx) {
     const vim = k === "h" || k === "l";
-    k = listKey(k, false); // h/j/k/l beside the arrows; h/l only move and fold, never delete or archive
+    k = listKey(k); // h/j/k/l beside the arrows; h/l only move and fold, never delete or archive
     if (k === "ctrl-j") return run("inbox.focus");
     if (k === "ctrl-l" || k === "escape") return back();
     if (narrow()) return;

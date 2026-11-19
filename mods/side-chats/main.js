@@ -36,7 +36,7 @@ function show(slot) {
 export default class SideChats extends View {
   init(_props, cx) {
     this.fh = cx.focus_handle();
-    this.kb = holder({ id: "side-chats", panel: false, focus: () => this.fh.focus(), held: () => this.ringed, shown: () => true }); // dialogs give the keyboard back (shared/keyboard.js)
+    this.kb = holder({ id: "side-chats", panel: false, focus: () => this.fh.focus(), held: () => this.ringed }); // dialogs give the keyboard back (shared/keyboard.js)
     this.list = ScrollHandle.new();
     this.cur = null; // the cursor's slot
     this.rows = [];
@@ -56,7 +56,7 @@ export default class SideChats extends View {
   }
 
   key(k, cx) {
-    k = listKey(k, false); // h/j/k/l beside the arrows
+    k = listKey(k); // h/j/k/l beside the arrows
     if (k === "ctrl-l" || k === "escape") return back();
     const i = this.rows.findIndex((r) => r.slot === this.cur);
     if (k === "up" || k === "down") {

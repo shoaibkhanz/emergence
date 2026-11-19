@@ -68,9 +68,8 @@ test("decide: a sidebar list returns after dialogs too", () => {
   expect(run(s, { panel: false, over: { at: 1500, open: false } }, 1500).focus).toEqual({ after: 80, check: "no-dialog" });
 });
 
-test("listKey: hjkl move, not while typing; other keys unchanged", () => {
-  expect(["j", "k", "h", "l"].map((k) => listKey(k, false))).toEqual(["down", "up", "left", "right"]);
-  expect(listKey("j", true)).toBe("j");
+test("listKey: hjkl move; other keys unchanged", () => {
+  expect(["j", "k", "h", "l"].map(listKey)).toEqual(["down", "up", "left", "right"]);
   expect(listKey("x", false)).toBe("x");
   expect(listKey("ctrl-j", false)).toBe("ctrl-j");
 });

@@ -57,7 +57,7 @@ export default class Inbox extends View {
     cx.timer.every(30000, (cx) => cx.notify()); // the ages
     // The keyboard (mod.json focusable), as in spaces-plus; toggle is ⌘B's question "is it here?".
     this.fh = cx.focus_handle();
-    this.kb = holder({ id: "inbox", panel: false, focus: () => this.fh.focus(), held: () => this.ringed, shown: () => true }); // dialogs give the keyboard back (shared/keyboard.js)
+    this.kb = holder({ id: "inbox", panel: false, focus: () => this.fh.focus(), held: () => this.ringed }); // dialogs give the keyboard back (shared/keyboard.js)
     this.cur = null; // the cursor's agent address
     this.list = ScrollHandle.new();
     cx.spawn(async (cx) => {
@@ -73,7 +73,7 @@ export default class Inbox extends View {
   }
 
   key(k, cx) {
-    k = listKey(k, false); // h/j/k/l beside the arrows
+    k = listKey(k); // h/j/k/l beside the arrows
     if (k === "ctrl-k") return run("spaces-plus.focus");
     if (k === "ctrl-l" || k === "escape") return back();
     const i = this.cards.findIndex((a) => a.address === this.cur);

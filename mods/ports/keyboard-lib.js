@@ -44,7 +44,5 @@ export function decide(state, sig, now) {
 // After a dialog-return's wait found no dialog open again: the way back is used up.
 export const settle = (state) => ({ ...state, resume: false });
 
-// Vim keys in a list: h/j/k/l as ←/↓/↑/→, never while typing in a field.
-export function listKey(k, typing) {
-  return typing ? k : ({ h: "left", j: "down", k: "up", l: "right" }[k] ?? k);
-}
+// Vim keys in a list (the sidebar's have no text field): h/j/k/l as ←/↓/↑/→.
+export const listKey = (k) => ({ h: "left", j: "down", k: "up", l: "right" }[k] ?? k);

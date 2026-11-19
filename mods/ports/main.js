@@ -60,7 +60,7 @@ export default class Ports extends View {
     this.rows = [];
     this.roots = new Map(); // agent folder -> git top-level (null: not a repo), asked once per folder
     this.fh = cx.focus_handle();
-    this.kb = holder({ id: "ports", panel: false, focus: () => this.fh.focus(), held: () => this.ringed, shown: () => true }); // dialogs give the keyboard back (shared/keyboard.js)
+    this.kb = holder({ id: "ports", panel: false, focus: () => this.fh.focus(), held: () => this.ringed }); // dialogs give the keyboard back (shared/keyboard.js)
     this.list = ScrollHandle.new();
     this.cur = null; // the cursor's row key
     this.openAt = shared("ports.open")?.at; // a request from before this load isn't for us
@@ -180,7 +180,7 @@ export default class Ports extends View {
   }
 
   key(k, cx) {
-    if (k !== "h" && k !== "l") k = listKey(k, false); // j/k beside ↑/↓; not h/l: ← opens a port's card (Stop is there)
+    if (k !== "h" && k !== "l") k = listKey(k); // j/k beside ↑/↓; not h/l: ← opens a port's card (Stop is there)
     if (k === "ctrl-k") return run("inbox.focus");
     if (k === "ctrl-j") return run("side-chats.down");
     if (k === "ctrl-l" || k === "escape") return back();

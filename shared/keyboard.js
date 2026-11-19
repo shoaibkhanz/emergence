@@ -3,12 +3,13 @@
 //
 //   this.kb = holder({ id, panel, focus: () => h.focus(), held: () => h.is_focused(), shown: () => onScreen });
 //   render:        this.kb.tick(cx);
-//   command loop:  if (this.kb.command(c)) continue;   // Herdr's "focus" (pane.go, ctrl-h/l: mod.json focusable)
-// id: a panel's layout block id (tabs-plus's emergence.opened), or the mod's name for a sidebar list (panel: false).
+//   command loop:  this.kb.command(c);   // Herdr's "focus" (pane.go, ctrl-h/l: mod.json focusable)
+// id: a panel's layout block id (tabs-plus's emergence.opened), or the mod's name for a sidebar list (panel: false, no shown).
 import { shared } from "herdr";
 import { seed, decide, settle } from "./keyboard-lib.js";
+export { listKey } from "./keyboard-lib.js"; // a mod imports everything from here
 
-const signals = (o) => ({ id: o.id, panel: !!o.panel, shown: o.shown(), held: o.held(),
+const signals = (o) => ({ id: o.id, panel: !!o.panel, shown: o.shown?.() ?? true, held: o.held(),
   opened: shared("emergence.opened"), back: shared("emergence.back"), over: shared("emergence.over") });
 
 export function holder(o) {
@@ -27,10 +28,6 @@ export function holder(o) {
         cx2.notify();
       });
     },
-    command(c) {
-      if (c !== "focus") return false;
-      o.focus();
-      return true;
-    },
+    command(c) { if (c === "focus") o.focus(); }, // Herdr's "focus": pane.go reached this focusable mod
   };
 }
