@@ -231,7 +231,12 @@ a choice is segments in a `raised` track, the chosen one `background`. Keys are 
   - ⌘⇧O opens Herdr's Open worktree dialog for the focused pane's repo.
   - ⌘E opens Jump.
   - Opening a panel (its ⌘⇧ key or the tab bar) gives it the keyboard: tabs-plus sets `shared("emergence.opened")` and
-    the panel focuses itself (clicking one does too). Inside every panel the same arrows: ↑/↓ walk the list (PRs and their
+    the panel focuses itself (clicking one does too). One rule set does this for every panel and sidebar list:
+    `shared/keyboard.js` (+ `keyboard-lib.js`, tested by `bun test shared`), copied into a mod by
+    `scripts/sync-shared.sh` once it has a `keyboard.js` (CI fails on a stale copy; never edit a copy). A mod makes
+    `holder({ id, panel, focus, held, shown })`, calls `tick(cx)` when it renders and `command(c)` with its
+    `nextCommand()`s. Panels are `focusable` (pane.go sends them `focus`: ctrl-l from the terminal); a panel that
+    focused itself isn't where pane.go starts, so keys.json `mod:<panel>` binds ctrl-h to `tabs-plus.back`. Inside every panel the same arrows: ↑/↓ walk the list (PRs and their
     files, skills, agents), ←/→ walk the tabs along the top, only while ↑/↓ walk that list and no text field has the
     caret (PRs: Open, Closed, All, not while a PR's files are open; Library: Skills, Plugins, with an empty search box;
     Usage: Overview to Rhythm, not in its date fields; Agents: Active, All), ↵ opens, Esc steps back and, with nothing

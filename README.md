@@ -153,8 +153,9 @@ finds its worktrees too), or a new branch name to make a worktree. Unnamed tabs 
 ## Keys
 
 Added without replacing yours; all but ⌘E only in the `emergence` layout. ⌘⇧/ (or the tab bar's keyboard button)
-lists them all. Closing something gives the keyboard back to where it was: Jump, the keys list, a worktree dialog
-or menu to Spaces, the Inbox or the panel you opened it from; a panel's window or popup to the panel.
+lists them all. The keyboard stays where you put it until you move it: closing something gives it back to where it
+was (Jump, the keys list, a worktree dialog or menu to Spaces, the Inbox or the panel you opened it from; a panel's
+window or popup to the panel), and ctrl-h / ctrl-l move it between the terminal and the side panel.
 
 | Key | Where | What |
 |---|---|---|
@@ -165,7 +166,7 @@ or menu to Spaces, the Inbox or the panel you opened it from; a panel's window o
 | ⌘⇧I | layout | keyboard into the Inbox |
 | ⌘⇧O | layout | worktrees of this repo |
 | ⌘B · ⌘⌥B | layout | sidebar open/fold · one size thinner |
-| ↑ ↓ · ↵ | sidebar | move · open |
+| ↑ ↓ (or j k) · ↵ | sidebar | move · open (h l fold in Spaces) |
 | ← → | Spaces | repo: fold · worktree: delete / archive |
 | ctrl-j · ctrl-k · ctrl-l | sidebar | down (Spaces → Inbox → Ports → Side chats) · up · back to the terminal (also Esc) |
 | ↵ · ← | Ports | the port's card · stop it (asks first) |
@@ -173,6 +174,7 @@ or menu to Spaces, the Inbox or the panel you opened it from; a panel's window o
 | ← → · ↑ ↓ · Space · ↵ | sub-agent details | tabs · move · open a step · go to its agent |
 | ↑ ↓ · ← → · ↵ · Esc | panels | list · tabs · open · step back, then back to the terminal |
 | ⌘F · [ ] | PRs | find · previous / next commit |
+| ctrl-h · ctrl-l | side panel · terminal | to the terminal · into the side panel |
 | ctrl-h/j/k/l | terminals | between panes ([optional](#optional-ctrlhjkl-between-panes)) |
 
 Not ⌘⇧J (Homerow's scroll mode); not ⌘⇧B (Blueprint).
