@@ -26,9 +26,16 @@ test("decide: a hidden panel neither acts on nor consumes opened/back", () => {
   expect(run(hidden.state, { back: 990 }, 1200).focus).toEqual({ after: 80, check: "none" }); // shown, still fresh
 });
 
-test("decide: a stale signal present at creation is ignored", () => {
-  const sig = { ...base, opened: { id: "excalidraw", at: 990 }, back: 995, over: { at: 996, open: false } };
+test("decide: back and over present at creation are ignored; an old opened too", () => {
+  const sig = { ...base, back: 995, over: { at: 996, open: false } };
   expect(decide(seed(sig), sig, 1000).focus).toBe(null);
+  const old = { ...base, opened: { id: "excalidraw", at: 990 } };
+  expect(decide(seed(old), old, 4000).focus).toBe(null);
+});
+
+test("decide: a fresh opened that created this copy counts (Herdr makes a panel's copy when it's first shown)", () => {
+  const sig = { ...base, opened: { id: "excalidraw", at: 990 } };
+  expect(decide(seed(sig), sig, 1000).focus).toEqual({ after: 50, check: "none" });
 });
 
 test("decide: dialog-return uses the previous frame's held; went or not held: nothing", () => {

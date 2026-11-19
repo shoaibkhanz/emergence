@@ -3,9 +3,11 @@
 
 const FRESH = 3000; // a signal older than this was meant for someone before us
 
-// The state a copy starts from: whatever signals are already there were meant for someone else.
+// The state a copy starts from: back and over already there were meant for someone else. opened isn't marked seen:
+// Herdr makes a panel's copy when it's first shown, so the open that showed it comes just before (freshness and id
+// still decide).
 export function seed(sig) {
-  return { openedAt: sig.opened?.at ?? null, backAt: sig.back ?? null, ovAt: sig.over?.at ?? null, resume: false, prevHeld: !!sig.held };
+  return { openedAt: null, backAt: sig.back ?? null, ovAt: sig.over?.at ?? null, resume: false, prevHeld: !!sig.held };
 }
 
 // One frame: sig = { id, panel, shown, held, opened: {id, at}?, back: at?, over: {at, open, went?}? }.

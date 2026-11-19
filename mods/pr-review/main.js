@@ -6,7 +6,8 @@
 // them, optionally tagged Nit · Minor · Major · Question · Statement.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, TextView, ScrollHandle } from "gpui-base";
-import { exec, focused, panes, spaces, theme, settings, props, shared, setShared, openOverlay, closeOverlay, run, layout } from "herdr";
+import { exec, focused, panes, spaces, theme, settings, props, shared, setShared, openOverlay, closeOverlay, run, layout, nextCommand } from "herdr";
+import { holder } from "./keyboard.js";
 import * as github from "./github.js";
 import * as gitlab from "./gitlab.js";
 import { forgeOrder } from "./gitlab-map.js";
@@ -59,7 +60,6 @@ const TALK = { id: "talk", where: "issues" }; // the conversation, standing in f
 export default class PrReview extends View {
   init(_props, cx) {
     this.panel = props()?.panel === true;
-    this.backAt = shared("emergence.back");
     if (!this.panel && !props()?.placed) {
       this.handoff = true;
       return void cx.spawn(async () => { openWindow(); closeOverlay(props().overlay); });
@@ -101,23 +101,13 @@ export default class PrReview extends View {
     if (this.panel) setShared("pr-review.wide", false); // full size doesn't outlive the copy (widen's wideFrom)
     // The panel leaves polling to the window while one is open on top (one set of GitHub calls, not two).
     cx.timer.every(5000, (cx) => (this.shown() && !this.yields() ? this.poll(this.cur, cx) : (this.stale = true)));
-    if (this.panel) return void cx.timer.every(250, (cx) => { if (this.handle.is_focused() !== this.held) cx.notify(); }); // no blur event (comeBack)
+    if (this.panel) { // the keyboard: opened, windows closing, dialogs, pane.go's focus (shared/keyboard.js)
+      this.kb = holder({ id: BLOCK, panel: true, focus: () => this.handle.focus(), held: () => this.handle.is_focused(), shown: () => this.shown() });
+      cx.spawn(async () => { for (;;) this.kb.command(await nextCommand()); });
+      return void cx.timer.every(250, (cx) => { if (this.handle.is_focused() !== this.held) cx.notify(); }); // no blur event: a frame per change
+    }
     this.handle.focus();
     cx.timer.after(150, () => this.handle.focus());
-  }
-
-  // A dialog of ours (Jump, the keys) took the keyboard from this panel: it comes back when that closes (as
-  // spaces-plus comeBack).
-  comeBack(cx, held) {
-    const ov = shared("emergence.over");
-    if (!ov || ov.at === this.ovAt) return;
-    this.ovAt = ov.at;
-    if (ov.open) this.resume ||= held;
-    else if (this.resume) cx.timer.after(80, (cx) => {
-      if (shared("emergence.over")?.open) return;
-      this.resume = false;
-      if (!ov.went) { this.handle.focus(); cx.notify(); }
-    });
   }
 
   // The window forgets its id when it goes, so a later open never closes some other overlay that reuses it.
@@ -760,12 +750,7 @@ export default class PrReview extends View {
       // Shown again after a while: re-resolve the target and poll it once.
       if (this.stale && !this.yields()) { this.stale = false; this.wantKey = null; this.repoll = true; }
       this.syncTarget(cx);
-      // Opened (⌘⇧R, the tab bar; tabs-plus says so): the keys are its own at once, after this frame puts it in the tree.
-      const o = shared("emergence.opened");
-      if (o?.id === BLOCK && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.handle.focus()); }
-      const back = this.panel && shared("emergence.back"); // a panel's window or popup closed: the keyboard comes back
-      if (back && back !== this.backAt) { this.backAt = back; if (Date.now() - back < 3000) cx.timer.after(80, () => this.handle.focus()); }
-      if (this.panel) { this.comeBack(cx, this.held); this.held = this.handle.is_focused(); }
+      if (this.panel) { this.kb.tick(cx); this.held = this.handle.is_focused(); } // the keyboard (shared/keyboard.js)
     } else this.stale = true;
     const t = theme();
     const s = this.cur;

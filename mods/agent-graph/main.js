@@ -5,10 +5,11 @@
 
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout, appHome } from "herdr";
+import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout, appHome, nextCommand } from "herdr";
 import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
   subItems, dotsAlpha, grainOpacity, backdrop, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners, worktreeNote, GONE, detailRequest, historySince } from "./lib.js";
 import { Detail } from "./detail.js";
+import { holder } from "./keyboard.js";
 import { list } from "./list.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000, SUB_FAST = 5000;
@@ -76,7 +77,6 @@ export default class AgentGraph extends View {
     if (props()?.detail) { this.detail = new Detail(cx); return; } // a sub-agent's details (openDetail): its own view
     setShared("agent-graph.historyOffered", true); // Emergence settings shows Sub-agent history once this reads it
     this.panel = props()?.panel === true;
-    this.backAt = shared("emergence.back");
     this.git = new Map(); // machine|cwd -> { at, v: facts | null }
     this.prs = new Map(); // machine|common -> { at, v: Map | null }
     this.busy = false;
@@ -92,7 +92,11 @@ export default class AgentGraph extends View {
     this.subsJSON = "{}";
     this.subsLoop = false;
     this.h = cx.focus_handle();
-    if (this.panel) cx.timer.every(250, (cx) => { if (this.h.is_focused() !== this.held) cx.notify(); }); // no blur event (comeBack)
+    if (this.panel) { // the keyboard: opened, windows closing, dialogs, pane.go's focus (shared/keyboard.js)
+      this.kb = holder({ id: "graph", panel: true, focus: () => this.h.focus(), held: () => this.h.is_focused(), shown: () => this.shown() });
+      cx.spawn(async () => { for (;;) this.kb.command(await nextCommand()); });
+      cx.timer.every(250, (cx) => { if (this.h.is_focused() !== this.held) cx.notify(); }); // no blur event: a frame per change
+    }
     if (!this.panel) {
       this.h.focus();
       cx.timer.after(300, () => this.h.focus());
@@ -300,20 +304,6 @@ export default class AgentGraph extends View {
     this.view = { z, x: px - (px - v.x) * k, y: py - (py - v.y) * k };
   }
 
-  // A dialog of ours (Jump, the keys) took the keyboard from this panel: it comes back when that closes (as
-  // spaces-plus comeBack).
-  comeBack(cx, held) {
-    const ov = shared("emergence.over");
-    if (!ov || ov.at === this.ovAt) return;
-    this.ovAt = ov.at;
-    if (ov.open) this.resume ||= held;
-    else if (this.resume) cx.timer.after(80, (cx) => {
-      if (shared("emergence.over")?.open) return;
-      this.resume = false;
-      if (!ov.went) { this.h.focus(); cx.notify(); }
-    });
-  }
-
   // The large popup (mod.open) closing gives the keyboard back to the side panel showing (emergence.back).
   async close() {
     if (this.detail) return this.detail.dismissed();
@@ -329,11 +319,7 @@ export default class AgentGraph extends View {
     const opening = shown && !this.wasShown; // a popup's first render, or a hidden panel shown again
     if (opening) this.refresh(cx);
     if (opening) this.folds = refold(this.folds); // earlier sub-agents start folded every time (lib refold)
-    const o = this.panel && shown && shared("emergence.opened"); // opened (⌘⇧A, the tab bar; tabs-plus says so): the keys are its own at once
-    if (o?.id === "graph" && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.h.focus()); }
-    const back = this.panel && shown && shared("emergence.back"); // a panel's window or popup closed: the keyboard comes back
-    if (back && back !== this.backAt) { this.backAt = back; if (Date.now() - back < 3000) cx.timer.after(80, () => this.h.focus()); }
-    if (this.panel) { this.comeBack(cx, this.held); this.held = this.h.is_focused(); }
+    if (this.panel) { this.kb.tick(cx); this.held = this.h.is_focused(); }
     this.wasShown = shown;
     const items = this.items();
     if (opening || this.activeOnly === null) this.activeOnly = openOnActive(items); // however it was opened: the same rule

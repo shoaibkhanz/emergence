@@ -4,7 +4,8 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { exec, appHome, theme, settings, props, run, layout, shared, setShared, closeOverlay } from "herdr";
+import { exec, appHome, theme, settings, props, run, layout, shared, setShared, closeOverlay, nextCommand } from "herdr";
+import { holder } from "./keyboard.js";
 import { alpha } from "./charts.js";
 import { skillsOf, summarize, outputOf, heat, startOfDay, addDays, DAY, LENGTHS, span, keepOf, tabAfter } from "./lib.js";
 import { HARNESS, ORDER, WD, date, ago, iso, parse, hh } from "./format.js";
@@ -50,9 +51,12 @@ const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(
 export default class Usage extends View {
   init(_props, cx) {
     this.panel = props()?.panel === true;
-    this.backAt = shared("emergence.back");
     this.handle = cx.focus_handle(); // a press anywhere takes the keyboard: ← / → walk the view tabs, as every panel's arrows do
-    if (this.panel) cx.timer.every(250, (cx) => { if (this.handle.is_focused() !== this.held) cx.notify(); }); // no blur event (comeBack)
+    if (this.panel) { // the keyboard: opened, windows closing, dialogs, pane.go's focus (shared/keyboard.js)
+      this.kb = holder({ id: "usage", panel: true, focus: () => this.handle.focus(), held: () => this.handle.is_focused(), shown: () => this.shown() });
+      cx.spawn(async () => { for (;;) this.kb.command(await nextCommand()); });
+      cx.timer.every(250, (cx) => { if (this.handle.is_focused() !== this.held) cx.notify(); }); // no blur event: a frame per change
+    }
     // Every minute while it shows: a rescan reads only the logs that changed (about 1.5 s); Output's git and gh every 15.
     cx.timer.every(60000, (cx) => { if (this.shown() && Date.now() - scanned > 50000) this.scan(cx, true); });
     cx.timer.every(1000, (cx) => { if (!data && this.busy) cx.notify(); }); // the first read's elapsed seconds
@@ -206,31 +210,13 @@ export default class Usage extends View {
         .child(div().min_w(0).truncate().child(this.selLabel())).child(div().flex_none().text_color(t.muted).child("✕")))));
   }
 
-  // A dialog of ours (Jump, the keys) took the keyboard from this panel: it comes back when that closes (as
-  // spaces-plus comeBack).
-  comeBack(cx, held) {
-    const ov = shared("emergence.over");
-    if (!ov || ov.at === this.ovAt) return;
-    this.ovAt = ov.at;
-    if (ov.open) this.resume ||= held;
-    else if (this.resume) cx.timer.after(80, (cx) => {
-      if (shared("emergence.over")?.open) return;
-      this.resume = false;
-      if (!ov.went) { this.handle.focus(); cx.notify(); }
-    });
-  }
-
   // The large popup (mod.open) closing gives the keyboard back to the side panel showing (emergence.back).
   async close() { if (!this.panel && props()?.overlay) setShared("emergence.back", Date.now()); }
 
   render(cx) {
     const t = theme(), vis = this.shown();
     if (vis && !this.wasShown) this.scan(cx, true); // shown again: don't wait up to a minute for the timer (busy guards a running scan)
-    const opened = this.panel && vis && shared("emergence.opened"); // opened (⌘⇧U, the tab bar; tabs-plus says so): the keys are its own at once
-    if (opened?.id === "usage" && opened.at !== this.openedAt && Date.now() - opened.at < 3000) { this.openedAt = opened.at; cx.timer.after(50, () => this.handle.focus()); }
-    const back = this.panel && vis && shared("emergence.back"); // a panel's window or popup closed: the keyboard comes back
-    if (back && back !== this.backAt) { this.backAt = back; if (Date.now() - back < 3000) cx.timer.after(80, () => this.handle.focus()); }
-    if (this.panel) { this.comeBack(cx, this.held); this.held = this.handle.is_focused(); }
+    if (this.panel) { this.kb.tick(cx); this.held = this.handle.is_focused(); }
     this.wasShown = vis;
     const root = (this.panel
       ? v_flex().size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)

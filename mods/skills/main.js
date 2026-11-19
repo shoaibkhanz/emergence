@@ -4,6 +4,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextView, Editor, EditorState, ScrollHandle } from "gpui-base";
 import { exec, home, focused, spaces, theme, settings, props, layout, run, openOverlay, closeOverlay, readTextFile, nextCommand, shared, setShared } from "herdr";
+import { holder } from "./keyboard.js";
 import { parseFrontMatter, mergeSkills, pickPlugins, rankSkills, fileKind, parseListing, resolveLink, formatSize } from "./lib.js";
 
 const ORDER = ["Agents", "Claude", "OpenCode", "Codex", "Project"];
@@ -113,7 +114,6 @@ export default class Skills extends View {
     if (props()?.role === "window") return this.initWindow(props(), cx);
     // Panel role (props.panel): a side panel in the layout's `panel` column; scans on show, follows the focused repo.
     this.panel = props()?.panel === true;
-    this.backAt = shared("emergence.back"); // only an overlay closed from now on takes the keyboard back
     this.query = "";
     this.at = 0;
     this.tab = localStorage.getItem("tab") === "plugins" ? "plugins" : "skills";
@@ -123,7 +123,12 @@ export default class Skills extends View {
     this.input = InputState.new({ placeholder: "Search…" });
     this.input.on("change", (_e, cx) => { this.query = this.input.value(); this.at = 0; this.scroll.scroll_to_item(0); cx.notify(); });
     this.input.on("submit", (_e, cx) => { this.open(this.results()[this.at]); cx.notify(); });
-    if (this.panel) return;
+    if (this.panel) { // the keyboard is the search box's: opened, windows closing, dialogs, pane.go's focus (shared/keyboard.js)
+      // held: never — the search box doesn't report losing focus to the terminal, so no dialog-return here (none before)
+      this.kb = holder({ id: "skills", panel: true, focus: () => this.input.focus(), held: () => false, shown });
+      cx.spawn(async () => { for (;;) this.kb.command(await nextCommand()); });
+      return;
+    }
     this.input.focus();
     cx.timer.after(300, () => this.input.focus());
     this.cwd = focused()?.cwd ?? null;
@@ -189,12 +194,7 @@ export default class Skills extends View {
 
   renderPalette(cx) {
     const panel = this.panel, wide = !panel || (this.width ?? 0) >= 720;
-    if (panel && shown()) {
-      const o = shared("emergence.opened"); // opened (⌘⇧K, the tab bar; tabs-plus says so): the keys are its own at once
-      if (o?.id === "skills" && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.input.focus()); }
-      const back = shared("emergence.back"); // a panel's window or popup has closed: the keyboard comes back here
-      if (back && back !== this.backAt) { this.backAt = back; if (Date.now() - back < 3000) cx.timer.after(80, () => this.input.focus()); }
-    }
+    if (panel && shown()) this.kb.tick(cx); // the keyboard (shared/keyboard.js)
     if (panel && shown() && !this.loading) {
       // Like Changes: follow the focused terminal's folder (a focused mod has none). this.cwd starts undefined, so the first show scans.
       const f = focused(), cwd = f?.terminal ? (f.cwd ?? null) : (this.cwd ?? null);

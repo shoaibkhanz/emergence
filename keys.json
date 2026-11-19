@@ -19,6 +19,11 @@
     "cmd-alt-,": "mod.open:emergence-settings",
     "cmd-alt-/": "side.chat"
   },
+  "mod:agent-graph": { "ctrl-h": "tabs-plus.back" },
+  "mod:excalidraw": { "ctrl-h": "tabs-plus.back" },
+  "mod:pr-review": { "ctrl-h": "tabs-plus.back" },
+  "mod:skills": { "ctrl-h": "tabs-plus.back" },
+  "mod:usage": { "ctrl-h": "tabs-plus.back" },
   "mod:spaces-plus": {
     "ctrl-j": "inbox.focus",
     "ctrl-l": "spaces-plus.back"

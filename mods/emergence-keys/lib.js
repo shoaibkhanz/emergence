@@ -12,6 +12,7 @@ export const GROUPS = [
     [{ action: "tabs-plus.side" }, "Side: your side chats"],
     [{ action: "side.chat" }, "Side chat: ask the focused agent something, in a copy beside it"],
     [{ keys: "↑ ↓ · ← → · ↵ · Esc" }, "In a panel: step through · switch tabs · open · step back, then to the terminal"],
+    [{ keys: "ctrl-h · ctrl-l" }, "From a panel to the terminal · from the terminal into the panel"],
   ]],
   ["Sidebar", [
     [{ action: "tabs-plus.rail" }, "Open it with the keyboard in Spaces; in it, fold it"],
