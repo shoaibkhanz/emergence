@@ -43,3 +43,7 @@ test("holdsKeys: only a section with rows and an open sidebar can hold the keybo
 test("rowsOf: a slot whose chat ended has no row, even with Herdr's leftover agent report", () => {
   expect(rowsOf([T("side-1", true, "idle", { labels: {} })], ALL, {}, 99999)).toEqual([]);
 });
+
+test("rowsOf: a chat that started and ended inside the hand-over window has no row (the panel shows it closed)", () => {
+  expect(rowsOf([T("side-1", false)], ALL, { "side-1": { at: 10000, started: true } }, 12000)).toEqual([]);
+});

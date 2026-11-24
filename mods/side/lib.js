@@ -1,8 +1,10 @@
 // Side sessions' decisions, kept pure for bun test: which harness a pane runs, what a key press does, what to tell
 // the person, and the panel's six named terminal slots (layouts/emergence.json: side-slots).
 
+import { SLOTS, slotView } from "./slots.js"; // shared/slots.js: the sidebar's Side chats uses the same rule
+export { SLOTS, slotView };
+
 export const NAMES = { claude: "Claude Code", opencode: "OpenCode", codex: "Codex", pi: "pi", omp: "omp" };
-export const SLOTS = ["side-1", "side-2", "side-3", "side-4", "side-5", "side-6"];
 // What Herdr reports (an agent's OSC app name, or a program's key) -> the helper's harness key.
 const KEYS = { "claude-code": "claude", claude: "claude", opencode: "opencode", codex: "codex", pi: "pi", omp: "omp" };
 
@@ -43,22 +45,6 @@ export function noticeFor(answer, harness) {
   }
   if (answer?.note === "can-edit") return { title: "This copy can edit files" };
   return null;
-}
-
-// The live side-N terminals are slot hosts (host.py) that never end: Herdr deletes a layout block whose terminal is
-// finished, and emergence.json is the repo's. A slot is open while its host labels it side.chat=on (a chat runs), or for a moment after a chat
-// was handed to it (tabs[slot].at, before the host has started it); idle while its host waits; missing with no host.
-// Only slots the layout still has count.
-const PENDING_MS = 15000;
-export function slotView(terminals, layoutSlots, tabs, now) {
-  const live = new Map(terminals.filter((t) => t.state === "live" && layoutSlots.includes(t.name)).map((t) => [t.name, t]));
-  const ordered = SLOTS.filter((s) => layoutSlots.includes(s));
-  // a chat runs while its host labels the slot (host.py mark), never by Herdr's agent report, which outlives an ended chat
-  const chatting = (t) => t.labels?.["side.chat"] === "on";
-  // the hand-over window covers only the wait for the chat to start: once seen running (started), its end is the end
-  const handed = (s) => !tabs[s]?.started && now - (tabs[s]?.at ?? -Infinity) < PENDING_MS;
-  const open = ordered.filter((s) => live.has(s) && (chatting(live.get(s)) || handed(s)));
-  return { open, idle: ordered.filter((s) => live.has(s) && !open.includes(s)), missing: ordered.filter((s) => !live.has(s)) };
 }
 
 // Tabs whose chat is now running, marked started (slotView then stops holding them open); null when none changed.

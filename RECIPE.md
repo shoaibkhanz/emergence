@@ -233,7 +233,8 @@ a choice is segments in a `raised` track, the chosen one `background`. Keys are 
   - Opening a panel (its ⌘⇧ key or the tab bar) gives it the keyboard: tabs-plus sets `shared("emergence.opened")` and
     the panel focuses itself (clicking one does too). One rule set does this for every panel and sidebar list:
     `shared/keyboard.js` (+ `keyboard-lib.js`, tested by `bun test shared`), copied into a mod by
-    `scripts/sync-shared.sh` once it has a `keyboard.js` (CI fails on a stale copy; never edit a copy). A mod makes
+    `scripts/sync-shared.sh` into every mod that has a file of that name (side and side-chats share `slots.js` this
+    way; CI fails on a stale copy; never edit a copy). A mod makes
     `holder({ id, panel, focus, held, shown })`, calls `tick(cx)` when it renders and `command(c)` with its
     `nextCommand()`s. Panels are `focusable` (pane.go sends them `focus`: ctrl-l from the terminal); a panel that
     focused itself isn't where pane.go starts, so keys.json `mod:<panel>` binds ctrl-h to `tabs-plus.back`. Inside every panel the same arrows: ↑/↓ walk the list (PRs and their
