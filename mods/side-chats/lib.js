@@ -4,19 +4,7 @@
 // Ports' row, header and empty-line heights, so the sections line up; at most four rows before the list scrolls.
 export const HEADER_H = 41, ROW_H = 30, EMPTY_H = 32, MAX_ROWS = 4;
 
-// A copy of mods/side/lib.js SLOTS, kept identical (mods don't import across folders).
-export const SLOTS = ["side-1", "side-2", "side-3", "side-4", "side-5", "side-6"];
-
-// A copy of mods/side/lib.js slotView, kept identical.
-const PENDING_MS = 15000;
-export function slotView(terminals, layoutSlots, tabs, now) {
-  const live = new Map(terminals.filter((t) => t.state === "live" && layoutSlots.includes(t.name)).map((t) => [t.name, t]));
-  const ordered = SLOTS.filter((s) => layoutSlots.includes(s));
-  // a chat runs while its host labels the slot (host.py mark), never by Herdr's agent report, which outlives an ended chat
-  const chatting = (t) => t.labels?.["side.chat"] === "on";
-  const open = ordered.filter((s) => live.has(s) && (chatting(live.get(s)) || now - (tabs[s]?.at ?? -Infinity) < PENDING_MS));
-  return { open, idle: ordered.filter((s) => live.has(s) && !open.includes(s)), missing: ordered.filter((s) => !live.has(s)) };
-}
+import { slotView } from "./slots.js"; // shared/slots.js: the panel's rule too
 
 // A side chat terminal's status in the inbox's terms ("error" needs you, as the inbox's subAgents reads it).
 export const statusOf = (t) => (["working", "blocked", "done"].includes(t?.status) ? t.status : t?.status === "error" ? "blocked" : "idle");

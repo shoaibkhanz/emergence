@@ -32,7 +32,7 @@ jobs:
         run: for f in mods/*/*.js; do node --input-type=module --check < "$f" || { echo "::error file=$f::doesn't parse"; exit 1; }; done
       - name: Unit tests
         run: bun test mods
-      - name: Shared keyboard copies match shared/
+      - name: Shared copies (keyboard, side slots) match shared/
         run: bash scripts/sync-shared.sh --check && bun test shared
       - name: Usage scanner tests
         run: python3 mods/usage/test_scan.py
