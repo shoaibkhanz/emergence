@@ -54,6 +54,16 @@ export function started(tabs, terminals) {
   return fresh.length ? { ...tabs, ...Object.fromEntries(fresh.map((s) => [s, { ...tabs[s], started: true }])) } : null;
 }
 
+// What the Side view does on a frame while it's showing: null (leave it), {show} an open chat (the slot shown has none),
+// or {close}: "panel" when the chat you were watching ended by itself (as ✕ does), "slots" when the view was opened
+// with no chat (its header's hint stays; the idle slot's "Opening a side chat…" goes). A hidden stack is left be: a
+// chat's start hides and re-shows it (main.js start). watched: the shown slot was open on this view's last frame.
+export function sideFrame({ open, active, hidden, watched }) {
+  if (hidden || open.includes(active)) return null;
+  if (open.length) return { show: open[0] };
+  return { close: watched ? "panel" : "slots" };
+}
+
 // Where a new side chat goes: an idle host first, else a slot that needs one started; null when all six are open.
 export function claim(view) {
   if (view.idle.length) return { slot: view.idle[0], create: false };

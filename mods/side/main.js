@@ -15,7 +15,7 @@ import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, hc, run, theme, props, nextCommand, focused, panes, agents, terminals, spaces, knownAgents, notify,
   openOverlay, closeOverlay, appHome, home, layout, shared, setShared } from "herdr";
-import { NAMES, harnessOf, decide, noticeFor, tabsOf, slotView, started, claim, bannerOf, withoutTab, INTRO, withoutStarting, withoutStale } from "./lib.js";
+import { NAMES, harnessOf, decide, noticeFor, tabsOf, slotView, started, claim, bannerOf, withoutTab, INTRO, withoutStarting, withoutStale, sideFrame } from "./lib.js";
 
 const SUPPORTED = ["claude", "opencode", "pi", "omp"]; // harnesses with an adapter in side.py; codex comes next
 const find = (n, id) => (n?.id === id ? n : (n?.children ?? []).map((c) => find(c, id)).find(Boolean));
@@ -28,6 +28,7 @@ const py = (file, args, timeout = 30000) => exec("python3", ["-B", `${appHome()}
 const SLOT_DIR = () => `${appHome()}/data/side/slots`;
 const layoutSlots = () => (find(layout(), "side-slots")?.children ?? []).map((c) => c.id);
 const view = () => slotView(terminals(), layoutSlots(), shared("side.tabs") ?? {}, Date.now());
+const WATCHED_MS = 6000; // the header redraws at least every 5 s while shown (init's timer)
 const starting = {}; // slot -> when its host's start began (lib withoutStarting); one resident copy starts hosts
 
 async function helper(op, req) {
@@ -166,13 +167,15 @@ export default class Side extends View {
   renderPanel(t) {
     const marked = started(shared("side.tabs") ?? {}, terminals()); // a running chat: its end closes the panel at once
     if (marked) setShared("side.tabs", marked);
-    const { open } = view(), stack = find(layout(), "side-slots");
-    // A chat that ended by itself (/exit, Ctrl-D) leaves its slot: move to another open one, or close the panel as ✕
-    // does (never show an idle one).
-    if (stack && !stack.hidden && find(layout(), "panel-body")?.active === "side" && !open.includes(stack.active)) {
-      if (open.length) show(open[0], false);
-      else { run("layout.hide", { id: "side-slots" }); run("layout.hide", { id: "panel" }); }
-    }
+    const { open } = view(), stack = find(layout(), "side-slots"), now = Date.now();
+    const onSide = !find(layout(), "panel")?.hidden && find(layout(), "panel-body")?.active === "side";
+    // Never show an idle slot: a chat that ended by itself (/exit, Ctrl-D) moves to another open one, or closes the
+    // panel as ✕ does; the view opened with none keeps its hint (lib sideFrame). Watched: open on a recent frame here.
+    const watched = !!this.seen?.open.includes(stack?.active) && now - this.seen.at < WATCHED_MS;
+    this.seen = onSide ? { open, at: now } : null;
+    const d = stack && onSide ? sideFrame({ open, active: stack.active, hidden: stack.hidden, watched }) : null;
+    if (d?.show) show(d.show, false);
+    else if (d?.close) { run("layout.hide", { id: "side-slots" }); if (d.close === "panel") run("layout.hide", { id: "panel" }); }
     const tabs = tabsOf(open, shared("side.tabs") ?? {});
     const bar = h_flex().id("side-header").size_full().px(8).gap(4).items_center().bg(t.chrome).border_b_1().border_color(t.border).text_size(12);
     if (!tabs.length) return bar.child(div().px(8).text_color(t.dim).truncate().child("Press ⌘⌥/ on an agent to ask it something on the side"));
