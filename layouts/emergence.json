@@ -41,7 +41,11 @@
         {
           "id": "sidebar-lists",
           "type": "column",
-          "resizable": false,
+          "divider": {
+            "width": 1,
+            "color": "chrome",
+            "hover": "border"
+          },
           "children": [
             {
               "id": "spaces",

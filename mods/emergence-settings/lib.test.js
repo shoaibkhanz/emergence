@@ -111,3 +111,13 @@ test("choose: ←/→ step a choice, stopping at its ends; ↵ (0) goes round; a
 test("the dialog frame: RECIPE's numbers", () => {
   expect(DIALOG).toEqual({ pad: 24, gap: 16, title: 22, radius: 10, button: 32 });
 });
+
+test("sidebar sizes: on while a section has a dragged size, flipping clears them; none dragged is a note", () => {
+  expect(row(sections(of({ "sidebar.sized": { spaces: 300 } }), null), "sidebar.sized"))
+    .toMatchObject({ on: true, writes: [["sidebar.sized", null]] });
+  for (const sized of [undefined, null, {}]) {
+    const r = row(sections(of({ "sidebar.sized": sized }), null), "sidebar.sized");
+    expect(r).toMatchObject({ on: false, note: "drag a line between sections" });
+    expect(r.writes).toBeUndefined();
+  }
+});

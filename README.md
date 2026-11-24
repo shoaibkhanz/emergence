@@ -129,6 +129,8 @@ session it has read.
   keeps them. ⇧← ticks several worktrees to delete at once.
 - **Working N**, the last row: opens the graph on what's working (everything at 0).
 - **Sizes**: open, rail, dots (⌘B, ⌘⌥B).
+- **Drag the lines** between Spaces, Inbox, Ports and Side chats: a section keeps the size you give it (it scrolls
+  past that); the rest fit their content. Settings (⌘⌥,) → Keep dragged sizes off fits them all again.
 
 ### Settings (⌘⌥,)
 
