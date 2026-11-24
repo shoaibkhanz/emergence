@@ -134,11 +134,13 @@ test("splitColumn: dragged sizes (sidebar.sized) replace a section's want; the i
 
 import { dragsOf } from "./lib.js";
 
-test("dragsOf: first look adopts; an unapplied send waits; a trimmed send is adopted; a later move is a drag", () => {
+test("dragsOf: first look adopts; an unapplied send waits; landing where asked is ours; anywhere else is a drag", () => {
   expect(dragsOf({}, { spaces: 120 })).toEqual({ drags: {}, sent: { spaces: { px: 120, from: 120, applied: true } } });
   const waiting = { spaces: { px: 300, from: 100, applied: false } };
   expect(dragsOf(waiting, { spaces: 100 })).toEqual({ drags: {}, sent: waiting });
-  expect(dragsOf(waiting, { spaces: 250 })).toEqual({ drags: {}, sent: { spaces: { px: 250, from: 250, applied: true } } });
+  expect(dragsOf(waiting, { spaces: 300 })).toEqual({ drags: {}, sent: { spaces: { px: 300, from: 300, applied: true } } });
+  // a drag during the wait (splitColumn never asks for more than fits, so Herdr doesn't trim our sends)
+  expect(dragsOf(waiting, { spaces: 250 })).toEqual({ drags: { spaces: 250 }, sent: { spaces: { px: 250, from: 250, applied: true } } });
   const settled = { spaces: { px: 250, from: 250, applied: true } };
   expect(dragsOf(settled, { spaces: 251 }).drags).toEqual({}); // zoom's rounding
   expect(dragsOf(settled, { spaces: 320 })).toEqual({ drags: { spaces: 320 }, sent: { spaces: { px: 320, from: 320, applied: true } } });

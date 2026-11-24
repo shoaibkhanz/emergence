@@ -33,17 +33,17 @@ export function splitColumn({ H, spacesWant, need, portsMin, sideWant = 0, colla
 // Which sidebar sections the person dragged (no drag event: told apart from this inbox's own resizes). laid: {id: px}
 // as the layout has them; sent: {id: {px, from, applied}}, what the inbox asked for and from what size (main.js
 // fitSpaces). A first look adopts what's there (sizes restored at start aren't drags); a send waits until the layout
-// moves off `from`, then whatever it moved to is adopted (Herdr trims a request to what fits); after that, a move
-// over a pixel (zoom's rounding) is a drag. -> {drags: {id: px}, sent}.
-// ponytail: a drag made in the frame between a send and its landing is read as the send's result; the drag's next
-// frame is caught.
+// moves off `from`; then, and from then on, a size more than a pixel (zoom's rounding) from what was asked is a drag:
+// splitColumn never asks for more than the column holds, so Herdr doesn't trim the inbox's sends. -> {drags: {id: px}, sent}.
+// ponytail: Herdr shrinking a section itself (a window too short for the inbox's 90) reads as a drag; the settings
+// switch resets it.
 export function dragsOf(sent, laid) {
   const drags = {}, next = { ...sent };
   for (const [id, px] of Object.entries(laid)) {
     const s = sent[id];
     if (s && !s.applied && px === s.from) continue;
-    if (s?.applied && Math.abs(px - s.px) > 1) drags[id] = px;
-    if (!s || !s.applied || drags[id] != null) next[id] = { px, from: px, applied: true };
+    if (s && Math.abs(px - s.px) > 1) drags[id] = px;
+    next[id] = { px, from: px, applied: true };
   }
   return { drags, sent: next };
 }
