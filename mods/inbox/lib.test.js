@@ -131,3 +131,20 @@ test("splitColumn: dragged sizes (sidebar.sized) replace a section's want; the i
     .toEqual(splitColumn({ ...base, collapsed: true, portsMin: 0 }));
   expect(splitColumn({ ...base, H: 0, sized: { spaces: 150 } }).spaces).toBe(150);
 });
+
+import { dragsOf } from "./lib.js";
+
+test("dragsOf: first look adopts; an unapplied send waits; a trimmed send is adopted; a later move is a drag", () => {
+  expect(dragsOf({}, { spaces: 120 })).toEqual({ drags: {}, sent: { spaces: { px: 120, from: 120, applied: true } } });
+  const waiting = { spaces: { px: 300, from: 100, applied: false } };
+  expect(dragsOf(waiting, { spaces: 100 })).toEqual({ drags: {}, sent: waiting });
+  expect(dragsOf(waiting, { spaces: 250 })).toEqual({ drags: {}, sent: { spaces: { px: 250, from: 250, applied: true } } });
+  const settled = { spaces: { px: 250, from: 250, applied: true } };
+  expect(dragsOf(settled, { spaces: 251 }).drags).toEqual({}); // zoom's rounding
+  expect(dragsOf(settled, { spaces: 320 })).toEqual({ drags: { spaces: 320 }, sent: { spaces: { px: 320, from: 320, applied: true } } });
+});
+
+test("dragsOf: the line between Ports and Side chats moves both: both are drags", () => {
+  const sent = { ports: { px: 94, from: 94, applied: true }, "side-chats": { px: 71, from: 71, applied: true } };
+  expect(dragsOf(sent, { ports: 60, "side-chats": 105 }).drags).toEqual({ ports: 60, "side-chats": 105 });
+});
