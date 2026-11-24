@@ -78,7 +78,7 @@ export default class Side extends View {
 
   // ---- the key: a side chat for the focused agent ----
   async chat(retry) {
-    if (this.busy) return;
+    if (this.busy) return say({ title: "A side chat is already opening" });
     this.busy = true;
     let shown = null, ok = false; // a warm slot shown before the helper ran is dropped again if the press fails
     try {
