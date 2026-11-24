@@ -5,7 +5,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { subAgents, columnHeight, splitColumn, inboxHeight, HEADER_H, ROW_H, EMPTY_H, LIST_PAD, CARD_GAP, FOOT_H, SHELF_MAX, SHELF_PAD } from "./lib.js";
+import { subAgents, columnHeight, splitColumn, dragsOf, inboxHeight, HEADER_H, ROW_H, EMPTY_H, LIST_PAD, CARD_GAP, FOOT_H, SHELF_MAX, SHELF_PAD } from "./lib.js";
 import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared, setShared, nextCommand, focused } from "herdr";
 import { holder, listKey } from "./keyboard.js";
 
@@ -112,6 +112,13 @@ export default class Inbox extends View {
     // What they share: this block's height plus Spaces', Side chats' and Ports' as drawn (lib columnHeight); none while one
     // of them hasn't drawn its new size yet: the next pass fits. The same mismatch MISMATCH_MS on isn't on its way (the
     // column can't hold what was asked): it's taken as drawn. A look is booked then, as nothing else may redraw.
+    // A section the person dragged keeps that size (shared sidebar.sized; lib dragsOf tells a drag from our own resize).
+    const sections = [[sp, "spaces"], [sc, "side-chats"], [po, "ports"]].filter(([n]) => n && !n.hidden);
+    if (!collapsed) {
+      const d = dragsOf(this.sent ?? {}, Object.fromEntries(sections.map(([n, id]) => [id, n.size?.px ?? 0])));
+      this.sent = d.sent;
+      if (Object.keys(d.drags).length) setShared("sidebar.sized", { ...(shared("sidebar.sized") ?? {}), ...d.drags });
+    }
     const block = (n, key) => ({ px: n.size?.px ?? 0, shown: shared(key) ?? undefined });
     const blocks = [[sp, "spaces.h"], [sc, "side-chats.h"], [po, "ports.h"]].filter(([n]) => n && !n.hidden).map(([n, k]) => block(n, k));
     const sig = JSON.stringify(blocks);
@@ -122,11 +129,18 @@ export default class Inbox extends View {
       return;
     }
     this.mismatch = null;
-    const { spaces: px, side, ports } = splitColumn({ H, spacesWant, need, portsMin, sideWant, collapsed });
-    // Against the layout's own sizes, not the last ones sent: a size changed from elsewhere is put back.
-    if (px !== sp.size?.px) run("layout.resize", { id: "spaces", px });
-    if (po && ports !== po.size?.px) run("layout.resize", { id: "ports", px: ports });
-    if (sc && side !== sc.size?.px) run("layout.resize", { id: "side-chats", px: side });
+    const sized = shared("sidebar.sized") ?? {};
+    const { spaces: px, side, ports } = splitColumn({ H, spacesWant, need, portsMin, sideWant, collapsed, sized });
+    // Against the layout's own sizes, not the last ones sent: a size changed from elsewhere is put back (a drag was
+    // saved above, so it comes back as itself). Each send is noted for dragsOf.
+    const resize = (n, id, to) => {
+      if (!n || to === n.size?.px) return;
+      run("layout.resize", { id, px: to });
+      this.sent = { ...this.sent, [id]: { px: to, from: n.size?.px ?? 0, applied: false } };
+    };
+    resize(sp, "spaces", px);
+    resize(po, "ports", ports);
+    resize(sc, "side-chats", side);
   }
 
   // This block's own height, measured after every layout pass (fitSpaces adds Spaces' and Ports').
