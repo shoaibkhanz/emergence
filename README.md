@@ -256,6 +256,7 @@ herdr-app check ~/.config/herdr-app/mods/<name>   # load and render once
                                                   # python3 mods/agent-graph/test_subagents.py, python3 mods/side/test_side.py,
                                                   # python3 skills/herdr-excalidraw/test_dot2excalidraw.py
 bash install.test.sh                              # the installer and updater, in throwaway homes
+ln -s ../../scripts/pre-push .git/hooks/pre-push  # once: tests and herdr-app check on every mod before a push
 ```
 
 Every push to `main` reaches people through the Update chip, so CI (`.github/workflows/check.yml`) runs all of the

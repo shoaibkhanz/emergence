@@ -46,4 +46,4 @@ jobs:
         run: bash install.test.sh
       - name: shellcheck
         if: runner.os == 'Linux'
-        run: shellcheck -S warning -e SC1010 install.sh install.test.sh scripts/sync-shared.sh # SC1010: `herdr-app do` isn't a loop's do
+        run: shellcheck -S warning -e SC1010 install.sh install.test.sh scripts/sync-shared.sh scripts/pre-push # SC1010: `herdr-app do` isn't a loop's do

@@ -45,7 +45,7 @@ export function parseBattery(text) {
   return { onBattery: /'Battery Power'/.test(text), percent: Number(pct[1]) };
 }
 
-// ps's cumulative CPU time (m:ss.cc, h:mm:ss[.cc], d-hh:mm:ss) -> seconds; a copy of mods/port-card/lib.js.
+// ps's cumulative CPU time (m:ss.cc, h:mm:ss[.cc], d-hh:mm:ss) -> seconds.
 export function parseCpuTime(s) {
   const m = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/.exec((s ?? "").trim());
   if (!m) return null;
