@@ -14,13 +14,19 @@ export const subAgents = (terminals, known) => terminals
 // inbox never squeezes it (the cards scroll). A column that can't hold Spaces' 60, the inbox's 90 and Ports' minimum
 // besides shrinks it to what's left, down to nothing (its list scrolls): it never pushes a section past its floor.
 export const INBOX_MIN = 90, SPACES_MIN = 60, SPACES_FIRST = 285;
-export function splitColumn({ H, spacesWant, need, portsMin, sideWant = 0, collapsed }) {
-  const side = collapsed || !sideWant ? 0
-    : H ? Math.max(0, Math.min(sideWant, H - SPACES_MIN - INBOX_MIN - portsMin)) : sideWant;
-  const rest = H ? H - side : 0;
-  const min = collapsed ? 0 : portsMin, pool = rest - min;
-  const spaces = Math.round(rest ? Math.max(SPACES_MIN, Math.min(spacesWant, pool - INBOX_MIN, Math.max(pool - need, pool / 2))) : Math.min(spacesWant, SPACES_FIRST));
-  const ports = collapsed ? 0 : rest ? Math.max(min, Math.round(rest - spaces - Math.max(need, INBOX_MIN))) : min;
+// A section the person dragged (sized: shared sidebar.sized, {spaces?, ports?, "side-chats"?: px}) keeps that size in
+// place of its want, as far as the column holds it with Spaces' 60 and the inbox's 90 (the saved size stays, so room
+// coming back restores it); a dragged Ports or Side chats may be 0. Folded, dragged sizes don't apply.
+export function splitColumn({ H, spacesWant, need, portsMin, sideWant = 0, collapsed, sized = {} }) {
+  if (collapsed) sized = {};
+  const min = collapsed ? 0 : sized.ports ?? portsMin, sideAsk = sized["side-chats"] ?? sideWant;
+  const side = collapsed || !sideAsk ? 0
+    : H ? Math.max(0, Math.min(sideAsk, H - SPACES_MIN - INBOX_MIN - min)) : sideAsk;
+  const rest = H ? H - side : 0, pool = rest - min;
+  const spaces = Math.round(sized.spaces != null ? (rest ? Math.max(SPACES_MIN, Math.min(sized.spaces, pool - INBOX_MIN)) : sized.spaces)
+    : rest ? Math.max(SPACES_MIN, Math.min(spacesWant, pool - INBOX_MIN, Math.max(pool - need, pool / 2))) : Math.min(spacesWant, SPACES_FIRST));
+  const ports = collapsed ? 0 : sized.ports != null ? (rest ? Math.max(0, Math.min(sized.ports, rest - spaces - INBOX_MIN)) : sized.ports)
+    : rest ? Math.max(min, Math.round(rest - spaces - Math.max(need, INBOX_MIN))) : min;
   return { spaces, side, ports };
 }
 
