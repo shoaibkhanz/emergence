@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Before a push: the unit tests, the shared copies, and herdr-app check (the one check CI can't run) against the
+# Herdr installed here: on the mods this push changes, and on every mod after a Herdr update, so a mod using
+# something the update removed or changed is caught before it ships (each check takes ~2.5 s; Herdr runs them
+# one at a time).
+# Install once: ln -s ../../scripts/pre-push .git/hooks/pre-push   Skip once: git push --no-verify
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+bun test mods shared >/dev/null 2>&1 || { bun test mods shared; exit 1; }
+bash scripts/sync-shared.sh --check
+command -v herdr-app >/dev/null || { echo "pre-push: no herdr-app here, herdr-app check skipped" >&2; exit 0; }
+version=$(herdr-app --version)
+stamp="$(git rev-parse --git-dir)/herdr-checked" # the Herdr version every mod last passed on
+if [ "$version" != "$(cat "$stamp" 2>/dev/null)" ]; then
+  echo "pre-push: $version is new here, checking every mod (~1 min)" >&2
+  mods=$(ls -d mods/*/)
+else
+  mods=$(git diff --name-only origin/main...HEAD -- mods | cut -d/ -f1-2 | sort -u | sed 's|$|/|')
+fi
+for mod in $mods; do
+  [ -f "$mod/mod.json" ] || continue
+  out=$(herdr-app check "$mod" 2>&1) || { echo "pre-push: herdr-app check failed for $mod" >&2; echo "$out" >&2; exit 1; }
+done
+echo "$version" >"$stamp"
