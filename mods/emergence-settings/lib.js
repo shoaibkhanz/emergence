@@ -64,13 +64,21 @@ function dotsRow(get) {
     options: PERCENTS.map((p) => ({ value: p, label: p ? `${p}%` : "Off", writes: [["agent-graph.dots", p]] })) };
 }
 
+// The sizes the person dragged sidebar sections to (shared sidebar.sized, kept by mods/inbox): off puts every
+// section back to fitting its content. Nothing dragged: a note, no switch.
+function sizedRow(get) {
+  const name = "Keep dragged sizes", about = "Drag the lines between Spaces, Inbox, Ports and Side chats; off fits them to their content again.";
+  return Object.keys(get("sidebar.sized") ?? {}).length ? flip("sidebar.sized", name, about, true, [["sidebar.sized", null]])
+    : { id: "sidebar.sized", name, about, on: false, note: "drag a line between sections" };
+}
+
 export function sections(get, known) {
   const dots = get("sidebar.folded") === "dots", split = get("pr-review.split") === true, big = get("skills.big") === true;
   return [
     ...(get("agent-graph.historyOffered") ? [{ title: "Agents", rows: [historyRow(get), patternRow(get), dotsRow(get), grainRow(get)] }] : []),
     { title: "Sidebar", rows: [flip("sidebar.dots", "Fold to dots",
       "⌘B folds the sidebar to a square per space, not a rail of avatars (⌘⌥B steps).",
-      dots, [["sidebar.folded", dots ? "rail" : "dots"]])] },
+      dots, [["sidebar.folded", dots ? "rail" : "dots"]]), sizedRow(get)] },
     { title: "PRs", rows: [flip("prs.split", "Side by side diffs",
       "Old on the left, new on the right; a narrow panel stays unified.",
       split, [["pr-review.split", !split]])] },
