@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { harnessOf, decide, noticeFor, tabsOf, SLOTS, slotView, started, claim, bannerOf, withoutTab, INTRO, withoutStarting, withoutStale, sideFrame } from "./lib.js";
+import { harnessOf, decide, noticeFor, tabsOf, started, claim, bannerOf, withoutTab, INTRO, withoutStarting, withoutStale, sideFrame } from "./lib.js";
+import { SLOTS, slotView } from "./slots.js";
 
 const installed = { claude: true, opencode: true, codex: true, pi: false, omp: true };
 const supported = ["claude", "opencode"];

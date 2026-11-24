@@ -1,8 +1,7 @@
 // Side sessions' decisions, kept pure for bun test: which harness a pane runs, what a key press does, what to tell
 // the person, and the panel's six named terminal slots (layouts/emergence.json: side-slots).
 
-import { SLOTS, slotView } from "./slots.js"; // shared/slots.js: the sidebar's Side chats uses the same rule
-export { SLOTS, slotView };
+import { SLOTS } from "./slots.js"; // shared/slots.js: slotView there is the sidebar's Side chats rule too
 
 export const NAMES = { claude: "Claude Code", opencode: "OpenCode", codex: "Codex", pi: "pi", omp: "omp" };
 // What Herdr reports (an agent's OSC app name, or a program's key) -> the helper's harness key.
