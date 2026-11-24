@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { harnessOf, decide, noticeFor, tabsOf, SLOTS, slotView, started, claim, bannerOf, withoutTab, INTRO, withoutStarting, withoutStale } from "./lib.js";
+import { harnessOf, decide, noticeFor, tabsOf, SLOTS, slotView, started, claim, bannerOf, withoutTab, INTRO, withoutStarting, withoutStale, sideFrame } from "./lib.js";
 
 const installed = { claude: true, opencode: true, codex: true, pi: false, omp: true };
 const supported = ["claude", "opencode"];
@@ -120,4 +120,19 @@ test("slotView: only the host's side.chat label says a chat runs, never Herdr's 
   // a harness Herdr doesn't recognise as an agent still counts while its host says a chat runs
   const unknown = { name: "side-2", state: "live", program: { agent: false }, labels: { "side.chat": "on" } };
   expect(slotView([unknown], ["side-2"], {}, 99999).open).toEqual(["side-2"]);
+});
+
+test("sideFrame: an open chat shown, or a hidden stack (a chat's start is re-showing it), leaves things be", () => {
+  expect(sideFrame({ open: ["side-1"], active: "side-1", hidden: false, watched: true })).toBe(null);
+  expect(sideFrame({ open: ["side-2"], active: "side-1", hidden: true, watched: false })).toBe(null);
+  expect(sideFrame({ open: [], active: "side-1", hidden: true, watched: true })).toBe(null);
+});
+
+test("sideFrame: showing a slot with no chat moves to an open one", () => {
+  expect(sideFrame({ open: ["side-2", "side-5"], active: "side-1", hidden: false, watched: true })).toEqual({ show: "side-2" });
+});
+
+test("sideFrame: the chat you were watching ended by itself closes the panel; opened with none, the hint stays", () => {
+  expect(sideFrame({ open: [], active: "side-1", hidden: false, watched: true })).toEqual({ close: "panel" });
+  expect(sideFrame({ open: [], active: "side-1", hidden: false, watched: false })).toEqual({ close: "slots" });
 });
