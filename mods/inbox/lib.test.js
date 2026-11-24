@@ -117,3 +117,17 @@ test("a column too short for what was asked refits instead of waiting forever", 
   expect(px.spaces + px.side + px.ports).toBeLessThanOrEqual(T - MIN);
   expect(layout(px)).toEqual(px); // everything drawn as asked: settled
 });
+
+test("splitColumn: dragged sizes (sidebar.sized) replace a section's want; the inbox keeps its 90; folded ignores them", () => {
+  const base = { H: 800, spacesWant: 100, need: 150, portsMin: 94, collapsed: false };
+  expect(splitColumn({ ...base, sized: { spaces: 400 } })).toEqual({ spaces: 400, side: 0, ports: 250 });
+  expect(splitColumn({ ...base, sized: { ports: 300 } })).toEqual({ spaces: 100, side: 0, ports: 300 });
+  expect(splitColumn({ ...base, sized: { ports: 0 } }).ports).toBe(0);
+  expect(splitColumn({ ...base, sideWant: 32, sized: { "side-chats": 200 } }).side).toBe(200);
+  const short = splitColumn({ ...base, H: 400, sized: { spaces: 500 } });
+  expect(short.spaces).toBe(216);
+  expect(short.spaces + short.side + short.ports + 90).toBeLessThanOrEqual(400);
+  expect(splitColumn({ ...base, collapsed: true, portsMin: 0, sized: { spaces: 400, ports: 300 } }))
+    .toEqual(splitColumn({ ...base, collapsed: true, portsMin: 0 }));
+  expect(splitColumn({ ...base, H: 0, sized: { spaces: 150 } }).spaces).toBe(150);
+});
