@@ -272,3 +272,22 @@ export function pairRows(rows) {
 // ← / → walk the PR list's Open · Closed · All only while ↑ / ↓ walk that list: once a PR's files are open (the rail
 // may still show beside them) the arrows are the files', and the search box keeps ← / → for its caret.
 export const tabArrows = ({ listShows, filesOpen, inSearch }) => listShows && !filesOpen && !inSearch;
+
+// The compare's branch picker. for-each-ref "%(refname)\t%(committerdate:iso-strict)" lines -> branches, newest first as
+// given: ref (what a pick saves: the short ref, `main` or `origin/main`), name (shown: a remote's without its remote),
+// tag ("local" or the remote's name), at. A remote's HEAD is skipped.
+export const parseBranches = (out) => out.split("\n").filter(Boolean).map((l) => l.split("\t")).flatMap(([full, at]) => {
+  if (full.startsWith("refs/heads/")) { const name = full.slice(11); return [{ ref: name, name, tag: "local", at }]; }
+  const [remote, ...rest] = full.replace(/^refs\/remotes\//, "").split("/"), name = rest.join("/");
+  return !name || name === "HEAD" ? [] : [{ ref: `${remote}/${name}`, name, tag: remote, at }];
+});
+
+// The picker's rows: branches whose ref holds q (any case), without the other side's ref or (head side) this branch,
+// each with hit: where q sits in its name ([start, end], bold) or null. The head side starts with this branch, with
+// its uncommitted work (null), when its name holds q.
+export function pickerRows(branches, q, { other, here, head }) {
+  const k = q.trim().toLowerCase(), at = (s) => (k ? s.toLowerCase().indexOf(k) : -1);
+  const rows = branches.filter((b) => b.ref !== other && !(head && b.ref === here) && b.ref.toLowerCase().includes(k))
+    .map((b) => ({ ...b, hit: at(b.name) >= 0 ? [at(b.name), at(b.name) + k.length] : null }));
+  return head && here.toLowerCase().includes(k) ? [null, ...rows] : rows;
+}
