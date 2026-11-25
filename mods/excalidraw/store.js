@@ -6,17 +6,34 @@
 import { exec, appHome, home, readTextFile, writeTextFile } from "herdr";
 import { observe, declaredRepos, repoKey, expired, freeName } from "./library.js";
 import { previewSvg } from "./preview.js";
+import * as fs from "fs/promises";
 
 // herdr-mods: a drawing's text, up to 8 MB (exec's output is capped at 8 MiB) where readTextFile stops at 1 MiB, so a
 // drawing with pasted images (stored in the file) still opens. null when the file isn't there; past 8 MB it throws
 // saying so, never an empty read that looks like a missing or empty drawing.
 const DRAWING_MAX = 8_000_000;
 export async function readDrawingText(path) {
-  const r = await exec("sh", ["-c", 'test -e "$1" || exit 3; n=$(wc -c < "$1"); [ "$n" -le "$2" ] || { echo "$n" >&2; exit 4; }; cat "$1"', "sh", path, String(DRAWING_MAX)]);
+  const r = await exec("sh", ["-c", 'test -e "$1" || exit 3; n=$(wc -c < "$1") || exit 5; [ "$n" -le "$2" ] || { echo "$n" >&2; exit 4; }; cat "$1"', "sh", path, String(DRAWING_MAX)]);
   if (r.code === 3) return null;
-  if (r.code === 4) throw new Error(`it's ${(parseInt(r.stderr, 10) / 1e6).toFixed(1)} MB, and drawings up to 8 MB open`);
+  if (r.code === 4) throw new Error(`it's ${(parseInt(r.stderr, 10) / 1e6).toFixed(1)} MB, and drawings up to 8 MB open`); // 5: wc couldn't read it: its error below
   if (r.code !== 0) throw new Error((r.stderr || "can't read it").trim());
   return r.stdout;
+}
+
+// herdr-mods: writes text of any size: Herdr's writeTextFile refuses past 1 MiB ("Text file exceeds 1 MiB", reading the
+// file for its `expected` check too). Small text goes through it as before. Bigger text under the app home (where a
+// mod may write) gets the same check here, the file must still be what was last read (null: not there), then it's
+// written beside and moved over, so a half-written drawing never replaces a whole one. Elsewhere: writeTextFile's limit.
+const SMALL = 900_000; // characters: drawings are ASCII JSON (pasted images are base64), so well under 1 MiB in bytes
+export async function writeText(path, text, expected) {
+  if (text.length < SMALL && (expected ?? "").length < SMALL) return writeTextFile(path, text, expected);
+  if (!path.startsWith(`${appHome()}/`)) throw new Error("Text file exceeds 1 MiB, and only files in Herdr's own folder save past that");
+  const now = await readDrawingText(path);
+  if ((expected == null && now != null) || (expected != null && now !== expected)) throw new Error("The file changed outside Herdr. Reload before saving.");
+  const tmp = `${path}.${Date.now()}.saving`;
+  await fs.writeFile(tmp, text);
+  const r = await exec("mv", ["-f", tmp, path]);
+  if (r.code !== 0) { await exec("rm", ["-f", tmp]); throw new Error((r.stderr || "couldn't save it").trim()); }
 }
 
 export const dir = () => `${appHome()}/data/excalidraw`;
@@ -124,7 +141,7 @@ export async function deleteForever(name) {
 }
 export async function duplicate(name, copy, entry) {
   const raw = await readDrawingText(`${dir()}/${name}`);
-  await writeTextFile(`${dir()}/${copy}`, raw ?? "", null);
+  await writeText(`${dir()}/${copy}`, raw ?? "", null);
   await setEntry(copy, { ...entry, title: `${entry.title} copy`, named: true, by: "user", created: Date.now(), updated: Date.now(), pinned: false, preview: undefined, sum: null });
 }
 export async function create(name, title, repo) {

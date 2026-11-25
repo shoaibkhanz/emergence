@@ -39,7 +39,7 @@ import { exec as herdrExec } from "herdr"; // herdr-mods: export.js's IO
 import { saveExport, boxOf, groundPaths } from "./export.js"; // herdr-mods: SVG and PNG export
 import { holder } from "./keyboard.js";
 import { LibraryView } from "./library-view.js";
-import { readDrawingText } from "./store.js"; // herdr-mods: drawings up to 8 MB, and a reason when one won't open
+import { readDrawingText, writeText } from "./store.js"; // herdr-mods: drawings up to 8 MB both ways, and a reason when one won't open
 import { backdrop as groundLayers, dotsAlpha, grainOpacity } from "./backdrop.js";
 import { cardsOf, alphaHex } from "./ground.js";
 import { copyText, pasted } from "./clipboard.js";
@@ -5193,7 +5193,7 @@ var Excalidraw = class extends View {
     const text = serializeDocument({ ...this.doc, elements: this.scene.getElementsIncludingDeleted() });
     const seq = this.saveAt;
     try {
-      await writeTextFile2(this.file, text, this.lastText);
+      await writeText(this.file, text, this.lastText); // herdr-mods: writeTextFile stops at 1 MiB
       this.lastText = text;
       if (this.saveAt === seq) this.dirty = false;
       this.saveError = null;
@@ -5228,7 +5228,7 @@ var Excalidraw = class extends View {
     cx.notify();
     cx.spawn(async (cx2) => {
       try {
-        const out = await saveExport(kind, items, look, { exec: herdrExec, appHome, home: home2, writeTextFile: writeTextFile2 });
+        const out = await saveExport(kind, items, look, { exec: herdrExec, appHome, home: home2, writeTextFile: writeText }); // an SVG past 1 MiB too
         notify({ title: `Saved ${out.split("/").pop()} to Downloads`, level: "info" });
       } catch (e4) {
         fail(e4);
