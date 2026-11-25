@@ -122,7 +122,7 @@ test("splitColumn: dragged sizes (sidebar.sized) replace a section's want; the i
   const base = { H: 800, spacesWant: 100, need: 150, portsMin: 94, collapsed: false };
   expect(splitColumn({ ...base, sized: { spaces: 400 } })).toEqual({ spaces: 400, side: 0, ports: 250 });
   expect(splitColumn({ ...base, sized: { ports: 300 } })).toEqual({ spaces: 100, side: 0, ports: 300 });
-  expect(splitColumn({ ...base, sized: { ports: 0 } }).ports).toBe(0);
+  expect(splitColumn({ ...base, sized: { ports: 40 } }).ports).toBe(40);
   expect(splitColumn({ ...base, sideWant: 32, sized: { "side-chats": 200 } }).side).toBe(200);
   const short = splitColumn({ ...base, H: 400, sized: { spaces: 500 } });
   expect(short.spaces).toBe(216);
@@ -149,4 +149,15 @@ test("dragsOf: first look adopts; an unapplied send waits; landing where asked i
 test("dragsOf: the line between Ports and Side chats moves both: both are drags", () => {
   const sent = { ports: { px: 94, from: 94, applied: true }, "side-chats": { px: 71, from: 71, applied: true } };
   expect(dragsOf(sent, { ports: 60, "side-chats": 105 }).drags).toEqual({ ports: 60, "side-chats": 105 });
+});
+
+test("splitColumn: a dragged Ports or Side chats keeps at least one line (32), so neither is lost at 0", () => {
+  const base = { H: 800, spacesWant: 100, need: 150, portsMin: 94, collapsed: false };
+  expect(splitColumn({ ...base, sized: { ports: 0 } }).ports).toBe(32);
+  expect(splitColumn({ ...base, sideWant: 71, sized: { "side-chats": 0 } }).side).toBe(32);
+});
+
+test("dragsOf: the earlier of two resizes in flight landing is the inbox's own, not a drag", () => {
+  const sent = { spaces: { px: 210, prev: 200, from: 100, applied: false } };
+  expect(dragsOf(sent, { spaces: 200 }).drags).toEqual({});
 });

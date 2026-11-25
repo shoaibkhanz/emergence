@@ -16,9 +16,10 @@ export const subAgents = (terminals, known) => terminals
 export const INBOX_MIN = 90, SPACES_MIN = 60, SPACES_FIRST = 285;
 // A section the person dragged (sized: shared sidebar.sized, {spaces?, ports?, "side-chats"?: px}) keeps that size in
 // place of its want, as far as the column holds it with Spaces' 60 and the inbox's 90 (the saved size stays, so room
-// coming back restores it); a dragged Ports or Side chats may be 0. Folded, dragged sizes don't apply.
+// coming back restores it); a dragged Ports or Side chats keeps one line. Folded, dragged sizes don't apply.
 export function splitColumn({ H, spacesWant, need, portsMin, sideWant = 0, collapsed, sized = {} }) {
-  if (collapsed) sized = {};
+  // A dragged Ports or Side chats keeps one line (EMPTY_H), so neither is dragged out of sight for good.
+  sized = collapsed ? {} : { ...sized, ...Object.fromEntries(["ports", "side-chats"].filter((k) => sized[k] != null).map((k) => [k, Math.max(EMPTY_H, sized[k])])) };
   const min = collapsed ? 0 : sized.ports ?? portsMin, sideAsk = sized["side-chats"] ?? sideWant;
   const side = collapsed || !sideAsk ? 0
     : H ? Math.max(0, Math.min(sideAsk, H - SPACES_MIN - INBOX_MIN - min)) : sideAsk;
@@ -31,7 +32,8 @@ export function splitColumn({ H, spacesWant, need, portsMin, sideWant = 0, colla
 }
 
 // Which sidebar sections the person dragged (no drag event: told apart from this inbox's own resizes). laid: {id: px}
-// as the layout has them; sent: {id: {px, from, applied}}, what the inbox asked for and from what size (main.js
+// as the layout has them; sent: {id: {px, prev?, from, applied}}, what the inbox asked for (and asked before, maybe
+// still in flight) and from what size (main.js
 // fitSpaces). A first look adopts what's there (sizes restored at start aren't drags); a send waits until the layout
 // moves off `from`; then, and from then on, a size more than a pixel (zoom's rounding) from what was asked is a drag:
 // splitColumn never asks for more than the column holds, so Herdr doesn't trim the inbox's sends. -> {drags: {id: px}, sent}.
@@ -42,7 +44,7 @@ export function dragsOf(sent, laid) {
   for (const [id, px] of Object.entries(laid)) {
     const s = sent[id];
     if (s && !s.applied && px === s.from) continue;
-    if (s && Math.abs(px - s.px) > 1) drags[id] = px;
+    if (s && Math.abs(px - s.px) > 1 && Math.abs(px - (s.prev ?? s.px)) > 1) drags[id] = px; // either send in flight is ours
     next[id] = { px, from: px, applied: true };
   }
   return { drags, sent: next };
