@@ -30,7 +30,7 @@ test("toSvg: the drawing's bounds plus padding; strokes and fills as the canvas 
 
 test("toSvg: text per line, escaped, centred in its line box; the font embedded only when given and used", () => {
   const { svg } = toSvg([label], { background: "#ffffff", pad: 0, font: "QUJD" });
-  expect(svg).toContain('<text x="40" y="112.5" font-family="Excalifont" font-size="20" fill="#1e1e1e" text-anchor="middle" dominant-baseline="central">a &lt;b&gt; &amp; c</text>');
+  expect(svg).toContain('<text x="40" y="112.5" font-family="Excalifont" font-size="20" fill="#1e1e1e" text-anchor="middle" dominant-baseline="central" xml:space="preserve">a &lt;b&gt; &amp; c</text>');
   expect(svg).toContain("url(data:font/ttf;base64,QUJD)");
   expect(toSvg([rect], { background: "#ffffff", pad: 0, font: "QUJD" }).svg).not.toContain("@font-face");
 });
@@ -61,4 +61,9 @@ test("toSvg: the canvas's background, grain and backdrop under the drawing", () 
   expect(svg).toContain('<rect x="10" y="20" width="100" height="50" fill="url(#grain)" opacity="0.1"/>');
   expect(svg).toContain('<g transform="translate(10 20)"><path d="M0 0 L1 1" fill="none" stroke="#ffffff" stroke-width="1" stroke-opacity="0.251"');
   expect(svg.indexOf("url(#grain)")).toBeLessThan(svg.indexOf("M10 20 L110 20"));
+});
+
+test("groundPaths: an ink that isn't a colour draws nothing (never a broken colour)", () => {
+  expect(groundPaths([{ alpha: 1, polys: [[[0, 0], [1, 0], [1, 1]]] }], undefined, 0.5)).toEqual([]);
+  expect(groundPaths([{ alpha: 1, polys: [[[0, 0], [1, 0], [1, 1]]] }], "red", 0.5)).toEqual([]);
 });

@@ -40,7 +40,7 @@ function textSvg(t) {
   const x = t.align === "center" ? t.x + t.w / 2 : t.align === "right" ? t.x + t.w : t.x;
   const anchor = t.align === "center" ? "middle" : t.align === "right" ? "end" : "start";
   return t.lines.map((line, i) => `<text x="${n(x)}" y="${n(t.y + i * lh + lh / 2)}" font-family="${esc(t.font)}" font-size="${n(t.fontSize)}" fill="${color}"`
-    + `${opacity < 1 ? ` fill-opacity="${opacity}"` : ""}${anchor === "start" ? "" : ` text-anchor="${anchor}"`} dominant-baseline="central">${esc(line)}</text>`).join("");
+    + `${opacity < 1 ? ` fill-opacity="${opacity}"` : ""}${anchor === "start" ? "" : ` text-anchor="${anchor}"`} dominant-baseline="central" xml:space="preserve">${esc(line)}</text>`).join(""); // spaces as drawn
 }
 
 export const PAD = 24; // around the drawing, in scene units
@@ -57,6 +57,7 @@ export function boxOf(items, pad = PAD) {
 // as paths in its dot ink at the Background strength, as main.js ground() paints them; a layer that rounds to no
 // colour is left out.
 export function groundPaths(layers, ink, strength) {
+  if (!/^#[0-9a-f]{6}/i.test(ink ?? "")) return [];
   return layers.flatMap((l) => {
     const a = Math.round(Math.min(1, Math.max(0, strength * l.alpha)) * 255);
     if (a < 1) return [];
@@ -88,31 +89,40 @@ export function toSvg(items, { background = "#ffffff", pad = PAD, font = null, s
   return { svg, width, height, side };
 }
 
-// Writes <name>.svg or .png to ~/Downloads (a mod writes only under its app home: the file is made in
-// data/excalidraw/.exports and copied out) -> the path written. herdr: { exec, appHome, home, writeTextFile }, passed
-// in by main.js so this file loads under bun test.
+// Writes <name>.svg or .png to ~/Downloads, never over a file already there (<name>-2, -3, …) -> the path written.
+// A mod writes only under its app home: the files are made in a folder of this export's own under
+// data/excalidraw/.exports (two exports at once, from the panel and the big window, never share one) and copied out.
+// herdr: { exec, appHome, home, writeTextFile }, passed in by main.js so this file loads under bun test.
 export async function saveExport(kind, items, { name, background, ground = [], grainOpacity = 0 }, { exec, appHome, home, writeTextFile }) {
+  if (!items.length) throw new Error("There's nothing drawn yet");
   const run = async (cmd, args) => {
     const r = await exec(cmd, args, { timeout: 60000 });
     if (r.code !== 0) throw new Error((r.stderr || r.stdout || `${cmd} failed`).trim().split("\n").pop());
     return r.stdout;
   };
-  const writeOver = async (path, text) => { await run("rm", ["-f", path]); await writeTextFile(path, text, null); };
-  const dir = `${appHome()}/data/excalidraw/.exports`, out = `${home()}/Downloads/${name}.${kind}`;
+  const exists = async (path) => (await exec("test", ["-e", path])).code === 0;
+  const dir = `${appHome()}/data/excalidraw/.exports/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await run("mkdir", ["-p", dir]);
-  const font = items.some((it) => it.texts.some((t) => t.font === "Excalifont"))
-    ? (await run("base64", ["-i", `${appHome()}/mods/excalidraw/fonts/Excalifont-Regular.ttf`])).replace(/\s+/g, "") : null;
-  const grain = grainOpacity > 0 ? { opacity: grainOpacity, data: (await run("base64", ["-i", `${appHome()}/mods/agent-graph/grain.png`])).replace(/\s+/g, "") } : null;
-  const look = { background, font, grain, ground };
-  if (kind === "svg") {
-    await writeOver(`${dir}/${name}.svg`, toSvg(items, look).svg);
-    await run("cp", [`${dir}/${name}.svg`, out]);
+  try {
+    let out = `${home()}/Downloads/${name}.${kind}`;
+    for (let i = 2; await exists(out); i++) out = `${home()}/Downloads/${name}-${i}.${kind}`;
+    const b64 = async (path) => (await run("base64", ["-i", path])).replace(/\s+/g, "");
+    const font = items.some((it) => it.texts.some((t) => t.font === "Excalifont")) ? await b64(`${appHome()}/mods/excalidraw/fonts/Excalifont-Regular.ttf`) : null;
+    const grain = grainOpacity > 0 ? { opacity: grainOpacity, data: await b64(`${appHome()}/mods/agent-graph/grain.png`) } : null;
+    const look = { background, font, grain, ground };
+    if (kind === "svg") {
+      await writeTextFile(`${dir}/${name}.svg`, toSvg(items, look).svg, null);
+      await run("cp", [`${dir}/${name}.svg`, out]);
+      return out;
+    }
+    const { svg, width, height, side } = toSvg(items, { ...look, square: true });
+    const size = Math.min(4096, Math.round(side * 2)), k = size / side, sq = `${dir}/square.svg`;
+    await writeTextFile(sq, svg, null);
+    await run("qlmanage", ["-t", "-s", String(size), "-o", dir, sq]);
+    if (!(await exists(`${sq}.png`))) throw new Error("Quick Look couldn't render it"); // qlmanage exits 0 when it fails
+    await run("sips", ["-c", String(Math.round(height * k)), String(Math.round(width * k)), `${sq}.png`, "--out", out]);
     return out;
+  } finally {
+    await exec("rm", ["-rf", dir]).catch(() => {});
   }
-  const { svg, width, height, side } = toSvg(items, { ...look, square: true });
-  const size = Math.min(4096, Math.round(side * 2)), k = size / side, sq = `${dir}/${name}-square.svg`;
-  await writeOver(sq, svg);
-  await run("qlmanage", ["-t", "-s", String(size), "-o", dir, sq]);
-  await run("sips", ["-c", String(Math.round(height * k)), String(Math.round(width * k)), `${sq}.png`, "--out", out]);
-  return out;
 }
