@@ -57,9 +57,10 @@ export function search(entries, query) {
   return entries.map((e) => [e, rank(e)]).filter(([, r]) => r >= 0).sort((a, b) => a[1] - b[1] || b[0].updated - a[0].updated).map(([e]) => e);
 }
 
+const slug = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
 // A new drawing's file: <repo>-<topic>.excalidraw, numbered past any taken.
 export function freeName(repo, topic, taken) {
-  const slug = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const base = [slug(repo), slug(topic)].filter(Boolean).join("-") || "drawing";
   let name = `${base}.excalidraw`;
   for (let i = 2; taken.includes(name); i++) name = `${base}-${i}.excalidraw`;
@@ -90,3 +91,12 @@ export const toggleRepo = (repos, repo) => (repos.some((r) => r.key === repo.key
 // The Trash tab: deleted drawings, the latest first, each with the whole days left before it's removed for good.
 export const trashRows = (entries, now) => entries.filter((e) => e.deleted != null).sort((a, b) => b.deleted - a.deleted)
   .map((e) => ({ ...e, daysLeft: Math.max(0, Math.ceil(TRASH_DAYS - (now - e.deleted) / DAY)) }));
+
+// An unfiled drawing named <repo>-<topic> (freeName's pattern) -> that repo, the longest repo name that fits; null when
+// it's filed already or no repo's name starts it.
+export function suggestRepo(entry, repos) {
+  if (entry.repos.length) return null;
+  const name = entry.name.toLowerCase();
+  return repos.filter((r) => slug(repoName(r.key)) && name.startsWith(`${slug(repoName(r.key))}-`))
+    .sort((a, b) => repoName(b.key).length - repoName(a.key).length)[0] ?? null;
+}

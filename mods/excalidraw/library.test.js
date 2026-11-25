@@ -98,3 +98,14 @@ test("trashRows: trashed drawings only, the latest deleted first, each with the 
   const rows = trashRows([E("live"), E("old", { deleted: now - 29.5 * DAY }), E("new", { deleted: now - DAY / 2 }), E("past", { deleted: now - 40 * DAY })], now);
   expect(rows.map((r) => [r.name, r.daysLeft])).toEqual([["new", 30], ["old", 1], ["past", 0]]);
 });
+
+import { suggestRepo } from "./library.js";
+
+test("suggestRepo: an unfiled drawing named <repo>-<topic> suggests that repo (the longest name that fits); else none", () => {
+  const repos = [{ key: "github.com/acme/margo" }, { key: "github.com/acme/margo-core" }, { key: "github.com/acme/shop" }];
+  expect(suggestRepo({ name: "margo-architecture.excalidraw", repos: [] }, repos)?.key).toBe("github.com/acme/margo");
+  expect(suggestRepo({ name: "margo-core-engine.excalidraw", repos: [] }, repos)?.key).toBe("github.com/acme/margo-core");
+  expect(suggestRepo({ name: "Shop-Checkout.excalidraw", repos: [] }, repos)?.key).toBe("github.com/acme/shop");
+  expect(suggestRepo({ name: "harness-loop.excalidraw", repos: [] }, repos)).toBe(null);
+  expect(suggestRepo({ name: "margo-x.excalidraw", repos: [{ key: "github.com/acme/shop" }] }, repos)).toBe(null); // filed already
+});
