@@ -6,7 +6,7 @@
 
 import { div, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { props, closeOverlay, openOverlay, theme, panes, focused, watchFolder, home, setShared } from "herdr";
+import { props, closeOverlay, openOverlay, theme, panes, spaces, focused, watchFolder, home, setShared } from "herdr";
 import { sections, search, repoName, freeName, ago, knownRepos, toggleRepo, trashRows, TRASH_DAYS, suggestRepo } from "./library.js";
 import { dir, scan, readIndex, setEntry, trash, restore, deleteForever, duplicate, create, repoOf } from "./store.js";
 import { showInPanel, openWindow } from "./open.js";
@@ -32,13 +32,16 @@ export class LibraryView {
     this.pathInput.on("submit", (_e, cx) => this.addRepoPath(cx));
     cx.timer.after(150, () => this.query.focus());
     cx.spawn(async (cx) => {
-      const pane = panes().find((x) => x.id === focused()?.pane && x.cwd) ?? panes().find((x) => x.cwd);
+      const pane = panes().find((x) => x.pane === focused()?.pane && x.cwd) ?? panes().find((x) => x.cwd);
       this.repo = await repoOf(pane?.cwd).catch(() => null);
       if (this.repo) this.tab = "repo";
-      // The repos open in Herdr's spaces (this machine's), so Move to and the suggestions know them before any drawing does.
-      const folders = [...new Set(panes().filter((x) => x.cwd && !x.machine).map((x) => x.cwd))];
-      this.spaceRepos = (await Promise.all(folders.map((f) => repoOf(f).catch(() => null)))).filter(Boolean);
       try { this.take(await scan()); } catch (e) { this.error = String(e?.message ?? e); }
+      cx.notify();
+      // Then the repos open in Herdr's spaces on this machine (a remote space's folders aren't here), so Move to and the
+      // suggestions know them before any drawing does; after the list shows, so a slow folder never holds it up.
+      const remote = new Set(spaces().filter((s) => s.machine).flatMap((s) => s.tabs.map((tb) => tb.id)));
+      const folders = [...new Set(panes().filter((x) => x.cwd && !remote.has(x.tab)).map((x) => x.cwd))];
+      this.spaceRepos = (await Promise.all(folders.map((f) => repoOf(f).catch(() => null)))).filter(Boolean);
       cx.notify();
       for (;;) { // the folder changed (an agent, the canvas, another copy): read the index again
         const changed = await watchFolder(dir());
@@ -180,7 +183,7 @@ export class LibraryView {
               .hover((st) => st.bg(t.raised).text_color(what === "trash" ? t.blocked : t.foreground))
               .on_click((_e, cx) => { cx.stop_propagation(); if (what === "rename") { this.startRename(r); cx.notify(); } else if (what === "move") this.pick(r, cx); else this.act(r, what, cx); }).child(label)))))
         // An unfiled drawing named after a repo (<repo>-<topic>) offers that repo in one click, on every row alike.
-        .when(!on && !!suggestRepo(r, repos), (el) => { const x = suggestRepo(r, repos); return el.child(div().id(`suggest-${r.name}`).h(24).px(8).flex().items_center().rounded(6)
+        .when(!!suggestRepo(r, repos), (el) => { const x = suggestRepo(r, repos); return el.child(div().id(`suggest-${r.name}`).h(24).px(8).flex().items_center().rounded(6)
           .border(1).border_color(t.input).text_size(11).text_color(t.muted).hover((st) => st.text_color(t.foreground).bg(t.raised)).tooltip(`File it under ${x.key}`)
           .on_click((_e, cx) => { cx.stop_propagation(); this.act(r, { repo: x }, cx); }).child(`→ ${repoName(x.key)}`)); })
         .child(div().text_size(12).text_color(t.dim).child(ago(r.updated, now)));

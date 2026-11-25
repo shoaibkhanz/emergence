@@ -109,3 +109,8 @@ test("suggestRepo: an unfiled drawing named <repo>-<topic> suggests that repo (t
   expect(suggestRepo({ name: "harness-loop.excalidraw", repos: [] }, repos)).toBe(null);
   expect(suggestRepo({ name: "margo-x.excalidraw", repos: [{ key: "github.com/acme/shop" }] }, repos)).toBe(null); // filed already
 });
+
+test("suggestRepo: a drawing named just after its repo (freeName with no topic) suggests it too", () => {
+  expect(suggestRepo({ name: "shop.excalidraw", repos: [] }, [{ key: "github.com/acme/shop" }])?.key).toBe("github.com/acme/shop");
+  expect(suggestRepo({ name: "shopping.excalidraw", repos: [] }, [{ key: "github.com/acme/shop" }])).toBe(null);
+});
