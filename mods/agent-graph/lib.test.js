@@ -402,8 +402,10 @@ test("subItems since / historySince: finished sub-agents older than the window d
   const items = [{ id: "t1", machine: null, cwd: "/r" }];
   expect(subItems(items, scan, historySince(1, now)).map((s) => s.id)).toEqual(["t1#r", "t1#~earlier", "t1#new"]);
   expect(subItems(items, scan, historySince(7, now)).filter((s) => s.sub).length).toBe(3);
-  expect(historySince(undefined, now)).toBe(now - 30 * DAY); // 30 unless chosen
-  expect(historySince(90, now)).toBe(now - 30 * DAY); // never past what's kept
+  expect(historySince(3, now)).toBe(now - 3 * DAY);
+  expect(historySince(undefined, now)).toBe(now - 7 * DAY); // a week unless chosen
+  expect(historySince(30, now)).toBe(now - 7 * DAY); // the old 30 days: a week now
+  expect(historySince(90, now)).toBe(now - 7 * DAY);
 });
 
 test("dots: Emergence settings' agent-graph.dots (0-25%) as an alpha, 25% when unset or out of range, same default both sides", async () => {

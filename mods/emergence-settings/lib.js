@@ -26,13 +26,14 @@ function sideRows(get, known) {
   });
 }
 
-// How far back the Agents graph lists finished sub-agents, every harness alike. 30 days at most: Claude Code deletes
-// its transcripts after that. Shown once agent-graph says it reads it (agent-graph.historyOffered).
-const HISTORY = [[1, "1 day"], [7, "1 week"], [30, "30 days"]];
+// How far back the Agents graph lists finished sub-agents, every harness alike: a week at most (a month was too much;
+// Claude Code keeps transcripts ~30 days, so a week always reads). Shown once agent-graph says it reads it
+// (agent-graph.historyOffered).
+const HISTORY = [[1, "1 day"], [3, "3 days"], [7, "1 week"]];
 function historyRow(get) {
-  const v = get("agent-graph.history"), value = HISTORY.some(([d]) => d === v) ? v : 30;
+  const v = get("agent-graph.history"), value = HISTORY.some(([d]) => d === v) ? v : 7;
   return { id: "agents.history", name: "Sub-agent history", kind: "choice", value,
-    about: "How far back Agents lists finished sub-agents (30 days at most).",
+    about: "How far back Agents lists finished sub-agents (a week at most).",
     options: HISTORY.map(([d, label]) => ({ value: d, label, writes: [["agent-graph.history", d]] })) };
 }
 
