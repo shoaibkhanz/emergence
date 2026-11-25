@@ -558,6 +558,7 @@ export default class PrReview extends View {
     const s = this.cur?.info ? this.cur : null;
     const k = e.key;
     if (k === "f" && e.modifiers.platform && s && this.findable(s)) this.openFind(s);
+    else if (k === "\\" && e.modifiers.platform && s) this.railOpen = !this.railOpen; // ⌘\: the PR list beside the diff
     else if (k === "escape") {
       if (this.basePick) this.closeBase();
       else if (this.finding && (this.inFind || !this.typing)) this.closeFind();
@@ -959,7 +960,7 @@ export default class PrReview extends View {
     const side = !bare && this.side();
     const treeOn = side ? this.filesOpen : !bare && d.view !== "diff";
     const head = bare ? null : h_flex().h(56).flex_none().pl(8).pr(16).gap(12).items_center().border_b(1).border_color(t.border)
-      .child(this.iconBtn("rail-toggle", this.railOpen ? "panel-left-close" : "panel-left-open", this.railOpen ? "Hide pull requests" : "Show pull requests", () => (this.railOpen = !this.railOpen)))
+      .child(this.iconBtn("rail-toggle", this.railOpen ? "panel-left-close" : "panel-left-open", this.railOpen ? "Hide pull requests  ⌘\\" : "Show pull requests  ⌘\\", () => (this.railOpen = !this.railOpen)))
       .child(v_flex().flex_1().min_w(0).gap(4)
         .child(h_flex().gap(8).items_center()
           .when(!local, (el) => el.child(div().flex_none().text_size(13).text_color(t.dim).child(`#${s.entry}`)))
