@@ -67,9 +67,9 @@ function dotsRow(get) {
 // The sizes the person dragged sidebar sections to (shared sidebar.sized, kept by mods/inbox): off puts every
 // section back to fitting its content. Nothing dragged: a note, no switch.
 function sizedRow(get) {
-  const name = "Keep dragged sizes", about = "Drag the lines between Spaces, Inbox, Ports and Side chats; off fits them to their content again.";
+  const name = "Dragged sizes", about = "Drag the lines between Spaces, Inbox, Ports and Side chats to size them; switch off to fit them all to their content again.";
   return Object.keys(get("sidebar.sized") ?? {}).length ? flip("sidebar.sized", name, about, true, [["sidebar.sized", null]])
-    : { id: "sidebar.sized", name, about, on: false, note: "drag a line between sections" };
+    : { id: "sidebar.sized", name, about, on: false, note: "none: drag a line to set one" };
 }
 
 export function sections(get, known) {

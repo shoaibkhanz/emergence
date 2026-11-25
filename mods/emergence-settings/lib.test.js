@@ -117,7 +117,7 @@ test("sidebar sizes: on while a section has a dragged size, flipping clears them
     .toMatchObject({ on: true, writes: [["sidebar.sized", null]] });
   for (const sized of [undefined, null, {}]) {
     const r = row(sections(of({ "sidebar.sized": sized }), null), "sidebar.sized");
-    expect(r).toMatchObject({ on: false, note: "drag a line between sections" });
+    expect(r).toMatchObject({ on: false, note: "none: drag a line to set one" });
     expect(r.writes).toBeUndefined();
   }
 });
