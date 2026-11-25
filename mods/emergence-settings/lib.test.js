@@ -51,14 +51,15 @@ test("toggles: the rows the keyboard walks, in drawn order", () => {
   expect(toggles(secs).map((r) => r.id)).toEqual(["sidebar.dots", "prs.split", "skills.big", "side.claude", "side.opencode"]);
 });
 
-test("sub-agent history: shown only once the Agents graph offers it; 1 day, 1 week or 30 days, 30 unless chosen", () => {
+test("sub-agent history: shown only once the Agents graph offers it; 1 day, 3 days or 1 week, a week unless chosen", () => {
   expect(row(sections(of({}), null), "agents.history")).toBeUndefined();
   const r = row(sections(of({ "agent-graph.historyOffered": true }), null), "agents.history");
-  expect(r).toMatchObject({ kind: "choice", value: 30 });
-  expect(r.options.map((o) => o.label)).toEqual(["1 day", "1 week", "30 days"]);
-  expect(r.options[1].writes).toEqual([["agent-graph.history", 7]]);
+  expect(r).toMatchObject({ kind: "choice", value: 7 });
+  expect(r.options.map((o) => o.label)).toEqual(["1 day", "3 days", "1 week"]);
+  expect(r.options[1].writes).toEqual([["agent-graph.history", 3]]);
+  expect(r.value).toBe(7);
   expect(row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.history": 7 }), null), "agents.history").value).toBe(7);
-  expect(row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.history": 90 }), null), "agents.history").value).toBe(30); // past what's kept
+  expect(row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.history": 30 }), null), "agents.history").value).toBe(7); // the old 30 days: a week now
   expect(toggles(sections(of({ "agent-graph.historyOffered": true }), null)).map((x) => x.id)).toContain("agents.history");
 });
 
@@ -100,10 +101,9 @@ test("dots: under Agents with history; Off to 25% in steps of 5, 25% unless chos
 
 test("choose: ←/→ step a choice, stopping at its ends; ↵ (0) goes round; a switch just flips", () => {
   const r = row(sections(of({ "agent-graph.historyOffered": true, "agent-graph.history": 7 }), null), "agents.history");
-  expect(choose(r, -1)).toEqual([["agent-graph.history", 1]]);
-  expect(choose(r, 1)).toEqual([["agent-graph.history", 30]]);
-  expect(choose({ ...r, value: 30 }, 1)).toEqual([]);
-  expect(choose({ ...r, value: 30 }, 0)).toEqual([["agent-graph.history", 1]]);
+  expect(choose(r, -1)).toEqual([["agent-graph.history", 3]]);
+  expect(choose(r, 1)).toEqual([]); // a week is the last
+  expect(choose(r, 0)).toEqual([["agent-graph.history", 1]]); // ↵ goes round
   const sw = row(sections(of({}), null), "prs.split");
   expect(choose(sw, 0)).toEqual(sw.writes);
 });

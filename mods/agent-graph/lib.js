@@ -328,9 +328,9 @@ export const grainOpacity = (p) => (Number.isFinite(p) && p >= 0 && p <= 25 ? p 
 export const DOTS_DEFAULT = 25;
 export const dotsAlpha = (p) => (Number.isFinite(p) && p >= 0 && p <= 25 ? p : DOTS_DEFAULT) / 100;
 
-// The oldest finished sub-agent shown: Emergence settings' Sub-agent history (shared agent-graph.history: 1, 7 or
-// 30 days), 30 at most since Claude Code deletes transcripts after that.
-export const historySince = (days, now) => now - ([1, 7, 30].includes(days) ? days : 30) * 86_400_000;
+// The oldest finished sub-agent shown: Emergence settings' Sub-agent history (shared agent-graph.history: 1, 3 or 7
+// days), a week unless chosen and at most (an old saved 30 reads as a week).
+export const historySince = (days, now) => now - ([1, 3, 7].includes(days) ? days : 7) * 86_400_000;
 
 // The agents' own metrics from subagents.py, as m on their items.
 export const metered = (items, scan) => items.map((i) => (scan?.[i.id] && !scan[i.id].error ? { ...i, m: own(scan[i.id]) } : i));

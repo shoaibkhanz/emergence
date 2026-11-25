@@ -280,7 +280,7 @@ export class Detail {
     const state = d.running && d.steps?.length ? `Working · ${d.steps[d.steps.length - 1].label}` : subState({ running: d.running, updatedAt: d.endedAt ?? now }, now);
     const body = this.err
       ? v_flex().flex_1().min_h(0).gap(6).child(div().text_color(t.muted).child(this.err))
-        .child(div().text_size(12).text_color(t.dim).child("History is kept 30 days at most; past that, a sub-agent's details aren't kept."))
+        .child(div().text_size(12).text_color(t.dim).child("History is kept a week at most (Emergence settings: Sub-agent history); past that, a sub-agent drops out."))
       : this.tab === "overview" ? v_flex().id("dt-overview").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll.overview).child(this.overview(t, d))
       : this.tab === "steps" ? this.steps(t, d) : this.files(t, d);
     const button = h_flex().id("dt-go").h(DIALOG.button).px(14).gap(6).items_center().rounded(8).cursor_pointer().border_1().text_size(12).font_medium()
