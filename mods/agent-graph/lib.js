@@ -542,3 +542,20 @@ export function groupTarget(steps) {
 
 // Emergence's dialog frame (RECIPE "Dialogs"), for the details dialog; mods/dialogs.test.js holds every dialog's copy to it.
 export const DIALOG = { pad: 24, gap: 16, title: 22, radius: 10, button: 32 };
+
+// A sub-agent's task or result folded for its details: whole lines within `fold` characters (the first line always),
+// never leaving a code fence open: a cut inside one closes it, so what follows doesn't render as one long code block.
+// -> { text, more: lines left out }.
+export function foldMarkdown(body, fold) {
+  const lines = String(body ?? "").replace(/\s+$/, "").split("\n");
+  let n = 0, chars = 0;
+  while (n < lines.length && (n === 0 || chars + lines[n].length <= fold)) chars += lines[n++].length;
+  let fence = null; // the open fence's marker (``` or ~~~, at least that long)
+  for (const l of lines.slice(0, n)) {
+    const m = /^\s*(`{3,}|~{3,})/.exec(l);
+    if (!m) continue;
+    if (!fence) fence = m[1];
+    else if (m[1][0] === fence[0] && m[1].length >= fence.length && !l.trim().slice(m[1].length).trim()) fence = null;
+  }
+  return { text: lines.slice(0, n).join("\n") + (fence ? `\n${fence}` : ""), more: lines.length - n };
+}

@@ -515,3 +515,14 @@ test("subRequests / detailRequest: an ended agent is asked about by its session,
   const owner = { id: "ended:S1", machine: null, harness: "claude", session: "S1", top: "/r", pid: null };
   expect(detailRequest({ sub: { id: "a1" }, owner: "ended:S1" }, [owner], () => "/x")).toEqual({ session: "S1", harness: "claude", top: "/r", id: "a1" });
 });
+
+import { foldMarkdown } from "./lib.js";
+
+test("foldMarkdown: whole lines within the fold; a cut inside a code fence closes it, so the rest never renders as code", () => {
+  const md = "Fix the test.\n\n```js\nconst a = 1;\nconst b = 2;\n```\n\nThen report.";
+  expect(foldMarkdown(md, 1000)).toEqual({ text: md, more: 0 });
+  expect(foldMarkdown(md, 30)).toEqual({ text: "Fix the test.\n\n```js\nconst a = 1;\n```", more: 4 });
+  expect(foldMarkdown("~~~\nx\ny\n~~~\nafter", 4)).toEqual({ text: "~~~\nx\n~~~", more: 3 });
+  expect(foldMarkdown("one very long first line", 5)).toEqual({ text: "one very long first line", more: 0 }); // at least the first line
+  expect(foldMarkdown("a\n\n\n", 100)).toEqual({ text: "a", more: 0 }); // trailing blank lines dropped
+});

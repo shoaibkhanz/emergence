@@ -10,10 +10,10 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, TextView } from "gpui-base";
 import { run, exec, props, closeOverlay, theme, setShared, appHome, home } from "herdr";
-import { subState, groupSteps, toolMix, stepKind, stepTarget, groupTarget, offset, took, tokens, costLabel, own, modelName, DIALOG } from "./lib.js";
+import { subState, groupSteps, toolMix, stepKind, stepTarget, groupTarget, offset, took, tokens, costLabel, own, modelName, DIALOG, foldMarkdown } from "./lib.js";
 
 const TABS = ["overview", "steps", "files"];
-const FOLD = { task: 360, result: 1600 }; // characters shown (whole lines) until Space shows the rest
+const FOLD = { task: 1200, result: 1600 }; // characters shown (whole lines, fences closed: lib foldMarkdown) until Space shows the rest
 const LIVE_MS = 5000;
 const WORD = { read: "Read", edit: "Edit", run: "Run", search: "Search", web: "Web", agent: "Sub-agent", other: "Other" };
 const PY = () => `${appHome()}/mods/agent-graph/subagents.py`;
@@ -155,18 +155,16 @@ export class Detail {
       .when(Boolean(extra), (el) => el.child(div().text_size(11.5).text_color(t.dim).child(extra)));
   }
 
-  // Markdown lines, folded to `fold` until opened.
-  // Markdown, Herdr's own (TextView: selectable), folded to its first whole lines within `fold` characters until opened.
+  // Markdown, Herdr's own (TextView: selectable), folded to its first whole lines within `fold` characters until opened
+  // (lib foldMarkdown: a cut never leaves a code fence open).
   text(t, id, body, fold, empty) {
     if (!body) return div().text_color(t.dim).child(empty);
-    const lines = body.replace(/\s+$/, "").split("\n"), whole = this.open.has(id);
-    let n = 0, chars = 0;
-    while (n < lines.length && (n === 0 || chars + lines[n].length <= fold)) chars += lines[n++].length;
+    const whole = this.open.has(id), all = foldMarkdown(body, Infinity), part = foldMarkdown(body, fold), shown = whole ? all : part;
     return v_flex().gap(2)
-      .child(TextView.markdown(`md-${id}-${whole ? "all" : n}`, (whole ? lines : lines.slice(0, n)).join("\n")).selectable(true).scrollable(false)
+      .child(TextView.markdown(`md-${id}-${whole ? "all" : part.more}`, shown.text).selectable(true).scrollable(false)
         .w_full().text_size(13).text_color(t.foreground))
-      .when(n < lines.length, (el) => el.child(div().pt(6).text_size(12).text_color(t.muted)
-        .child(whole ? "Show less (space)" : `${lines.length - n} more lines (space)`)));
+      .when(part.more > 0, (el) => el.child(div().pt(6).text_size(12).text_color(t.muted)
+        .child(whole ? "Show less (space)" : `${part.more} more lines (space)`)));
   }
 
   tile(t, name, value, sub, tone) {
