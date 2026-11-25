@@ -87,6 +87,7 @@ export default class PrReview extends View {
     this.baseQ = InputState.new({ placeholder: "Filter branches" }); // the compare's picker, either side
     this.baseQ.on("focus", () => (this.typing = true));
     this.baseQ.on("blur", () => (this.typing = false));
+    this.baseQ.on("change", (_e, cx) => cx.notify()); // the list filters as you type, not at the next redraw
     this.baseQ.on("submit", (_e, cx) => { const s = this.cur, l = s ? this.bases(s) : []; if (l.length) this.pickBase(s, l[0], cx); cx.notify(); });
     this.findEvery = true; // All files; This file narrows it
     this.findQ.on("focus", () => (this.typing = this.inFind = true));
