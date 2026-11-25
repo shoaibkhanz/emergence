@@ -141,7 +141,7 @@ export default class AgentGraph extends View {
     // busy = start time; a refresh hung past a minute no longer blocks the next one.
     if (this.busy && Date.now() - this.busy < 60000) return;
     const me = this.busy = Date.now();
-    const items = this.items();
+    const items = [...this.items(), ...endedItems(this.sessions, this.subs, 0)]; // ended agents' folders too: they sit in their worktree
     this.pollSubs(cx);
     cx.spawn(async (cx) => {
       try {
@@ -194,6 +194,9 @@ export default class AgentGraph extends View {
   // One subagents.py run for this computer's claude and omp agents; redraws only when its answer changed. A failed run
   // keeps the last answer.
   async readSubs(cx) {
+    // From the shared record each time: another copy (the panel, a window) may have saved sessions this one never saw.
+    const saved = shared("agent-graph.ended") ?? {};
+    this.sessions = Object.fromEntries(Object.entries(saved).map(([k, v]) => [k, v.endedAt == null && this.sessions[k] ? { ...v, name: this.sessions[k].name } : v]));
     const top = (i) => this.git.get(key(i.machine, i.cwd))?.v?.top ?? null, items = this.items();
     const req = subRequests(items, top, this.sessions);
     let agents = {};
@@ -208,7 +211,7 @@ export default class AgentGraph extends View {
       }
     }
     // Sessions seen running are remembered; one that stops is an ended agent, kept for the Sub-agent history window.
-    const t = trackSessions(this.sessions, items, agents, top, Date.now(), historySince(shared("agent-graph.history"), Date.now()));
+    const t = trackSessions(this.sessions, items, agents, top, Date.now(), historySince(7, Date.now())); // kept the longest window; shown by the setting
     this.sessions = t.sessions;
     if (t.save) setShared("agent-graph.ended", t.sessions);
     const json = JSON.stringify(agents);
@@ -233,6 +236,7 @@ export default class AgentGraph extends View {
   // A sub-agent: its details in a dialog over the graph (detail.js), not its agent's terminal; one it can't read yet
   // (omp, another machine) still goes to its agent. The large popup closes first: a dialog doesn't sit over a popup.
   open(n) {
+    if (noTerminal(n)) return this.toggle(n); // an ended agent, a history card, a worktree: nothing to go to
     if (!n.sub) return this.focusAgent(n);
     const owners = [...this.items(), ...endedItems(this.sessions, this.subs, 0)];
     const req = detailRequest(n, owners, (i) => this.git.get(key(i.machine, i.cwd))?.v?.top ?? null);
@@ -331,7 +335,7 @@ export default class AgentGraph extends View {
     const items = this.items();
     if (opening || this.activeOnly === null) this.activeOnly = openOnActive(items); // however it was opened: the same rule
     if (opening || !openOnActive(items)) this.nudge = true; // the Active count may light again (lib activeNudge)
-    if (shown && !this.busy && items.some((i) => i.cwd && !this.git.has(key(i.machine, i.cwd)))) this.refresh(cx);
+    if (shown && !this.busy && [...items, ...endedItems(this.sessions, this.subs, 0)].some((i) => i.cwd && !this.git.has(key(i.machine, i.cwd)))) this.refresh(cx);
     const cursor = sidebarCursor(shared("inbox.cursor"), shared("spaces.cursor")); // where the sidebar's keyboard is
     const foc = focused()?.terminal ?? null;
     this.now = Date.now();

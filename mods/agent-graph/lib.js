@@ -184,8 +184,8 @@ export const subRequests = (items, top, sessions = {}) => [
 // The sessions of this computer's claude and omp agents (subagents.py gives each live one's), so an agent that ends
 // keeps its sub-agents in the graph for the Sub-agent history window (endedItems). sessions: { id: { session, harness,
 // address, cwd, top, name, program, space, kind, endedAt } }, endedAt null while it runs. A session no longer running
-// gets endedAt now (its agent's scan failing once isn't an end: the agent is still there); one ended before `since`
-// goes. -> { sessions, save }: save when one is new, ended or gone (shared agent-graph.ended), not for a title change.
+// gets endedAt now (its agent's scan failing once isn't an end); one ended before `since` goes (main.js passes the
+// longest window, so lowering the setting hides ended agents rather than losing them). -> { sessions, save }: save when one is new, ended or gone (shared agent-graph.ended), not for a title change.
 export function trackSessions(prev, items, scan, top, now, since) {
   const live = new Map(items.filter((i) => !i.machine && i.agent && i.pid && READ.includes(i.harness)).map((i) => [i.id, i]));
   const sessions = {};
@@ -200,7 +200,9 @@ export function trackSessions(prev, items, scan, top, now, since) {
   }
   for (const [s, e] of Object.entries(prev)) {
     if (sessions[s]) continue;
-    const running = e.endedAt == null && live.has(e.address) && !scan?.[e.address]?.session;
+    // still running only if its agent couldn't be read this time (no answer, or an error); an answer with no session
+    // means no Claude there now, though Herdr may keep its report on the terminal
+    const running = e.endedAt == null && live.has(e.address) && (!scan?.[e.address] || !!scan[e.address].error);
     const endedAt = e.endedAt ?? (running ? null : now);
     if (endedAt != null && endedAt < since) { save = true; continue; }
     sessions[s] = { ...e, endedAt };
@@ -552,7 +554,7 @@ export function foldMarkdown(body, fold) {
   while (n < lines.length && (n === 0 || chars + lines[n].length <= fold)) chars += lines[n++].length;
   let fence = null; // the open fence's marker (``` or ~~~, at least that long)
   for (const l of lines.slice(0, n)) {
-    const m = /^\s*(`{3,}|~{3,})/.exec(l);
+    const m = /^ {0,3}(`{3,}|~{3,})/.exec(l); // further in is an indented code block's text, not a fence
     if (!m) continue;
     if (!fence) fence = m[1];
     else if (m[1][0] === fence[0] && m[1].length >= fence.length && !l.trim().slice(m[1].length).trim()) fence = null;
