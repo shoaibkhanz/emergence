@@ -36,7 +36,7 @@ import { DIR as HANDOFF_DIR, OPEN as HANDOFF_OPEN, requestedFile, openRecord } f
 import { layout as herdrLayout, checking as herdrChecking } from "herdr";
 import { openWindow, panelShown } from "./open.js";
 import { exec as herdrExec } from "herdr"; // herdr-mods: export.js's IO
-import { saveExport } from "./export.js"; // herdr-mods: SVG and PNG export
+import { saveExport, boxOf, groundPaths } from "./export.js"; // herdr-mods: SVG and PNG export
 import { holder } from "./keyboard.js";
 import { LibraryView } from "./library-view.js";
 import { backdrop as groundLayers, dotsAlpha, grainOpacity } from "./backdrop.js";
@@ -4553,17 +4553,10 @@ function batchDrawList(items) {
   const paths = [...groups.values()].sort((a, b) => Number(b.fill) - Number(a.fill)).map((g) => ({ kind: "path", path: g.b.build(), color: g.color }));
   return [...paths, ...extras];
 }
-// herdr-mods: an export's pieces (export.js), at scale 1 in the file's own colours (Excalidraw's light export), not the
-// dark canvas's ink.
+// herdr-mods: an export's pieces (export.js), at scale 1, in the colours the canvas draws them (its ink in a dark theme).
 function exportItems(elements, elementsMap, background) {
-  const was = toColor;
-  toColor = toColorAsDrawn;
-  try {
-    const opts = { shapeConfig: { isExporting: true, canvasBackgroundColor: background, embedsValidationStatus: /* @__PURE__ */ new Map() } };
-    return elements.map((el) => { try { return elementItem(el, elementsMap, 1, opts); } catch { return null; } }).filter(Boolean);
-  } finally {
-    toColor = was;
-  }
+  const opts = { shapeConfig: { isExporting: true, canvasBackgroundColor: background, embedsValidationStatus: /* @__PURE__ */ new Map() } };
+  return elements.map((el) => { try { return elementItem(el, elementsMap, 1, opts); } catch { return null; } }).filter(Boolean);
 }
 function buildLayers(elements, elementsMap, scale, opts) {
   const batches = [];
@@ -5223,11 +5216,16 @@ var Excalidraw = class extends View {
     if (!this.file || this.exporting) return;
     this.exporting = kind;
     cx.notify();
-    const name = this.file.split("/").pop().replace(/\.excalidraw$/, ""), background = this.doc.appState.viewBackgroundColor ?? "#ffffff";
-    const items = exportItems(this.elements(), this.map(), background);
+    // As the canvas looks: its background, Emergence settings' Background at its strength (dots in the panels' ink) and
+    // Grain, over the drawing's box at 100% (ground() paints the same on screen).
+    const t = theme(), name = this.file.split("/").pop().replace(/\.excalidraw$/, ""), background = canvasColor(t), els = this.elements();
+    const items = exportItems(els, this.map(), background), { x0, y0, width, height } = boxOf(items);
+    const strength = dotsAlpha(shared("agent-graph.dots")), style = shared("agent-graph.pattern") ?? "sparse";
+    const ground = strength ? groundPaths(groundLayers(style, width, height, 1, -x0, -y0, cardsOf(els, 1, -x0, -y0), Date.now()).layers, uiColors(t).foreground, strength) : [];
+    const look = { name, background, ground, grainOpacity: grainOpacity(shared("agent-graph.filmGrain")) };
     cx.spawn(async (cx2) => {
       try {
-        const out = await saveExport(kind, items, { name, background }, { exec: herdrExec, appHome, home: home2, writeTextFile: writeTextFile2 });
+        const out = await saveExport(kind, items, look, { exec: herdrExec, appHome, home: home2, writeTextFile: writeTextFile2 });
         notify({ title: `Saved ${out.split("/").pop()} to Downloads`, level: "info" });
       } catch (e4) {
         notify({ title: `Couldn't export ${kind.toUpperCase()}`, body: String(e4?.message ?? e4), level: "warning" });

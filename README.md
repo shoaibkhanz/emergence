@@ -71,8 +71,9 @@ one searchable list showing where each lives.
 A whiteboard in the side panel, drawn natively by Herdr (no browser). Drawings are ordinary `.excalidraw` files. Dark
 themes get a black canvas, light themes a white one, with the Agents graph's background and grain underneath.
 **All drawings ⌘O** opens the library (previews, search, pin, rename, repos, and a Trash tab that keeps deleted drawings
-30 days, with Restore); **Full size** opens the drawing in a big window; **SVG** and **PNG** export it to Downloads (its
-own colours, the Excalifont embedded; also `herdr-app do excalidraw.export-svg` / `export-png`). ⌘C, ⌘X and ⌘V copy and paste shapes, also
+30 days, with Restore); **Full size** opens the drawing in a big window; **SVG** and **PNG** export it to Downloads as the
+canvas shows it (background, pattern and grain, the Excalifont embedded; also `herdr-app do excalidraw.export-svg` /
+`export-png`). ⌘C, ⌘X and ⌘V copy and paste shapes, also
 to and from excalidraw.com. Drag from the dots on a shape's edges to connect it; hold ⌘ and press an arrow key to
 preview connected copies that way (press again for more), then let go or press ↵ to add them; ⌥ and an arrow key moves
 to the connected shape. Agents draw on it too, through the `herdr-excalidraw` skill: ask "draw how checkout works in
