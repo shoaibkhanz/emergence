@@ -5,13 +5,13 @@
 // their lines. Click / shift-click / drag selects lines on one side; ⌘Enter posts a review comment on
 // them, optionally tagged Nit · Minor · Major · Question · Statement.
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, TextView, ScrollHandle } from "gpui-base";
+import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, TextView, ScrollHandle, Scrollbar } from "gpui-base";
 import { exec, focused, panes, spaces, theme, settings, props, shared, setShared, openOverlay, closeOverlay, run, layout, nextCommand } from "herdr";
 import { holder } from "./keyboard.js";
 import * as github from "./github.js";
 import * as gitlab from "./gitlab.js";
 import { forgeOrder } from "./gitlab-map.js";
-import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, TAGS, tagBody, splitTag, shown, findAll, findTalk, mentions, gapBefore, hiddenRows, pairRows, tabArrows, carryThreads, toCarry, settle, threadLines, hunkTail } from "./lib.js";
+import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, TAGS, tagBody, splitTag, shown, findAll, findTalk, mentions, gapBefore, hiddenRows, pairRows, tabArrows, carryThreads, toCarry, settle, threadLines, hunkTail, parseBranches, pickerRows } from "./lib.js";
 
 const MONO = "Geist Mono";
 const icon = (name) => svg(`mods/pr-review/${name}.svg`);
@@ -87,8 +87,10 @@ export default class PrReview extends View {
     this.baseQ = InputState.new({ placeholder: "Filter branches" }); // the compare's picker, either side
     this.baseQ.on("focus", () => (this.typing = true));
     this.baseQ.on("blur", () => (this.typing = false));
-    this.baseQ.on("change", (_e, cx) => cx.notify()); // the list filters as you type, not at the next redraw
-    this.baseQ.on("submit", (_e, cx) => { const s = this.cur, l = s ? this.bases(s) : []; if (l.length) this.pickBase(s, l[0], cx); cx.notify(); });
+    this.baseQ.on("change", (_e, cx) => { this.baseCursor = 0; cx.notify(); }); // the list filters as you type
+    this.baseQ.on("submit", (_e, cx) => { const s = this.cur, l = s ? this.bases(s) : []; if (l.length) this.pickBase(s, l[Math.min(this.baseCursor, l.length - 1)]?.ref ?? null, cx); cx.notify(); });
+    this.baseCursor = 0; // the picker's highlighted row (↑ / ↓)
+    this.baseList = ScrollHandle.new(); // keeps it in view
     this.findEvery = true; // All files; This file narrows it
     this.findQ.on("focus", () => (this.typing = this.inFind = true));
     this.findQ.on("blur", () => (this.typing = this.inFind = false));
@@ -328,11 +330,12 @@ export default class PrReview extends View {
   // The picker for one side of the compare ("base" or "head"): local and remote branches, most recent first, filtered as you type.
   openBase(s, cx, side) {
     this.basePick = side;
+    this.baseCursor = 0;
     this.baseQ.set_value("");
     this.baseQ.focus();
     cx.spawn(async (cx) => {
-      const out = await git(s.id, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads", "refs/remotes"]).catch(() => "");
-      s.branches = out.split("\n").filter((b) => b && !b.endsWith("/HEAD") && b !== "origin"); // origin: origin/HEAD, shortened
+      const out = await git(s.id, ["for-each-ref", "--sort=-committerdate", "--format=%(refname)%09%(committerdate:iso-strict)", "refs/heads", "refs/remotes"]).catch(() => "");
+      s.branches = parseBranches(out); // [{ref, name, tag, at}], lib
       cx.notify();
     });
   }
@@ -347,41 +350,73 @@ export default class PrReview extends View {
 
   closeBase() { this.basePick = false; this.unfocus(); }
 
-  // The branches matching the picker's filter, the other side left out. The head side starts with this branch (null).
+  // The picker's rows (lib pickerRows): the other side left out; the head side starts with this branch (null).
   bases(s) {
-    const q = this.baseQ.value().trim().toLowerCase(), head = this.basePick === "head", here = s.branch ?? "";
-    const other = head ? this.baseOf(s) : this.headOf(s) ?? here;
-    const list = (s.branches ?? []).filter((b) => b !== other && !(head && b === here) && b.toLowerCase().includes(q));
-    return head && here.toLowerCase().includes(q) ? [null, ...list] : list;
+    const head = this.basePick === "head", here = s.branch ?? "";
+    return pickerRows(s.branches ?? [], this.baseQ.value(), { other: head ? this.baseOf(s) : this.headOf(s) ?? here, here, head });
+  }
+
+  // A row: ✓ on the side's pick, the name (the typed text bold), its tag (local, or the remote) and its last commit's age.
+  baseRow(t, s, r, i, cur) {
+    const picked = (r?.ref ?? null) === (cur ?? null), name = r ? r.name : `${s.branch} (with uncommitted)`, [h0, h1] = r?.hit ?? [0, 0];
+    const local = r?.tag === "local";
+    return h_flex().id(`base-${i}`).h(30).mx(6).px(8).gap(8).items_center().rounded(6).cursor_pointer().text_size(12.5).tooltip(r ? r.ref : name)
+      .when(i === this.baseCursor, (el) => el.bg(t.selected)).hover((x) => x.bg(t.hover))
+      .on_click((_e, cx) => { this.pickBase(s, r?.ref ?? null, cx); cx.notify(); })
+      .child(div().w(12).flex_none().text_size(12).text_color(t.accent).child(picked ? "✓" : ""))
+      .child(h_flex().flex_1().min_w(0).text_color(picked ? t.accent : t.foreground)
+        .child(div().flex_none().child(name.slice(0, h0)))
+        .when(h1 > h0, (el) => el.child(div().flex_none().font_semibold().child(name.slice(h0, h1))))
+        .child(div().min_w(0).truncate().child(name.slice(h1))))
+      .child(r ? h_flex().h(18).px(6).flex_none().items_center().rounded(5).text_size(10.5)
+        .bg(local ? tint(t.accent, "1f") : t.raised).text_color(local ? t.accent : t.muted).child(r.tag) : div())
+      .child(div().w(26).flex_none().text_size(11).text_color(t.dim).child(r ? ago(r.at) : "now"));
   }
 
   basePicker(t, s) {
-    const cur = this.basePick === "head" ? this.headOf(s) : this.baseOf(s), list = this.bases(s).slice(0, 60);
-    return v_flex().flex_none().border_b(1).border_color(t.border).bg(t.surface)
-      .child(h_flex().h(44).px(12).gap(8).items_center()
+    const cur = this.basePick === "head" ? this.headOf(s) : this.baseOf(s), rows = this.bases(s);
+    this.baseCursor = Math.min(this.baseCursor, Math.max(0, rows.length - 1));
+    const empty = s.branches ? "No branch matches." : "Loading branches…";
+    return v_flex().flex_none().bg(t.surface)
+      .child(h_flex().h(44).px(12).gap(8).items_center().border_b(1).border_color(t.border)
         .child(h_flex().flex_1().min_w(0).h(30).px(10).gap(8).items_center().rounded(8).bg(t.background).border_1().border_color(t.accent).on_mouse_down("left", field)
           .child(icon("git-branch").size(14).flex_none().text_color(t.dim))
           .child(Input.new(this.baseQ).id("base-input").flex_1().h_full().text_size(13)))
         .child(this.iconBtn("base-close", "x", "Close  Esc", () => this.closeBase())))
-      .child(v_flex().id("base-list").max_h(240).overflow_y_scrollbar().pb(6)
-        .children(list.map((b) => h_flex().id(`base-${b ?? "here"}`).h(28).px(16).gap(8).items_center().cursor_pointer().text_size(12)
-          .text_color(b === cur ? t.accent : t.foreground).hover((x) => x.bg(t.hover))
-          .on_click((_e, cx) => { this.pickBase(s, b, cx); cx.notify(); })
-          .child(div().min_w(0).truncate().child(b ?? `${s.branch} (with uncommitted)`))))
-        .when(!list.length, (el) => el.child(div().px(16).py(6).text_size(12).text_color(t.muted).child(s.branches ? "No branch matches." : "Loading branches…"))));
+      // The list scrolls under a bar that always shows (the default one shows only while scrolling).
+      .child(v_flex().relative().max_h(264)
+        .child(v_flex().id("base-list").max_h(264).py(6).overflow_y_scroll().track_scroll(this.baseList)
+          .children(rows.map((r, i) => this.baseRow(t, s, r, i, cur)))
+          .when(!rows.length, (el) => el.child(div().px(16).py(6).text_size(12).text_color(t.muted).child(empty))))
+        .child(Scrollbar.vertical("base-list").mode("always").absolute().inset_0()))
+      .child(h_flex().h(28).px(12).gap(6).items_center().border_t(1).border_color(t.border).text_size(11).text_color(t.dim)
+        .child(div().flex_1().child(s.branches ? `${rows.filter(Boolean).length} of ${s.branches.length}` : ""))
+        .child("↑↓ move · ↵ pick · esc close"));
   }
 
-  // One side of the compare as the rail's first row shows it ("head" or "base"): its branch with a ▾, which opens the
-  // picker under the row. The sidebar is the one place to pick either side.
+  // One side of the compare in the diff header ("head" or "base"): its branch whole (there's room), a ▾ that opens the
+  // picker under the header. Hover says the whole name and its role.
   sideChip(t, s, side) {
-    const on = this.basePick === side, head = side === "head";
-    return h_flex().id(`${side}-chip`).min_w(0).h(20).px(4).gap(4).items_center().rounded(5).cursor_pointer()
-      .when(on, (el) => el.bg(t.raised)).hover((x) => x.bg(t.raised))
-      .tooltip(head ? "Pick the branch whose changes to show" : "Pick the branch to compare with")
+    const on = this.basePick === side, head = side === "head", name = head ? this.headOf(s) ?? s.branch ?? "this branch" : this.baseOf(s);
+    return h_flex().id(`${side}-chip`).min_w(0).h(26).px(8).gap(6).items_center().rounded(6).cursor_pointer()
+      .bg(on ? t.selected : t.raised).hover((x) => x.bg(t.hover))
+      .tooltip(head ? `${name}: its changes are shown. Click to pick another` : `${name}: compared against; its own changes aren't shown. Click to pick another`)
       .on_mouse_down("left", field)
       .on_click((_e, cx) => { cx.stop_propagation(); if (on) this.closeBase(); else this.openBase(s, cx, side); cx.notify(); })
-      .child(div().min_w(0).truncate().text_size(12).text_color(t.foreground).child(head ? this.headOf(s) ?? s.branch ?? "this branch" : this.baseOf(s)))
-      .child(icon("chevron-down").size(11).flex_none().text_color(on ? t.foreground : t.dim));
+      .child(icon("git-branch").size(13).flex_none().text_color(t.dim))
+      .child(div().min_w(0).truncate().text_size(13).font_medium().text_color(t.foreground).child(name))
+      .child(icon("chevron-down").size(12).flex_none().text_color(on ? t.foreground : t.dim));
+  }
+
+  // ⇄: the other way round, to see what the base adds instead (the head's uncommitted work isn't a branch: the swap
+  // takes its branch).
+  swapSides(s, cx) {
+    const h = this.headOf(s) ?? s.branch, b = this.baseOf(s);
+    if (!h || h === b) return;
+    setShared("pr-review.heads", { ...shared("pr-review.heads"), [s.id.repo]: b });
+    setShared("pr-review.bases", { ...shared("pr-review.bases"), [s.id.repo]: h });
+    this.closeBase();
+    this.open(s, "local", cx, true);
   }
 
   // A diff in place, taken at head `at` (null for this branch): it stays on the same file, wherever that now sits.
@@ -571,6 +606,9 @@ export default class PrReview extends View {
       else if (!this.narrow && s?.entry != null) { const d = s.diffs.get(s.entry); if (!this.side() && d?.view === "diff") d.view = "files"; else s.entry = null; }
       else if (!this.panel) return this.dismiss();
       else return run("tabs-plus.back"); // nothing left to step out of: back to the terminal
+    } else if (this.basePick && this.cur && (k === "up" || k === "down")) { // the picker's rows, its input keeps the caret
+      const n = this.bases(this.cur).length;
+      if (n) { this.baseCursor = (this.baseCursor + (k === "down" ? 1 : n - 1)) % n; this.baseList.scroll_to_item(this.baseCursor); }
     } else if (this.typing) return;
     // The PR list's search, and ← / → over its Open / Closed / All only while ↑ / ↓ walk the list too (lib tabArrows).
     else if (k === "/" && !this.inSearch && s && this.listShows(s)) this.search.focus();
@@ -889,20 +927,14 @@ export default class PrReview extends View {
     return v_flex().h_full()
       .when(full, (el) => el.flex_1().min_w(0))
       .when(!full, (el) => el.w(280).flex_none().bg(t.surface).border_r(1).border_color(t.border))
-      .child(section("Compare two branches"))
+      .child(div().h(8).flex_none())
       // Click the row to show the compare, a side's ▾ to pick that branch (the picker opens right under).
       .child(row(0, s.entry === "local", "local", h_flex().flex_1().min_w(0).gap(10).items_center()
         .child(icon("git-branch").size(14).flex_none().text_color(t.muted))
-        // One line, as a PR row's "head → base": the head shortens first, "vs base ▾" stays whole. Under it, what it covers.
-        .child(v_flex().flex_1().min_w(0).gap(2)
-          .child(h_flex().min_w(0).gap(2).items_center()
-            .child(this.sideChip(t, s, "head"))
-            .child(div().flex_none().px(2).text_size(11).text_color(t.dim).child("vs"))
-            .child(div().flex_none().child(this.sideChip(t, s, "base"))))
-          .child(div().px(4).truncate().text_size(11).text_color(t.dim)
-            .child(this.headOf(s) ? "Committed changes only" : "Includes uncommitted changes")))))
-      .when(Boolean(this.basePick), (el) => el.child(div().mx(8).mt(4).flex_none().rounded(8).overflow_hidden().border_1().border_color(t.border).child(this.basePicker(t, s))))
-      .child(div().h(1).flex_none().mx(20).mt(12).bg(t.border))
+        // The entry; its two sides are picked in the diff header, where the names fit whole (hover here for them).
+        .child(v_flex().id("compare-pair").flex_1().min_w(0).gap(2).tooltip(`Changes on ${this.headOf(s) ?? s.branch ?? "this branch"} against ${this.baseOf(s)}`)
+          .child(div().text_size(13).text_color(t.foreground).child("Compare branches"))
+          .child(div().truncate().text_size(11).text_color(t.dim).child(`${this.headOf(s) ?? s.branch ?? "this branch"} → ${this.baseOf(s)}`)))))
       .child(section("Pull requests"))
       .child(v_flex().px(12).pb(8).gap(8).flex_none()
         .child(h_flex().h(32).px(10).gap(8).items_center().rounded(8).bg(t.background).border_1().border_color(this.inSearch ? t.accent : t.input).on_mouse_down("left", field)
@@ -941,8 +973,9 @@ export default class PrReview extends View {
     const base = local ? this.baseOf(s) : pr?.baseRefName ?? s.info.defaultBranch, head = local && this.headOf(s);
     return {
       d, local, pr, files: d.files ?? [],
-      title: pr?.title ?? (local ? this.compareTitle(s) : "Pull request"),
-      sub: pr ? `${pr.headRefName} → ${base}` : head ? `${head} · since merge-base with ${base}` : local ? `${s.branch} · since merge-base with ${base} · includes uncommitted` : "",
+      title: pr?.title ?? (local ? `Changes on ${head ?? s.branch ?? "this branch"}` : "Pull request"),
+      // what the compare holds: only what the head adds since the two split (the merge-base); the base's own changes since don't show
+      sub: pr ? `${pr.headRefName} → ${base}` : head ? `What it adds to ${base}, since they split` : local ? `What it adds to ${base}, since they split · includes uncommitted` : "",
       quiet: d.loading && !d.files ? "Loading diff…" : d.error ?? (d.files?.length ? null : "No changes."),
     };
   }
@@ -955,20 +988,12 @@ export default class PrReview extends View {
   // With room the tree sits beside the diff; without, it stands alone until a file is picked.
   main(t, s, bare) {
     // Centred on the whole panel, not just the room beside the 280px list (+1 border) that's always shown here.
-    if (s.entry == null) return this.quiet(t, "Select a pull request, or this branch, to see its changes.").pr(281);
+    if (s.entry == null) return this.quiet(t, "Pick a pull request, or Compare branches, to see its changes.").pr(281);
     const { d, local, pr, files, title, sub, quiet } = this.entryInfo(s);
     const side = !bare && this.side();
     const treeOn = side ? this.filesOpen : !bare && d.view !== "diff";
-    const head = bare ? null : h_flex().h(56).flex_none().pl(8).pr(16).gap(12).items_center().border_b(1).border_color(t.border)
-      .child(this.iconBtn("rail-toggle", this.railOpen ? "panel-left-close" : "panel-left-open", this.railOpen ? "Hide pull requests  ⌘\\" : "Show pull requests  ⌘\\", () => (this.railOpen = !this.railOpen)))
-      .child(v_flex().flex_1().min_w(0).gap(4)
-        .child(h_flex().gap(8).items_center()
-          .when(!local, (el) => el.child(div().flex_none().text_size(13).text_color(t.dim).child(`#${s.entry}`)))
-          .child(div().min_w(0).truncate().text_size(15).font_semibold().child(title))
-          .when(Boolean(pr), (el) => el.child(this.stateChip(t, pr))))
-        .child(h_flex().gap(8).items_center().text_size(12).text_color(t.muted)
-          .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(sub))
-          .when(Boolean(pr), (el) => el.child(div().flex_none().child(`${pr.author?.login ?? ""} · ${ago(pr.updatedAt)}`)))))
+    const railBtn = this.iconBtn("rail-toggle", this.railOpen ? "panel-left-close" : "panel-left-open", this.railOpen ? "Hide pull requests  ⌘\\" : "Show pull requests  ⌘\\", () => (this.railOpen = !this.railOpen));
+    const stats = h_flex().flex_none().gap(12).items_center()
       .when(files.length > 0, (el) => el
         .child(this.counts(t, files.reduce((a, f) => a + f.additions, 0), files.reduce((a, f) => a + f.deletions, 0)))
         .child(h_flex().id("files-toggle").h(28).px(8).gap(4).items_center().rounded(6).cursor_pointer().text_size(12).text_color(t.muted)
@@ -978,7 +1003,38 @@ export default class PrReview extends View {
           .child(`${files.length} file${files.length === 1 ? "" : "s"}`)))
       .when(Boolean(d.talk), (el) => el.child(this.paneToggle(t, d, "talk")))
       .when(d.commits?.length > 0, (el) => el.child(this.paneToggle(t, d, "commits")));
+    const label = (text) => div().flex_none().text_size(13).text_color(t.muted).child(text);
+    // The compare: its two branches get the whole top line (long names stay whole), what it holds and the counts the
+    // line under. A PR: its title and state, then its branches and author, the counts beside.
+    const head = bare ? null : local
+      ? h_flex().flex_none().pt(10).pb(8).pl(8).pr(16).gap(12).items_start().border_b(1).border_color(t.border)
+        .child(railBtn)
+        .child(v_flex().flex_1().min_w(0).gap(6)
+          .child(h_flex().min_w(0).gap(8).items_center()
+            .child(label("Changes on"))
+            .child(this.sideChip(t, s, "head"))
+            .child(h_flex().id("swap-sides").size(26).flex_none().items_center().justify_center().rounded(6).cursor_pointer().text_size(14)
+              .text_color(t.dim).hover((x) => x.bg(t.hover).text_color(t.foreground)).tooltip("Swap: show what the other branch adds")
+              .on_mouse_down("left", field).on_click((_e, cx) => { this.swapSides(s, cx); cx.notify(); }).child("⇄"))
+            .child(label("against"))
+            .child(this.sideChip(t, s, "base")))
+          .child(h_flex().min_w(0).h(28).gap(12).items_center()
+            .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(sub))
+            .child(stats)))
+      : h_flex().h(56).flex_none().pl(8).pr(16).gap(12).items_center().border_b(1).border_color(t.border)
+        .child(railBtn)
+        .child(v_flex().flex_1().min_w(0).gap(4)
+          .child(h_flex().gap(8).items_center()
+            .child(div().flex_none().text_size(13).text_color(t.dim).child(`#${s.entry}`))
+            .child(div().min_w(0).truncate().text_size(15).font_semibold().child(title))
+            .when(Boolean(pr), (el) => el.child(this.stateChip(t, pr))))
+          .child(h_flex().gap(8).items_center().text_size(12).text_color(t.muted)
+            .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(sub))
+            .when(Boolean(pr), (el) => el.child(div().flex_none().child(`${pr.author?.login ?? ""} · ${ago(pr.updatedAt)}`)))))
+        .child(stats);
     const top = v_flex().flex_1().min_w(0).h_full().when(!bare, (el) => el.child(head))
+      .when(!bare && local && Boolean(this.basePick), (el) => el.child(div().mx(12).mt(8).w(480).flex_none().rounded(8).overflow_hidden()
+        .border_1().border_color(t.border).shadow_lg().child(this.basePicker(t, s)))) // under the header's pickers
       .when(Boolean(d.commit), (el) => el.child(this.commitBar(t, s, d)));
     if (d.pane) return top.child(this.paneView(t, s, d));
     if (quiet) return top.child(this.quiet(t, quiet));
