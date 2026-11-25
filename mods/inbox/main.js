@@ -114,10 +114,11 @@ export default class Inbox extends View {
     // column can't hold what was asked): it's taken as drawn. A look is booked then, as nothing else may redraw.
     // A section the person dragged keeps that size (shared sidebar.sized; lib dragsOf tells a drag from our own resize).
     const sections = [[sp, "spaces"], [sc, "side-chats"], [po, "ports"]].filter(([n]) => n && !n.hidden);
+    let sized = shared("sidebar.sized") ?? {};
     if (!collapsed) {
       const d = dragsOf(this.sent ?? {}, Object.fromEntries(sections.map(([n, id]) => [id, n.size?.px ?? 0])));
       this.sent = d.sent;
-      if (Object.keys(d.drags).length) setShared("sidebar.sized", { ...(shared("sidebar.sized") ?? {}), ...d.drags });
+      if (Object.keys(d.drags).length) setShared("sidebar.sized", (sized = { ...sized, ...d.drags })); // used below as is: shared() may lag
     }
     const block = (n, key) => ({ px: n.size?.px ?? 0, shown: shared(key) ?? undefined });
     const blocks = [[sp, "spaces.h"], [sc, "side-chats.h"], [po, "ports.h"]].filter(([n]) => n && !n.hidden).map(([n, k]) => block(n, k));
@@ -129,14 +130,14 @@ export default class Inbox extends View {
       return;
     }
     this.mismatch = null;
-    const sized = shared("sidebar.sized") ?? {};
     const { spaces: px, side, ports } = splitColumn({ H, spacesWant, need, portsMin, sideWant, collapsed, sized });
     // Against the layout's own sizes, not the last ones sent: a size changed from elsewhere is put back (a drag was
     // saved above, so it comes back as itself). Each send is noted for dragsOf.
     const resize = (n, id, to) => {
       if (!n || to === n.size?.px) return;
       run("layout.resize", { id, px: to });
-      this.sent = { ...this.sent, [id]: { px: to, from: n.size?.px ?? 0, applied: false } };
+      const was = this.sent?.[id];
+      this.sent = { ...this.sent, [id]: { px: to, prev: was && !was.applied ? was.px : undefined, from: n.size?.px ?? 0, applied: false } };
     };
     resize(sp, "spaces", px);
     resize(po, "ports", ports);
