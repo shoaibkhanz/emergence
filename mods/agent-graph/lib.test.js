@@ -526,3 +526,15 @@ test("foldMarkdown: whole lines within the fold; a cut inside a code fence close
   expect(foldMarkdown("one very long first line", 5)).toEqual({ text: "one very long first line", more: 0 }); // at least the first line
   expect(foldMarkdown("a\n\n\n", 100)).toEqual({ text: "a", more: 0 }); // trailing blank lines dropped
 });
+
+test("trackSessions: an agent that answers with no session has ended (its terminal kept Claude's report); an error isn't an end", () => {
+  const DAY = 86_400_000, now = 10 * DAY, since = now - 7 * DAY, top = () => "/r";
+  const live = [{ id: "t1", agent: true, pid: 5, machine: null, harness: "claude", cwd: "/r", name: "x", space: "sp" }];
+  const a = trackSessions({}, live, { t1: { session: "S1" } }, top, now, since).sessions;
+  expect(trackSessions(a, live, { t1: { subagents: [] } }, top, now + 1, since).sessions.S1.endedAt).toBe(now + 1); // answered: no Claude there
+  expect(trackSessions(a, live, { t1: { error: "OSError" } }, top, now + 1, since).sessions.S1.endedAt).toBe(null); // couldn't tell
+});
+
+test("foldMarkdown: a fence counts only up to 3 spaces in; one inside an indented code block doesn't", () => {
+  expect(foldMarkdown("    ```\n    code\nafter", 15)).toEqual({ text: "    ```\n    code", more: 1 });
+});
