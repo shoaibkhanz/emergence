@@ -1,13 +1,13 @@
 // herdr-mods: the Excalidraw library (ported from the retired Diagrams library): a movable window over every drawing in
 // <appHome>/data/excalidraw, this repo's first. Search, This repo | Pinned | All, a preview per row; ↵ opens it in the
-// side panel (or a big window when the layout has none), ⌘S pins, ⌘R renames, ⌘K picks its repos, ⌘⌫ moves it to the
+// side panel (or a big window when the layout has none), ⌘S pins, ⌘R renames, ⌘K moves it to repos, ⌘⌫ moves it to the
 // trash (back for 30 days); the selected row has buttons for each; Esc closes. Herdr's global ⌘P / ⌘D are left alone.
 // House style: the settings dialog's frame, section cards with hairline rows (RECIPE "Dialogs").
 
 import { div, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { props, closeOverlay, openOverlay, theme, panes, focused, watchFolder, home, setShared } from "herdr";
-import { sections, search, repoName, freeName, ago, knownRepos, toggleRepo, trashRows, TRASH_DAYS } from "./library.js";
+import { sections, search, repoName, freeName, ago, knownRepos, toggleRepo, trashRows, TRASH_DAYS, suggestRepo } from "./library.js";
 import { dir, scan, readIndex, setEntry, trash, restore, deleteForever, duplicate, create, repoOf } from "./store.js";
 import { showInPanel, openWindow } from "./open.js";
 
@@ -35,6 +35,9 @@ export class LibraryView {
       const pane = panes().find((x) => x.id === focused()?.pane && x.cwd) ?? panes().find((x) => x.cwd);
       this.repo = await repoOf(pane?.cwd).catch(() => null);
       if (this.repo) this.tab = "repo";
+      // The repos open in Herdr's spaces (this machine's), so Move to and the suggestions know them before any drawing does.
+      const folders = [...new Set(panes().filter((x) => x.cwd && !x.machine).map((x) => x.cwd))];
+      this.spaceRepos = (await Promise.all(folders.map((f) => repoOf(f).catch(() => null)))).filter(Boolean);
       try { this.take(await scan()); } catch (e) { this.error = String(e?.message ?? e); }
       cx.notify();
       for (;;) { // the folder changed (an agent, the canvas, another copy): read the index again
@@ -131,7 +134,7 @@ export class LibraryView {
   }
 
   render(cx) {
-    const t = theme(), view = this.view(), all = view.flatMap((s) => s.rows), now = Date.now();
+    const t = theme(), view = this.view(), all = view.flatMap((s) => s.rows), now = Date.now(), repos = this.repos();
     const chip = (key) => div().px(6).rounded(4).text_size(11)
       .bg(key === this.repo?.key ? `${t.accent.slice(0, 7)}24` : t.raised).text_color(key === this.repo?.key ? t.accent : t.muted).child(repoName(key));
     const segment = (id, label, on) => div().id(id).h(24).px(12).flex().items_center().rounded(4).text_size(12).cursor_pointer()
@@ -169,18 +172,20 @@ export class LibraryView {
             : h_flex().gap(6).items_center().text_size(13).font_weight(500).child(r.pinned ? div().text_color(t.accent).child("★") : div()).child(div().truncate().child(r.title)))
           .child(h_flex().gap(6).items_center().text_size(11).text_color(t.dim).overflow_hidden()
             .children(r.repos.slice(0, 2).map((x) => chip(x.key))).when(r.repos.length > 2, (el) => el.child(div().child(`+${r.repos.length - 2}`)))
+            .when(!r.repos.length, (el) => el.child(div().px(6).rounded(4).text_size(11).bg(t.raised).text_color(t.dim).child("Unfiled")))
             .child(div().truncate().child([`${r.nodes ?? 0} shapes`, r.broken ? `can't read it: ${r.broken}` : null].filter(Boolean).join(" · ")))))
         .when(on && this.renaming !== r.name, (el) => el.child(h_flex().gap(2)
-          .children([["pin", r.pinned ? "Unpin" : "Pin"], ["rename", "Rename"], ["duplicate", "Duplicate"], ["trash", "Trash"]].map(([what, label]) =>
+          .children([["pin", r.pinned ? "Unpin" : "Pin"], ["rename", "Rename"], ["duplicate", "Duplicate"], ["move", "Move to…"], ["trash", "Trash"]].map(([what, label]) =>
             div().id(`${what}-${r.name}`).h(24).px(6).flex().items_center().rounded(5).text_size(11).text_color(what === "trash" ? t.blocked : t.muted)
               .hover((st) => st.bg(t.raised).text_color(what === "trash" ? t.blocked : t.foreground))
-              .on_click((_e, cx) => { cx.stop_propagation(); if (what === "rename") { this.startRename(r); cx.notify(); } else this.act(r, what, cx); }).child(label)))))
-        .child(div().id(`repos-${r.name}`).h(24).px(8).flex().items_center().rounded(6).border(1).border_color(this.picking === r.name ? t.accent : t.input)
-          .text_size(11).text_color(t.muted).hover((st) => st.text_color(t.foreground)).when(!(on || this.picking === r.name || !r.repos.length), (el) => el.invisible())
-          .on_click((_e, cx) => { cx.stop_propagation(); this.pick(r, cx); }).child(r.repos.length ? "Repos" : this.repo ? `Put in ${repoName(this.repo.key)}…` : "Put in a repo…"))
+              .on_click((_e, cx) => { cx.stop_propagation(); if (what === "rename") { this.startRename(r); cx.notify(); } else if (what === "move") this.pick(r, cx); else this.act(r, what, cx); }).child(label)))))
+        // An unfiled drawing named after a repo (<repo>-<topic>) offers that repo in one click, on every row alike.
+        .when(!on && !!suggestRepo(r, repos), (el) => { const x = suggestRepo(r, repos); return el.child(div().id(`suggest-${r.name}`).h(24).px(8).flex().items_center().rounded(6)
+          .border(1).border_color(t.input).text_size(11).text_color(t.muted).hover((st) => st.text_color(t.foreground).bg(t.raised)).tooltip(`File it under ${x.key}`)
+          .on_click((_e, cx) => { cx.stop_propagation(); this.act(r, { repo: x }, cx); }).child(`→ ${repoName(x.key)}`)); })
         .child(div().text_size(12).text_color(t.dim).child(ago(r.updated, now)));
     };
-    const title = (s) => s.key === "trash" ? `In the trash · removed for good ${TRASH_DAYS} days after it was deleted` : s.key === "results" ? `${s.rows.length} found` : s.key === "all" ? "Everything" : s.key === null ? "Unfiled"
+    const title = (s) => s.key === "trash" ? `In the trash · removed for good ${TRASH_DAYS} days after it was deleted` : s.key === "results" ? `${s.rows.length} found` : s.key === "all" ? "Everything" : s.key === null ? "Unfiled · not in a repo yet"
       : s.key === this.repo?.key ? `This repo · ${repoName(s.key)}` : repoName(s.key);
     return v_flex().id("excalidraw-library").size_full().p(24).gap(14).bg(t.popover).text_color(t.foreground)
       .track_focus(this.focus).on_key_down((e, cx) => this.key(e, cx))
@@ -208,13 +213,19 @@ export class LibraryView {
           .child(div().text_size(12).text_color(t.muted).child(title(s)))
           .child(v_flex().rounded(6).border(1).border_color(t.border).bg(t.surface).overflow_hidden()
             .children(s.rows.flatMap((r, i) => (s.key === "trash" ? [trashRow(r, i === 0)] : r.name === this.picking ? [row(r, i === 0), this.picker(t, r)] : [row(r, i === 0)])))))))
-      .child(div().text_size(12).text_color(t.dim).truncate().child(this.tab === "trash" ? "↑/↓ move · ↵ restore · ⌘⌫ delete forever (press twice) · drag to move" : "↑/↓ move · ↵ open · ⌘S pin · ⌘R rename · ⌘K repos · ⌘⌫ trash (30 days) · drag to move"));
+      .child(div().text_size(12).text_color(t.dim).truncate().child(this.tab === "trash" ? "↑/↓ select · ↵ restore · ⌘⌫ delete forever (press twice)" : "↑/↓ select · ↵ open · ⌘S pin · ⌘R rename · ⌘K move to · ⌘⌫ trash (30 days)"));
+  }
+
+  // Every repo a drawing could go in: the ones drawings name and this one (knownRepos), then the spaces' others.
+  repos() {
+    const known = knownRepos(this.entries, this.repo);
+    return [...known, ...(this.spaceRepos ?? []).filter((r, i, all) => !known.some((k) => k.key === r.key) && all.findIndex((o) => o.key === r.key) === i)];
   }
 
   picker(t, r) {
-    const repos = knownRepos(this.entries, this.repo);
+    const repos = this.repos();
     return v_flex().id(`picker-${r.name}`).px(12).py(10).gap(6).border_t_1().border_color(t.border).bg(t.raised)
-      .child(div().text_size(11).text_color(t.dim).child("Filed under (a repo the file itself names comes back when an agent next edits it)"))
+      .child(div().text_size(11).text_color(t.dim).child("Move to: tick the repos it belongs with (a repo the drawing names itself comes back when an agent next edits it)"))
       .children(repos.map((x) => {
         const has = r.repos.some((y) => y.key === x.key);
         return h_flex().id(`pick-${x.key}`).h(26).px(6).gap(8).items_center().rounded(4).cursor_pointer().hover((st) => st.bg(t.hover))
