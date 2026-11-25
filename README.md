@@ -70,7 +70,8 @@ one searchable list showing where each lives.
 
 ### Excalidraw (⌘⇧E)
 
-A whiteboard in the side panel, drawn natively by Herdr (no browser). Drawings are ordinary `.excalidraw` files. Dark
+A whiteboard in the side panel, drawn natively by Herdr (no browser). Drawings are ordinary `.excalidraw` files, up
+to 8 MB (pasted images live inside them); a bigger one says so rather than opening empty. Dark
 themes get a black canvas, light themes a white one, with the Agents graph's background and grain underneath.
 **All drawings ⌘O** opens the library (previews, search, pin, rename, repos, and a Trash tab that keeps deleted drawings
 30 days, with Restore); **Full size** opens the drawing in a big window; **SVG** and **PNG** export it to Downloads as the
