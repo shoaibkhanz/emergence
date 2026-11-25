@@ -252,3 +252,30 @@ test("tabArrows: ← / → walk Open · Closed · All only while ↑ / ↓ walk 
   expect(tabArrows({ listShows: false, filesOpen: false, inSearch: false })).toBe(false); // the list isn't on screen
   expect(tabArrows({ listShows: true, filesOpen: false, inSearch: true })).toBe(false);  // the search box takes ← / → for its caret
 });
+
+import { parseBranches, pickerRows } from "./lib.js";
+
+test("parseBranches: local and remote refs as picker branches; a remote's HEAD is skipped", () => {
+  const out = "refs/heads/main\t2026-11-25T10:00:00+00:00\nrefs/remotes/origin/HEAD\t2026-11-25T10:00:00+00:00\n"
+    + "refs/remotes/origin/main\t2026-11-24T10:00:00+00:00\nrefs/remotes/upstream/feat/x\t2026-11-20T10:00:00+00:00\n";
+  expect(parseBranches(out)).toEqual([
+    { ref: "main", name: "main", tag: "local", at: "2026-11-25T10:00:00+00:00" },
+    { ref: "origin/main", name: "main", tag: "origin", at: "2026-11-24T10:00:00+00:00" },
+    { ref: "upstream/feat/x", name: "feat/x", tag: "upstream", at: "2026-11-20T10:00:00+00:00" },
+  ]);
+});
+
+test("pickerRows: filters on the ref (\"origin\" finds remotes), leaves out the other side, bolds the hit in the name", () => {
+  const bs = parseBranches("refs/heads/main\tx\nrefs/heads/fix/side\tx\nrefs/remotes/origin/main\tx\nrefs/remotes/origin/fix/side\tx\n");
+  const refs = (rows) => rows.map((r) => r?.ref ?? null);
+  expect(refs(pickerRows(bs, "", { other: "main", here: "fix/side", head: false }))).toEqual(["fix/side", "origin/main", "origin/fix/side"]);
+  expect(refs(pickerRows(bs, "origin", { other: "main", here: "", head: false }))).toEqual(["origin/main", "origin/fix/side"]);
+  expect(pickerRows(bs, "origin", { other: "main", here: "", head: false })[0].hit).toBe(null); // matched outside the name
+  expect(pickerRows(bs, "SIDE", { other: "main", here: "", head: false })[0].hit).toEqual([4, 8]);
+});
+
+test("pickerRows: the head side starts with this branch (null) when it matches, and leaves its own name out", () => {
+  const bs = parseBranches("refs/heads/main\tx\nrefs/heads/fix/side\tx\n");
+  expect(pickerRows(bs, "", { other: "main", here: "fix/side", head: true })).toEqual([null]);
+  expect(pickerRows(bs, "zzz", { other: "x", here: "fix/side", head: true })).toEqual([]);
+});
