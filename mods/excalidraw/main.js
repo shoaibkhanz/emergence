@@ -5214,21 +5214,23 @@ var Excalidraw = class extends View {
   // herdr-mods: the drawing as SVG or PNG in ~/Downloads (export.js); a toast says where, or why not.
   exportAs(kind, cx) {
     if (!this.file || this.exporting) return;
+    const fail = (e4) => notify({ title: `Couldn't export ${kind.toUpperCase()}`, body: String(e4?.message ?? e4), level: "warning" });
+    let items, look;
+    try { // as the canvas looks: its background, Emergence's Background at its strength and Grain, over the drawing's box at 100%
+      const t = theme(), name = this.file.split("/").pop().replace(/\.excalidraw$/, ""), background = canvasColor(t), els = this.elements();
+      items = exportItems(els, this.map(), background);
+      const { x0, y0, width, height } = boxOf(items), strength = dotsAlpha(shared("agent-graph.dots")), style = shared("agent-graph.pattern") ?? "sparse";
+      const ground = strength && items.length ? groundPaths(groundLayers(style, width, height, 1, -x0, -y0, cardsOf(els, 1, -x0, -y0), Date.now()).layers, uiColors(t).foreground, strength) : [];
+      look = { name, background, ground, grainOpacity: grainOpacity(shared("agent-graph.filmGrain")) };
+    } catch (e4) { return fail(e4); } // never stuck on "Exporting…", never a throw into the command loop
     this.exporting = kind;
     cx.notify();
-    // As the canvas looks: its background, Emergence settings' Background at its strength (dots in the panels' ink) and
-    // Grain, over the drawing's box at 100% (ground() paints the same on screen).
-    const t = theme(), name = this.file.split("/").pop().replace(/\.excalidraw$/, ""), background = canvasColor(t), els = this.elements();
-    const items = exportItems(els, this.map(), background), { x0, y0, width, height } = boxOf(items);
-    const strength = dotsAlpha(shared("agent-graph.dots")), style = shared("agent-graph.pattern") ?? "sparse";
-    const ground = strength ? groundPaths(groundLayers(style, width, height, 1, -x0, -y0, cardsOf(els, 1, -x0, -y0), Date.now()).layers, uiColors(t).foreground, strength) : [];
-    const look = { name, background, ground, grainOpacity: grainOpacity(shared("agent-graph.filmGrain")) };
     cx.spawn(async (cx2) => {
       try {
         const out = await saveExport(kind, items, look, { exec: herdrExec, appHome, home: home2, writeTextFile: writeTextFile2 });
         notify({ title: `Saved ${out.split("/").pop()} to Downloads`, level: "info" });
       } catch (e4) {
-        notify({ title: `Couldn't export ${kind.toUpperCase()}`, body: String(e4?.message ?? e4), level: "warning" });
+        fail(e4);
       } finally {
         this.exporting = null;
         cx2.notify();
