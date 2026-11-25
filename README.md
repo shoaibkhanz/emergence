@@ -45,7 +45,9 @@ Click a sub-agent (or ↵) for **what it did**:
 - **Files**: what it edited (uncommitted marked) and what it read.
 
 It refreshes every 5 s while the sub-agent runs; **Go to agent** (↵) jumps to the agent that started it. Transcripts
-are read when you open them and never stored; Claude Code keeps them about 30 days.
+are read when you open them and never stored; Claude Code keeps them about 30 days. When an agent ends, its sub-agents
+stay under an **· ended** card where it worked, details and all, for Emergence settings' Sub-agent history (1 day,
+3 days or 1 week): the graph remembers each agent's session while the Agents panel is open.
 
 ### PRs (⌘⇧R)
 

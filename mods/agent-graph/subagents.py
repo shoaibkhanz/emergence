@@ -2,7 +2,9 @@
 Herdr knows nothing about (it sees only terminals). pi, Codex and OpenCode: not read in v1.
 
 `python3 subagents.py --json '[{address, pid, harness, top}]'` (the live local agent terminals: foreground pid, "claude"
-or "omp", the git top of their folder) prints {"v": 1, "agents": {address: {edited, subagents, ...metrics}}}, or
+or "omp", the git top of their folder; an agent that has ended comes as {address, session, harness, top, kind}, its
+session as remembered from a live answer's `session`) prints {"v": 1, "agents": {address: {session, edited, subagents,
+...metrics}}}, or
 {"v": 1, "error": {code, message}}; it always exits 0. edited: [{path, rel, at, dirty}], newest first (rel:
 worktree-relative, dirty: still uncommitted). A sub-agent: {id, title, running, action, edited, worktree, updatedAt,
 finishedAt, ...metrics}: every one the session ran. Metrics, the agent's own and each sub-agent's: {tools, tokens,
@@ -425,8 +427,35 @@ def mtime_ms(p: str) -> int:
     return int(os.path.getmtime(p) * 1000)
 
 
+SESSION_ID = re.compile(r"^[A-Za-z0-9-]{1,64}$")  # a Claude session id: a path part, never a path
+
+
+def given_session(a: dict, env: Env) -> str | None:
+    """The session the graph remembered for an agent that has ended (no process to ask): a Claude session id, or an omp
+    session file under ~/.omp/agent; anything else (a path out, a bad id) is ignored."""
+    s = a.get("session")
+    if not isinstance(s, str):
+        return None
+    if a.get("harness") == "claude":
+        return s if SESSION_ID.match(s) else None
+    root = os.path.realpath(os.path.join(env.home, ".omp", "agent")) + os.sep
+    return s if s.endswith(".jsonl") and os.path.realpath(s).startswith(root) and os.path.isfile(s) else None
+
+
+def cost_kind(a: dict, env: Env, pid) -> str:
+    """How a Claude agent's cost is counted: from its process's key while it runs, else as the graph last saw it."""
+    if pid:
+        return "api" if approved_key(env, pid) else "estimate"
+    return a.get("kind") if a.get("kind") in ("api", "estimate") else "estimate"
+
+
 def claude_session(a: dict, env: Env) -> tuple:
-    """(sessionId, the pid it belongs to) of the Claude Code under a's foreground pid, else (None, None)."""
+    """(sessionId, the pid it belongs to): the remembered session of an ended agent (pid None), else the Claude Code under
+    a's foreground pid, else (None, None)."""
+    if (given := given_session(a, env)):
+        return given, None
+    if not a.get("pid"):
+        return None, None
     for p in env.procs(int(a["pid"])):
         f = os.path.join(env.home, ".claude", "sessions", f"{p.pid}.json")
         if os.path.isfile(f):
@@ -441,7 +470,8 @@ def claude(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
     out = {"edited": [], "subagents": [], **metrics(None, None)}
     if not sid:
         return out
-    top, kind = a.get("top"), "api" if approved_key(env, pid) else "estimate"
+    top, kind = a.get("top"), cost_kind(a, env, pid)
+    out["session"] = sid  # remembered by the graph, to read it after the agent ends
     for log in glob.glob(os.path.join(env.home, ".claude", "projects", "*", f"{sid}.jsonl"))[:1]:
         st = read(log, cache, partial(parse_claude, own=sid), mtime_ms(log), tail=True)
         out = {**out, "edited": edited(st, top, dirty, env.now - RECENT), **metrics(st, kind)}
@@ -462,7 +492,12 @@ def claude(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
 
 
 def omp_session(a: dict, env: Env) -> str | None:
-    """The session file of the omp under a's foreground pid (its tty's terminal-sessions pointer, line 2)."""
+    """The remembered session file of an ended omp, else the session file of the omp under a's foreground pid (its tty's
+    terminal-sessions pointer, line 2)."""
+    if (given := given_session(a, env)):
+        return given
+    if not a.get("pid"):
+        return None
     for p in env.procs(int(a["pid"])):
         ptr = os.path.join(env.home, ".omp", "agent", "terminal-sessions", p.tty or "")
         if p.tty and os.path.isfile(ptr):
@@ -482,7 +517,7 @@ def omp(a: dict, env: Env, cache: dict, dirty: Dirty) -> dict:
         return out
     top = a.get("top")
     st = read(session, cache, parse_omp, mtime_ms(session), tail=True)
-    out = {**out, "edited": edited(st, top, dirty, env.now - RECENT), **metrics(st, "recorded")}
+    out = {**out, "session": session, "edited": edited(st, top, dirty, env.now - RECENT), **metrics(st, "recorded")}
     root = session[:-6]
     for d, _, files in os.walk(root):
         for name in files:
@@ -639,7 +674,7 @@ def _sub_log(req, env: Env) -> dict:
         meta_f = logs[0][:-6] + ".meta.json" if logs else ""
         meta = load(meta_f) if meta_f and os.path.isfile(meta_f) else {}
         found = {"log": logs[0] if logs else None, "events": claude_events, "parse": parse_claude,
-                 "kind": "api" if approved_key(env, pid) else "estimate", "meta": meta if isinstance(meta, dict) else {}}
+                 "kind": cost_kind(req, env, pid), "meta": meta if isinstance(meta, dict) else {}}
     elif req.get("harness") == "omp":
         session = omp_session(req, env)
         if not session:

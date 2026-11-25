@@ -71,6 +71,7 @@ export class Detail {
 
   // From the side panel, the panel comes along to the agent's space (tabs-plus: shared "panel.carry"), as focusAgent.
   goToAgent() {
+    if (String(props().owner ?? "").startsWith("ended:")) return; // its agent has ended: no terminal to go to
     if (props().panel) setShared("panel.carry", { id: "graph", at: Date.now() });
     this.went = true;
     run("agent.focus", { terminal: props().owner });
@@ -283,9 +284,10 @@ export class Detail {
         .child(div().text_size(12).text_color(t.dim).child("History is kept a week at most (Emergence settings: Sub-agent history); past that, a sub-agent drops out."))
       : this.tab === "overview" ? v_flex().id("dt-overview").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll.overview).child(this.overview(t, d))
       : this.tab === "steps" ? this.steps(t, d) : this.files(t, d);
-    const button = h_flex().id("dt-go").h(DIALOG.button).px(14).gap(6).items_center().rounded(8).cursor_pointer().border_1().text_size(12).font_medium()
-      .bg(t.solid).border_color(t.solid).text_color(t.solid_foreground).hover((s) => s.opacity(0.88))
-      .on_click(() => this.goToAgent()).child("Go to agent").child(div().text_size(11).opacity(0.7).child("↵"));
+    const button = String(p.owner ?? "").startsWith("ended:") ? div().text_size(12).text_color(t.dim).child("Its agent has ended")
+      : h_flex().id("dt-go").h(DIALOG.button).px(14).gap(6).items_center().rounded(8).cursor_pointer().border_1().text_size(12).font_medium()
+        .bg(t.solid).border_color(t.solid).text_color(t.solid_foreground).hover((s) => s.opacity(0.88))
+        .on_click(() => this.goToAgent()).child("Go to agent").child(div().text_size(11).opacity(0.7).child("↵"));
     return v_flex().id("ag-detail").track_focus(this.h).on_key_down((e, cx) => this.key(e, cx))
       .size_full().min_h(0).p(DIALOG.pad).gap(DIALOG.gap).rounded(DIALOG.radius).bg(t.popover).text_size(13)
       .child(v_flex().flex_none().gap(4)
