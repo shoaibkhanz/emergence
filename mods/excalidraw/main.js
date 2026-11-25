@@ -35,6 +35,8 @@ import { setDark, ink, isDark, canvasColor, uiColors } from "./theme.js";
 import { DIR as HANDOFF_DIR, OPEN as HANDOFF_OPEN, requestedFile, openRecord } from "./handoff.js";
 import { layout as herdrLayout, checking as herdrChecking } from "herdr";
 import { openWindow, panelShown } from "./open.js";
+import { exec as herdrExec } from "herdr"; // herdr-mods: export.js's IO
+import { saveExport } from "./export.js"; // herdr-mods: SVG and PNG export
 import { holder } from "./keyboard.js";
 import { LibraryView } from "./library-view.js";
 import { backdrop as groundLayers, dotsAlpha, grainOpacity } from "./backdrop.js";
@@ -4551,6 +4553,18 @@ function batchDrawList(items) {
   const paths = [...groups.values()].sort((a, b) => Number(b.fill) - Number(a.fill)).map((g) => ({ kind: "path", path: g.b.build(), color: g.color }));
   return [...paths, ...extras];
 }
+// herdr-mods: an export's pieces (export.js), at scale 1 in the file's own colours (Excalidraw's light export), not the
+// dark canvas's ink.
+function exportItems(elements, elementsMap, background) {
+  const was = toColor;
+  toColor = toColorAsDrawn;
+  try {
+    const opts = { shapeConfig: { isExporting: true, canvasBackgroundColor: background, embedsValidationStatus: /* @__PURE__ */ new Map() } };
+    return elements.map((el) => { try { return elementItem(el, elementsMap, 1, opts); } catch { return null; } }).filter(Boolean);
+  } finally {
+    toColor = was;
+  }
+}
 function buildLayers(elements, elementsMap, scale, opts) {
   const batches = [];
   let batch = null;
@@ -4924,7 +4938,7 @@ var Excalidraw = class extends View {
     this.panelCopy = !!p2.panel && !this.overlay && !herdrChecking();
     if (this.panelCopy) { // herdr-mods: one keyboard rule set (shared/keyboard.js): opened, windows closing, pane.go's focus
       this.kb = holder({ id: "excalidraw", panel: true, focus: () => this.focus.focus(), held: () => this.focus.is_focused(), shown: panelShown });
-      cx.spawn(async () => { for (;;) this.kb.command(await nextCommand()); });
+      cx.spawn(async (cx2) => { for (;;) { const c2 = await nextCommand(); if (c2 === "export-svg" || c2 === "export-png") this.exportAs(c2.slice(7), cx2); else this.kb.command(c2); } }); // herdr-mods: excalidraw.export-svg / -png (keys, agents)
     }
     if (this.panelCopy) cx.spawn(async (cx2) => {
       const dir = HANDOFF_DIR(appHome());
@@ -5204,6 +5218,25 @@ var Excalidraw = class extends View {
     if (this.editing) this.endEdit(cx, {});
     if (this.dirty && this.status === "ready") await this.save(cx);
   }
+  // herdr-mods: the drawing as SVG or PNG in ~/Downloads (export.js); a toast says where, or why not.
+  exportAs(kind, cx) {
+    if (!this.file || this.exporting) return;
+    this.exporting = kind;
+    cx.notify();
+    const name = this.file.split("/").pop().replace(/\.excalidraw$/, ""), background = this.doc.appState.viewBackgroundColor ?? "#ffffff";
+    const items = exportItems(this.elements(), this.map(), background);
+    cx.spawn(async (cx2) => {
+      try {
+        const out = await saveExport(kind, items, { name, background }, { exec: herdrExec, appHome, home: home2, writeTextFile: writeTextFile2 });
+        notify({ title: `Saved ${out.split("/").pop()} to Downloads`, level: "info" });
+      } catch (e4) {
+        notify({ title: `Couldn't export ${kind.toUpperCase()}`, body: String(e4?.message ?? e4), level: "warning" });
+      } finally {
+        this.exporting = null;
+        cx2.notify();
+      }
+    });
+  }
   // ---- rendering ---------------------------------------------------------------------
   shapeOptions() {
     return {
@@ -5464,6 +5497,9 @@ var Excalidraw = class extends View {
       .hover((st) => (accent ? st.opacity(0.9) : st.bg(ui.hover))).tooltip(tip).on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); on(cx); }).child(label);
     return div2().absolute().bottom(8).right(8).flex().items_center().gap(2).p(3).rounded(9).border(1).border_color(ui.border).bg(ui.surface)
       .when(!dark, (el) => el.shadow_sm())
+      .when(!!this.file, (el) => el
+        .child(btn("export-svg", this.exporting === "svg" ? "Exporting\u2026" : "SVG", "Export this drawing as SVG, to Downloads", (cx) => this.exportAs("svg", cx), false))
+        .child(btn("export-png", this.exporting === "png" ? "Exporting\u2026" : "PNG", "Export this drawing as PNG (2\xD7), to Downloads", (cx) => this.exportAs("png", cx), false)))
       .child(btn("library", "All drawings  \u2318O", "Every drawing: search, pin, rename, trash", () => openLibrary(this.inWindow), true))
       .when(!this.inWindow && !!this.file, (el) => el.child(btn("big", "\u2922  Full size", "Open this drawing big, in a window (Esc closes it)", () => openWindow(this.file), false)));
   }
