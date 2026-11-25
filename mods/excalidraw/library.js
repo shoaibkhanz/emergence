@@ -92,11 +92,12 @@ export const toggleRepo = (repos, repo) => (repos.some((r) => r.key === repo.key
 export const trashRows = (entries, now) => entries.filter((e) => e.deleted != null).sort((a, b) => b.deleted - a.deleted)
   .map((e) => ({ ...e, daysLeft: Math.max(0, Math.ceil(TRASH_DAYS - (now - e.deleted) / DAY)) }));
 
-// An unfiled drawing named <repo>-<topic> (freeName's pattern) -> that repo, the longest repo name that fits; null when
+// An unfiled drawing named <repo>-<topic> or <repo> (freeName's patterns) -> that repo, the longest repo name that fits; null when
 // it's filed already or no repo's name starts it.
 export function suggestRepo(entry, repos) {
   if (entry.repos.length) return null;
   const name = entry.name.toLowerCase();
-  return repos.filter((r) => slug(repoName(r.key)) && name.startsWith(`${slug(repoName(r.key))}-`))
+  const fits = (r) => { const k = slug(repoName(r.key)); return !!k && (name.startsWith(`${k}-`) || name === `${k}.excalidraw`); };
+  return repos.filter(fits)
     .sort((a, b) => repoName(b.key).length - repoName(a.key).length)[0] ?? null;
 }
