@@ -175,7 +175,7 @@ window or popup to the panel), and ctrl-h / ctrl-l move it between the terminal 
 | ↑ ↓ · ← → · A · ↵ | Agents | select · fold / unfold · Active or All · open (a sub-agent: its details) |
 | ← → · ↑ ↓ · Space · ↵ | sub-agent details | tabs · move · open a step · go to its agent |
 | ↑ ↓ · ← → · ↵ · Esc | panels | list · tabs · open · step back, then back to the terminal |
-| ⌘F · [ ] | PRs | find · previous / next commit |
+| ⌘F · [ ] · ⌘\\ | PRs | find · previous / next commit · hide / show the pull requests |
 | ctrl-h · ctrl-l | side panel · terminal | to the terminal · into the side panel |
 | ctrl-h/j/k/l | terminals | between panes ([optional](#optional-ctrlhjkl-between-panes)) |
 

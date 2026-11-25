@@ -36,6 +36,7 @@ export const GROUPS = [
   ["PRs", [
     [{ keys: "⌘F" }, "Find across the PR"],
     [{ keys: "[ ]" }, "Previous · next commit"],
+    [{ keys: "⌘\\" }, "Hide · show the pull requests beside the diff"],
   ]],
   ["Jump and worktrees", [
     [{ action: "mod.open:jump" }, "Jump: every session and worktree"],
