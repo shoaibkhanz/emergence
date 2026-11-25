@@ -7,6 +7,18 @@ import { exec, appHome, home, readTextFile, writeTextFile } from "herdr";
 import { observe, declaredRepos, repoKey, expired, freeName } from "./library.js";
 import { previewSvg } from "./preview.js";
 
+// herdr-mods: a drawing's text, up to 8 MB (exec's output is capped at 8 MiB) where readTextFile stops at 1 MiB, so a
+// drawing with pasted images (stored in the file) still opens. null when the file isn't there; past 8 MB it throws
+// saying so, never an empty read that looks like a missing or empty drawing.
+const DRAWING_MAX = 8_000_000;
+export async function readDrawingText(path) {
+  const r = await exec("sh", ["-c", 'test -e "$1" || exit 3; n=$(wc -c < "$1"); [ "$n" -le "$2" ] || { echo "$n" >&2; exit 4; }; cat "$1"', "sh", path, String(DRAWING_MAX)]);
+  if (r.code === 3) return null;
+  if (r.code === 4) throw new Error(`it's ${(parseInt(r.stderr, 10) / 1e6).toFixed(1)} MB, and drawings up to 8 MB open`);
+  if (r.code !== 0) throw new Error((r.stderr || "can't read it").trim());
+  return r.stdout;
+}
+
 export const dir = () => `${appHome()}/data/excalidraw`;
 export const EXT = ".excalidraw";
 
@@ -56,7 +68,7 @@ export async function scan(now = Date.now()) {
     if (prev && prev.sum === sum && prev.preview !== undefined) { seen[name] = prev; return; }
     const title = name.slice(0, -EXT.length);
     try {
-      const text = await readTextFile(`${dir()}/${name}`);
+      const text = await readDrawingText(`${dir()}/${name}`);
       const doc = JSON.parse(text ?? "");
       if (!Array.isArray(doc?.elements)) throw new Error("not an Excalidraw drawing");
       const shapes = doc.elements.filter((e) => e && !e.isDeleted && !(e.type === "text" && e.containerId)).length;
@@ -111,7 +123,7 @@ export async function deleteForever(name) {
   await updateIndex((ix) => { const { [name]: _gone, ...files } = ix.files; return { ...ix, files }; });
 }
 export async function duplicate(name, copy, entry) {
-  const raw = await readTextFile(`${dir()}/${name}`);
+  const raw = await readDrawingText(`${dir()}/${name}`);
   await writeTextFile(`${dir()}/${copy}`, raw ?? "", null);
   await setEntry(copy, { ...entry, title: `${entry.title} copy`, named: true, by: "user", created: Date.now(), updated: Date.now(), pinned: false, preview: undefined, sum: null });
 }

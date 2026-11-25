@@ -39,6 +39,7 @@ import { exec as herdrExec } from "herdr"; // herdr-mods: export.js's IO
 import { saveExport, boxOf, groundPaths } from "./export.js"; // herdr-mods: SVG and PNG export
 import { holder } from "./keyboard.js";
 import { LibraryView } from "./library-view.js";
+import { readDrawingText } from "./store.js"; // herdr-mods: drawings up to 8 MB, and a reason when one won't open
 import { backdrop as groundLayers, dotsAlpha, grainOpacity } from "./backdrop.js";
 import { cardsOf, alphaHex } from "./ground.js";
 import { copyText, pasted } from "./clipboard.js";
@@ -4938,9 +4939,9 @@ var Excalidraw = class extends View {
       await fs2.mkdir(dir, { recursive: true }).catch(() => {});
       for (let first = true; ; first = false) {
         let want = requestedFile((await readTextFile(HANDOFF_OPEN(appHome())).catch(() => null)) ?? "", this.file, home2());
-        if (want && (await readTextFile(want).catch(() => null)) == null) want = null; // gone (trashed): no request
+        if (want && (await readDrawingText(want).catch(() => "")) == null) want = null; // gone (trashed): no request; too big: load() says so
         if (want && !this.closed) { if (this.dirty && this.status === "ready") await this.save(cx2); this.openFile(want, cx2); this.fitNext = true; }
-        else if (first && !this.file) { const last = resolveFile(localStorage.getItem("file")); if (last && (await readTextFile(last).catch(() => null)) != null) this.openFile(last, cx2); else this.showPicker(cx2); }
+        else if (first && !this.file) { const last = resolveFile(localStorage.getItem("file")); if (last && (await readDrawingText(last).catch(() => "")) != null) this.openFile(last, cx2); else this.showPicker(cx2); }
         try { await watchFolder(dir); } catch { return; }
         if (this.closed) return;
       }
@@ -5071,9 +5072,9 @@ var Excalidraw = class extends View {
   async load(cx) {
     let text;
     try {
-      text = await readTextFile(this.file);
+      text = await readDrawingText(this.file); // herdr-mods: readTextFile stops at 1 MiB and reads a bigger file as empty
     } catch (e4) {
-      return this.fail(cx, `can't read ${this.file}: ${e4?.message ?? e4}`);
+      return this.fail(cx, `can't open ${this.file.split("/").pop()}: ${e4?.message ?? e4}`);
     }
     if (text == null) {
       this.doc = emptyDocument();
@@ -5117,7 +5118,7 @@ var Excalidraw = class extends View {
       }
       if (this.closed || gen !== this.watchGen) return;
       if (!changed.some((p2) => samePath(p2, this.file))) continue;
-      const text = await readTextFile(this.file).catch(() => null);
+      const text = await readDrawingText(this.file).catch(() => null);
       if (text != null && text !== this.lastText) await this.applyExternal(text, cx);
     }
   }
@@ -5197,7 +5198,7 @@ var Excalidraw = class extends View {
       if (this.saveAt === seq) this.dirty = false;
       this.saveError = null;
     } catch (e4) {
-      const disk = await readTextFile(this.file).catch(() => null);
+      const disk = await readDrawingText(this.file).catch(() => null);
       if (disk != null && disk !== this.lastText) await this.applyExternal(disk, cx);
       else this.saveError = String(e4?.message ?? e4);
     } finally {
