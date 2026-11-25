@@ -6,7 +6,7 @@
 
 import { div, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { props, closeOverlay, openOverlay, theme, panes, spaces, focused, watchFolder, home, setShared } from "herdr";
+import { props, closeOverlay, openOverlay, theme, panes, spaces, focused, watchFolder, home, setShared, pickFolder } from "herdr";
 import { sections, search, repoName, freeName, ago, knownRepos, toggleRepo, trashRows, TRASH_DAYS, suggestRepo } from "./library.js";
 import { dir, scan, readIndex, setEntry, trash, restore, deleteForever, duplicate, create, repoOf } from "./store.js";
 import { showInPanel, openWindow } from "./open.js";
@@ -28,8 +28,6 @@ export class LibraryView {
     this.renameInput = InputState.new();
     this.renameInput.on("submit", (_e, cx) => this.commitRename(cx));
     this.renameInput.on("blur", (_e, cx) => this.commitRename(cx));
-    this.pathInput = InputState.new(); // the repo picker's "add a folder"
-    this.pathInput.on("submit", (_e, cx) => this.addRepoPath(cx));
     cx.timer.after(150, () => this.query.focus());
     cx.spawn(async (cx) => {
       const pane = panes().find((x) => x.pane === focused()?.pane && x.cwd) ?? panes().find((x) => x.cwd);
@@ -105,15 +103,18 @@ export class LibraryView {
     cx.notify();
   }
 
-  // The repo picker, under a row: the repos it's filed under, ticked; any known repo, or a folder typed in, toggles.
-  pick(row, cx) { this.picking = this.picking === row?.name ? null : row?.name ?? null; this.pickError = null; this.pathInput.set_value(""); cx.notify(); }
-  addRepoPath(cx) {
-    const row = this.entries.find((e) => e.name === this.picking), raw = this.pathInput.value().trim();
-    if (!row || !raw) return;
+  // The repo picker, under a row: the repos it's filed under, ticked; any known repo toggles; Another repo… picks a folder in one.
+  pick(row, cx) { this.picking = this.picking === row?.name ? null : row?.name ?? null; this.pickError = null; cx.notify(); }
+  // Move to a repo not in the list: the system's folder picker, any folder inside the repo.
+  chooseRepoFolder(cx) {
+    const row = this.entries.find((e) => e.name === this.picking);
+    if (!row) return;
     cx.spawn(async (cx) => {
-      const repo = await repoOf(raw.startsWith("~/") ? home() + raw.slice(1) : raw);
-      if (!repo) this.pickError = `${raw} isn't in a git repo`;
-      else { this.pickError = null; this.pathInput.set_value(""); if (!row.repos.some((r) => r.key === repo.key)) this.act(row, { repo }, cx); }
+      const folder = await pickFolder({ prompt: "Move here" });
+      if (!folder) return;
+      const repo = await repoOf(folder).catch(() => null);
+      if (!repo) this.pickError = `${folder.replace(home(), "~")} isn't in a git repo`;
+      else { this.pickError = null; if (!row.repos.some((r) => r.key === repo.key)) this.act(row, { repo }, cx); }
       cx.notify();
     });
   }
@@ -237,8 +238,9 @@ export class LibraryView {
           .child(div().text_size(12).text_color(has ? t.foreground : t.muted).child(repoName(x.key)))
           .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child(x.key === this.repo?.key ? `this repo · ${x.key}` : x.key));
       }))
-      .child(div().relative().child(Input.new(this.pathInput).h(28).px(8).rounded(6).border(1).border_color(t.input).bg(t.input).text_size(12))
-        .when(!this.pathInput.value(), (el) => el.child(div().absolute().left(9).top(0).h(28).flex().items_center().text_size(12).text_color(t.dim).child("Add another: a folder in the repo, then ↵"))))
+      .child(h_flex().id(`pick-folder-${r.name}`).h(26).px(6).gap(8).items_center().rounded(4).cursor_pointer().hover((st) => st.bg(t.hover))
+        .on_click((_e, cx) => this.chooseRepoFolder(cx))
+        .child(div().w(14).text_color(t.dim).child("+")).child(div().text_size(12).text_color(t.muted).child("Another repo: choose a folder in it…")))
       .when(!!this.pickError, (el) => el.child(div().text_size(11).text_color(t.blocked).child(this.pickError)));
   }
 }
