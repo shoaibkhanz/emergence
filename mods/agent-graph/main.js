@@ -7,7 +7,7 @@ import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout, appHome, nextCommand } from "herdr";
 import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
-  subItems, dotsAlpha, grainOpacity, backdrop, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners, worktreeNote, GONE, detailRequest, historySince } from "./lib.js";
+  subItems, dotsAlpha, grainOpacity, backdrop, subState, harnessOf, subRequests, overlaps, conflictsOf, metered, fold, foldables, metricLine, costLabel, summary, refold, worktreeOwners, worktreeNote, GONE, detailRequest, historySince, trackSessions, endedItems } from "./lib.js";
 import { Detail } from "./detail.js";
 import { holder } from "./keyboard.js";
 import { list } from "./list.js";
@@ -24,7 +24,7 @@ const key = (m, p) => `${m ?? ""}|${p}`;
 const alpha = (c, a) => c.slice(0, 7) + Math.round(a * 255).toString(16).padStart(2, "0");
 const clamp = (z) => Math.min(ZMAX, Math.max(ZMIN, z));
 const ESTIMATE = "≈ at API prices (subscription)";
-const noTerminal = (d) => !!d.history || Array.isArray(d.agents); // a history card, a worktree: Enter / a click folds it
+const noTerminal = (d) => !!d.history || !!d.ended || Array.isArray(d.agents); // a history card, an ended agent, a worktree: Enter / a click folds it
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -76,6 +76,7 @@ export default class AgentGraph extends View {
   init(_props, cx) {
     if (props()?.detail) { this.detail = new Detail(cx); return; } // a sub-agent's details (openDetail): its own view
     setShared("agent-graph.historyOffered", true); // Emergence settings shows Sub-agent history once this reads it
+    this.sessions = shared("agent-graph.ended") ?? {}; // agents' sessions, so an ended one keeps its sub-agents (lib trackSessions)
     this.panel = props()?.panel === true;
     this.git = new Map(); // machine|cwd -> { at, v: facts | null }
     this.prs = new Map(); // machine|common -> { at, v: Map | null }
@@ -193,7 +194,8 @@ export default class AgentGraph extends View {
   // One subagents.py run for this computer's claude and omp agents; redraws only when its answer changed. A failed run
   // keeps the last answer.
   async readSubs(cx) {
-    const req = subRequests(this.items(), (i) => this.git.get(key(i.machine, i.cwd))?.v?.top ?? null);
+    const top = (i) => this.git.get(key(i.machine, i.cwd))?.v?.top ?? null, items = this.items();
+    const req = subRequests(items, top, this.sessions);
     let agents = {};
     if (req.length) {
       try {
@@ -205,6 +207,10 @@ export default class AgentGraph extends View {
         return;
       }
     }
+    // Sessions seen running are remembered; one that stops is an ended agent, kept for the Sub-agent history window.
+    const t = trackSessions(this.sessions, items, agents, top, Date.now(), historySince(shared("agent-graph.history"), Date.now()));
+    this.sessions = t.sessions;
+    if (t.save) setShared("agent-graph.ended", t.sessions);
     const json = JSON.stringify(agents);
     if (json === this.subsJSON) return;
     this.subsJSON = json;
@@ -228,11 +234,12 @@ export default class AgentGraph extends View {
   // (omp, another machine) still goes to its agent. The large popup closes first: a dialog doesn't sit over a popup.
   open(n) {
     if (!n.sub) return this.focusAgent(n);
-    const req = detailRequest(n, this.items(), (i) => this.git.get(key(i.machine, i.cwd))?.v?.top ?? null);
+    const owners = [...this.items(), ...endedItems(this.sessions, this.subs, 0)];
+    const req = detailRequest(n, owners, (i) => this.git.get(key(i.machine, i.cwd))?.v?.top ?? null);
     if (!req) return this.focusAgent(n);
     this.handoff = true; // the dialog takes the keyboard: the side panel mustn't (close's emergence.back)
     this.dismiss();
-    openOverlay({ mod: "agent-graph", kind: "window", key: "agent-details", width: 680, height: 0.9, props: { detail: req, owner: n.owner, ownerName: this.items().find((i) => i.id === n.owner)?.name ?? null, name: n.name, sub: n.sub, panel: this.panel } });
+    openOverlay({ mod: "agent-graph", kind: "window", key: "agent-details", width: 680, height: 0.9, props: { detail: req, owner: n.owner, ownerName: owners.find((i) => i.id === n.owner)?.name ?? null, name: n.name, sub: n.sub, panel: this.panel } });
   }
 
   // Cross-mod deep link: pr-review picks this up (if < 30 s old) and selects the PR.
@@ -329,9 +336,11 @@ export default class AgentGraph extends View {
     const foc = focused()?.terminal ?? null;
     this.now = Date.now();
     this.ov = overlaps(this.subs, this.now); // files two live writers both have uncommitted (lib)
-    const subs = subItems(items, this.subs, historySince(shared("agent-graph.history"), Date.now()));
-    this.owners = worktreeOwners(items, subs); // worktree card id -> the sub-agent working there (lib)
-    const whole = buildTree(metered(items, this.subs), (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined,
+    const since = historySince(shared("agent-graph.history"), Date.now());
+    const withEnded = [...items, ...endedItems(this.sessions, this.subs, since)]; // ended agents with sub-agents in the window
+    const subs = subItems(withEnded, this.subs, since);
+    this.owners = worktreeOwners(withEnded, subs); // worktree card id -> the sub-agent working there (lib)
+    const whole = buildTree(metered(withEnded, this.subs), (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined,
       { activeOnly: this.activeOnly, cursor, focused: foc, subs }); // marks here: lib
     const tree = fold(whole, this.folds); // totals on every card; folded ones without their subtree (lib)
     const L = graphLayout(tree), M = this.moved(L); // M: with the person's dragged offsets

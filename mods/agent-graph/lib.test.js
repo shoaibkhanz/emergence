@@ -478,3 +478,40 @@ test("backdrop: topographic contours surround the group: close cards share their
   expect(later[0].key).not.toBe(at0[0].key);
   expect(backdrop("topo", W, H, 1, 0, 0, [{ ...a, x: 260 }], 1210).layers[0].key).not.toBe(later[0].key); // let go: redrawn fine at once
 });
+
+import { trackSessions, endedItems } from "./lib.js";
+
+test("trackSessions: live sessions remembered (saved when new); one no longer running gets endedAt; past the window it goes", () => {
+  const DAY = 86_400_000, now = 10 * DAY, since = now - 7 * DAY, top = () => "/r";
+  const live = [{ id: "t1", agent: true, pid: 5, machine: null, harness: "claude", cwd: "/r", name: "fix tests", program: { key: "claude" }, space: "sp" }];
+  const scan = { t1: { session: "S1", costKind: "estimate" } };
+  const a = trackSessions({}, live, scan, top, now, since);
+  expect(a.save).toBe(true);
+  expect(a.sessions.S1).toMatchObject({ session: "S1", harness: "claude", address: "t1", cwd: "/r", top: "/r", name: "fix tests", kind: "estimate", endedAt: null });
+  const renamed = trackSessions(a.sessions, [{ ...live[0], name: "fix more" }], scan, top, now, since);
+  expect([renamed.save, renamed.sessions.S1.name]).toEqual([false, "fix more"]); // a title change isn't saved on its own
+  const failed = trackSessions(a.sessions, live, {}, top, now + 1, since); // its scan failed this time: still running
+  expect([failed.save, failed.sessions.S1.endedAt]).toEqual([false, null]);
+  const ended = trackSessions(renamed.sessions, [], {}, top, now + 5, since);
+  expect([ended.save, ended.sessions.S1.endedAt, ended.sessions.S1.name]).toEqual([true, now + 5, "fix more"]);
+  const gone = trackSessions(ended.sessions, [], {}, top, now + 8 * DAY, now + DAY);
+  expect([gone.save, gone.sessions]).toEqual([true, {}]);
+  const restarted = trackSessions(a.sessions, live, { t1: { session: "S2" } }, top, now + 9, since); // same terminal, a new session
+  expect([restarted.sessions.S1.endedAt, restarted.sessions.S2.endedAt]).toEqual([now + 9, null]);
+});
+
+test("endedItems: an ended agent with sub-agents in the window is a quiet card where it worked; none, or still running: no card", () => {
+  const now = 1000, since = 500;
+  const sessions = { S1: { session: "S1", harness: "claude", cwd: "/r", top: "/r", name: "fix tests", program: { key: "claude" }, space: "sp", endedAt: 900 },
+    S2: { session: "S2", harness: "claude", cwd: "/r", name: "old", endedAt: 800 }, S3: { session: "S3", harness: "omp", cwd: "/q", name: "live", endedAt: null } };
+  const scan = { "ended:S1": { subagents: [{ id: "a", finishedAt: 700 }] }, "ended:S2": { subagents: [{ id: "b", finishedAt: 100 }] } };
+  expect(endedItems(sessions, scan, since)).toEqual([{ id: "ended:S1", parent: null, machine: null, cwd: "/r", agent: true, ended: 900, session: "S1",
+    top: "/r", harness: "claude", program: { key: "claude" }, status: "idle", name: "fix tests · ended", kind: null, tab: null, space: "sp", pid: null }]);
+});
+
+test("subRequests / detailRequest: an ended agent is asked about by its session, never a pid", () => {
+  const sessions = { S1: { session: "S1", harness: "claude", top: "/r", kind: "api", endedAt: 9 }, S3: { session: "S3", harness: "omp", endedAt: null } };
+  expect(subRequests([], () => null, sessions)).toEqual([{ address: "ended:S1", session: "S1", harness: "claude", top: "/r", kind: "api" }]);
+  const owner = { id: "ended:S1", machine: null, harness: "claude", session: "S1", top: "/r", pid: null };
+  expect(detailRequest({ sub: { id: "a1" }, owner: "ended:S1" }, [owner], () => "/x")).toEqual({ session: "S1", harness: "claude", top: "/r", id: "a1" });
+});

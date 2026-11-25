@@ -174,9 +174,47 @@ const HARNESS = { "claude-code": "claude", claude: "claude", opencode: "opencode
 export const harnessOf = (app, programKey) => HARNESS[app] ?? HARNESS[programKey] ?? null;
 const READ = ["claude", "omp"]; // pi, Codex, OpenCode: not read yet
 
-// What subagents.py is asked about: this computer's claude and omp agents (remote machines: not yet), with their git top.
-export const subRequests = (items, top) => items.filter((i) => !i.machine && i.agent && i.pid && READ.includes(i.harness))
-  .map((i) => ({ address: i.id, pid: i.pid, harness: i.harness, top: top(i) }));
+// What subagents.py is asked about: this computer's claude and omp agents (remote machines: not yet), with their git top;
+// and the agents that have ended (trackSessions), by the session remembered while they ran.
+export const subRequests = (items, top, sessions = {}) => [
+  ...items.filter((i) => !i.machine && i.agent && i.pid && READ.includes(i.harness)).map((i) => ({ address: i.id, pid: i.pid, harness: i.harness, top: top(i) })),
+  ...Object.values(sessions).filter((e) => e.endedAt != null).map((e) => ({ address: `ended:${e.session}`, session: e.session, harness: e.harness, top: e.top ?? null, kind: e.kind ?? null })),
+];
+
+// The sessions of this computer's claude and omp agents (subagents.py gives each live one's), so an agent that ends
+// keeps its sub-agents in the graph for the Sub-agent history window (endedItems). sessions: { id: { session, harness,
+// address, cwd, top, name, program, space, kind, endedAt } }, endedAt null while it runs. A session no longer running
+// gets endedAt now (its agent's scan failing once isn't an end: the agent is still there); one ended before `since`
+// goes. -> { sessions, save }: save when one is new, ended or gone (shared agent-graph.ended), not for a title change.
+export function trackSessions(prev, items, scan, top, now, since) {
+  const live = new Map(items.filter((i) => !i.machine && i.agent && i.pid && READ.includes(i.harness)).map((i) => [i.id, i]));
+  const sessions = {};
+  let save = false;
+  for (const [id, i] of live) {
+    const s = scan?.[id]?.session;
+    if (!s) continue;
+    const was = prev[s];
+    sessions[s] = { session: s, harness: i.harness, address: id, cwd: i.cwd, top: top(i) ?? was?.top ?? null, name: i.name, program: i.program ?? null,
+      space: i.space ?? null, kind: scan[id].costKind ?? was?.kind ?? null, endedAt: null };
+    if (!was || was.endedAt != null) save = true;
+  }
+  for (const [s, e] of Object.entries(prev)) {
+    if (sessions[s]) continue;
+    const running = e.endedAt == null && live.has(e.address) && !scan?.[e.address]?.session;
+    const endedAt = e.endedAt ?? (running ? null : now);
+    if (endedAt != null && endedAt < since) { save = true; continue; }
+    sessions[s] = { ...e, endedAt };
+    if (endedAt !== e.endedAt) save = true;
+  }
+  return { sessions, save };
+}
+
+// The agents that ended and still have sub-agents in the window: a quiet card each where it worked (its folder), with
+// its sub-agents under it (subItems). No terminal: clicking folds it, its details open from its session.
+export const endedItems = (sessions, scan, since) => Object.values(sessions ?? {})
+  .filter((e) => e.endedAt != null && (scan?.[`ended:${e.session}`]?.subagents ?? []).some((x) => (x.finishedAt ?? x.updatedAt ?? 0) >= since))
+  .map((e) => ({ id: `ended:${e.session}`, parent: null, machine: null, cwd: e.cwd, agent: true, ended: e.endedAt, session: e.session, top: e.top ?? null,
+    harness: e.harness, program: e.program ?? null, status: "idle", name: `${e.name} · ended`, kind: null, tab: null, space: e.space ?? null, pid: null }));
 
 // subagents.py's agents (address -> { edited, subagents, ...metrics } | { error }) -> items for buildTree's subs:
 // running ones work under their agent; finished ones are idle (never done: that's news only a terminal brings), under
@@ -437,7 +475,9 @@ export const graphTerminals = (terminals, sideSlots) => terminals.filter((x) => 
 // null: not one it reads (a history card, another machine, a harness it doesn't read).
 export function detailRequest(card, items, top) {
   const o = card?.sub && items.find((i) => i.id === card.owner);
-  return o && !o.machine && ["claude", "omp"].includes(o.harness) && o.pid ? { pid: o.pid, harness: o.harness, top: top(o), id: card.sub.id } : null;
+  if (!o || o.machine || !["claude", "omp"].includes(o.harness)) return null;
+  if (o.session && !o.pid) return { session: o.session, harness: o.harness, top: o.top ?? top(o), id: card.sub.id }; // an ended agent (endedItems)
+  return o.pid ? { pid: o.pid, harness: o.harness, top: top(o), id: card.sub.id } : null;
 }
 
 // "45s", "6m 26s", "1h 13m".

@@ -284,6 +284,41 @@ class ClaudeTest(Base):
         self.assertEqual(s["tools"], 1)
 
 
+class EndedTest(Base):
+    """An agent that has ended (no process): read by the session the graph remembered while it ran."""
+    claude = ClaudeTest.claude
+
+    def test_claude_session_read_without_a_process_and_given_back_while_live(self):
+        procs = self.claude()
+        write(os.path.join(self.subs, "agent-a1.meta.json"), {"description": "Fix it", "finished": True})
+        jsonl(os.path.join(self.subs, "agent-a1.jsonl"), [use(NOW - 9 * MIN, "u1", "Bash", {"command": "x"})], mtime=NOW - 9 * MIN)
+        live = sa.scan([{"address": "t1", "pid": 100, "harness": "claude", "top": self.wt}], env(self.home, procs))["agents"]["t1"]
+        self.assertEqual(live["session"], "S1")  # the graph remembers it
+        ended = sa.scan([{"address": "ended:S1", "session": "S1", "harness": "claude", "top": self.wt}], env(self.home))["agents"]["ended:S1"]
+        self.assertEqual([s["title"] for s in ended["subagents"]], ["Fix it"])
+        d = sa.detail({"session": "S1", "harness": "claude", "top": self.wt, "id": "a1"}, env(self.home))["detail"]
+        self.assertEqual(d["title"], "Fix it")
+
+    def test_a_session_that_could_point_elsewhere_is_ignored(self):
+        self.claude()
+        for bad in ("../S1", "S1/x", "", None, 7):
+            out = sa.scan([{"address": "e", "session": bad, "harness": "claude", "top": self.wt}], env(self.home))["agents"]["e"]
+            self.assertEqual(out["subagents"], [])
+        self.assertIn("error", sa.detail({"session": "../S1", "harness": "claude", "top": self.wt, "id": "a1"}, env(self.home)))
+
+    def test_omp_session_file_read_without_a_process_only_under_omp(self):
+        sdir = os.path.join(self.home, ".omp", "agent", "sessions", "-repo")
+        session = os.path.join(sdir, "2026-11-11T23-07-55-093Z_01abc.jsonl")
+        jsonl(session, [{"type": "session", "cwd": self.wt}])
+        jsonl(os.path.join(session[:-6], "Tests.jsonl"), [{"type": "session", "cwd": self.wt}, call(NOW - MIN, "c1", "bash", {"command": "x"}, intent="Run")])
+        out = sa.scan([{"address": "e", "session": session, "harness": "omp", "top": self.wt}], env(self.home))["agents"]["e"]
+        self.assertEqual([s["id"] for s in out["subagents"]], ["Tests"])
+        self.assertEqual(out["session"], session)
+        elsewhere = os.path.join(self.home, "elsewhere.jsonl")
+        jsonl(elsewhere, [])
+        self.assertEqual(sa.scan([{"address": "e", "session": elsewhere, "harness": "omp", "top": self.wt}], env(self.home))["agents"]["e"]["subagents"], [])
+
+
 class DetailTest(Base):
     """One sub-agent's whole story, read when its details open: printed for the view, never cached."""
     claude = ClaudeTest.claude
