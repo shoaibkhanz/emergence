@@ -1,6 +1,6 @@
 // The export's pure part: PathBuilder calls -> SVG path data, colours, and the SVG document.
 import { expect, test } from "bun:test";
-import { pathData, splitColor, toSvg } from "./export.js";
+import { pathData, splitColor, toSvg, boxOf, groundPaths } from "./export.js";
 
 test("pathData: records the PathBuilder calls a piece emits, as SVG path data", () => {
   const d = pathData((b) => b.move_to(0, 0).line_to(10, 0).cubic_bezier_to(20, 20, 12, 2, 18, 8).curve_to(30, 0, 25, 5).close());
@@ -39,4 +39,26 @@ test("toSvg square: the drawing centred in a square (for qlmanage's square PNG, 
   const { svg, width, height, side } = toSvg([rect], { background: "#ffffff", pad: 0, square: true });
   expect([width, height, side]).toEqual([100, 50, 100]);
   expect(svg).toContain('viewBox="10 -5 100 100"');
+});
+
+test("boxOf: the drawing's bounds plus padding, the area the backdrop and grain cover", () => {
+  expect(boxOf([rect, label], 10)).toEqual({ x0: -10, y0: 10, width: 130, height: 125 });
+});
+
+test("groundPaths: backdrop layers (dots as polys, grid lines as segs) as paths in the canvas's dot ink at its strength", () => {
+  const layers = [{ alpha: 1, polys: [[[0, 0], [2, 0], [2, 2]]], off: [5, 5] }, { alpha: 0.45, stroke: 1, segs: [[0, 0, 0, 10]] }, { alpha: 0.001, polys: [[[0, 0], [1, 1], [0, 1]]] }];
+  expect(groundPaths(layers, "#ffffff", 0.5)).toEqual([
+    { d: "M5 5 L7 5 L7 7 Z", fill: true, width: 0, color: "#ffffff80" },
+    { d: "M0 0 L0 10", fill: false, width: 1, color: "#ffffff39" },
+  ]); // the third rounds to nothing: left out
+});
+
+test("toSvg: the canvas's background, grain and backdrop under the drawing", () => {
+  const { svg } = toSvg([rect], { background: "#000000", pad: 0, grain: { data: "R1JO", opacity: 0.1 },
+    ground: [{ d: "M0 0 L1 1", fill: false, width: 1, color: "#ffffff40" }] });
+  expect(svg).toContain('<rect x="10" y="20" width="100" height="50" fill="#000000"/>');
+  expect(svg).toContain('<pattern id="grain" width="256" height="256" patternUnits="userSpaceOnUse"><image href="data:image/png;base64,R1JO" width="256" height="256"/></pattern>');
+  expect(svg).toContain('<rect x="10" y="20" width="100" height="50" fill="url(#grain)" opacity="0.1"/>');
+  expect(svg).toContain('<g transform="translate(10 20)"><path d="M0 0 L1 1" fill="none" stroke="#ffffff" stroke-width="1" stroke-opacity="0.251"');
+  expect(svg.indexOf("url(#grain)")).toBeLessThan(svg.indexOf("M10 20 L110 20"));
 });
