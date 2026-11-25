@@ -408,6 +408,20 @@ export default class PrReview extends View {
       .child(icon("chevron-down").size(12).flex_none().text_color(on ? t.foreground : t.dim));
   }
 
+  // A PR's two branches into Compare branches, opened there: to swap them or try another base. A PR is what's on the
+  // remote, so each side is origin's copy when there is one.
+  comparePR(s, pr, cx) {
+    cx.spawn(async (cx) => {
+      const ref = async (b) => (await git(s.id, ["rev-parse", "--verify", "--quiet", `origin/${b}`]).then(() => true, () => false)) ? `origin/${b}` : b;
+      const [h, b] = await Promise.all([ref(pr.headRefName), ref(pr.baseRefName)]);
+      setShared("pr-review.heads", { ...shared("pr-review.heads"), [s.id.repo]: h });
+      setShared("pr-review.bases", { ...shared("pr-review.bases"), [s.id.repo]: b });
+      s.cursor = 0; s.level = "pr";
+      this.open(s, "local", cx, true);
+      cx.notify();
+    });
+  }
+
   // ⇄: the other way round, to see what the base adds instead (the head's uncommitted work isn't a branch: the swap
   // takes its branch).
   swapSides(s, cx) {
@@ -1027,7 +1041,12 @@ export default class PrReview extends View {
           .child(h_flex().gap(8).items_center()
             .child(div().flex_none().text_size(13).text_color(t.dim).child(`#${s.entry}`))
             .child(div().min_w(0).truncate().text_size(15).font_semibold().child(title))
-            .when(Boolean(pr), (el) => el.child(this.stateChip(t, pr))))
+            .when(Boolean(pr), (el) => el.child(this.stateChip(t, pr))
+              .child(h_flex().id("pr-compare").h(22).px(8).gap(6).flex_none().items_center().rounded(6).cursor_pointer().text_size(12)
+                .text_color(t.muted).hover((x) => x.bg(t.hover).text_color(t.foreground))
+                .tooltip(`Open ${pr.headRefName} against ${pr.baseRefName} in Compare branches, to swap them or pick another base`)
+                .on_click((_e, cx) => this.comparePR(s, pr, cx))
+                .child(icon("git-compare").size(13)).child("Compare branches"))))
           .child(h_flex().gap(8).items_center().text_size(12).text_color(t.muted)
             .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(sub))
             .when(Boolean(pr), (el) => el.child(div().flex_none().child(`${pr.author?.login ?? ""} · ${ago(pr.updatedAt)}`)))))
