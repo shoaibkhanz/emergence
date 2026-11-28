@@ -287,8 +287,8 @@ a choice is segments in a `raised` track, the chosen one `background`. Keys are 
     markdown drawn as headings, bullets and Geist Mono code), Steps (every call on a timeline: offset, kind dot, its
     label or a command's program ("git status", never its arguments), its target (a file's last two folders), duration
     or a red "failed"; three or more of a kind in a row fold into "Run · 25 calls ▸", a failure never; Space on a call
-    reads its input and the first 40 lines of its output), Files (Edited, uncommitted marked, and Read). ↑/↓ move,
-    Space opens, ↵ "Go to agent", Esc closes. `subagents.py --detail` reads the transcript when it opens and every 5 s
+    reads its input and the first 40 lines of its output), Files (Edited, uncommitted marked, and Read; Space or a
+    click opens one to its first 400 lines as it is now, read with `head` then, never kept). ↑/↓ move, Space opens, ↵ "Go to agent", Esc closes. `subagents.py --detail` reads the transcript when it opens and every 5 s
     while it runs, `--step` one call when opened; nothing is cached, and a transcript past Claude Code's ~30 days says
     so. Claude Code and omp alike (one reader per harness turns its lines into the same events); a sub-agent on another
     machine still focuses its agent. The large popup closes

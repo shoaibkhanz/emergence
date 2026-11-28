@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, sidebarCursor, openOnActive, filterCounts, activeNudge, graphTerminals,
   RANK, subItems, subState, ago, harnessOf, subRequests, overlaps, conflictsOf, metered, own, addUp, money, tokens, costLabel, metricLine,
-  summary, fold, foldables, isFolded, refold, worktreeOwners, worktreeNote, GONE, detailRequest, took, modelName, stepKind, groupSteps, toolMix, offset, stepTarget, groupTarget, historySince } from "./lib.js";
+  summary, fold, foldables, isFolded, refold, worktreeOwners, worktreeNote, GONE, detailRequest, took, modelName, stepKind, groupSteps, toolMix, offset, stepTarget, groupTarget, historySince, filePath, filePreview } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -537,4 +537,19 @@ test("trackSessions: an agent that answers with no session has ended (its termin
 
 test("foldMarkdown: a fence counts only up to 3 spaces in; one inside an indented code block doesn't", () => {
   expect(foldMarkdown("    ```\n    code\nafter", 15)).toEqual({ text: "    ```\n    code", more: 1 });
+});
+
+test("filePath: a Files row's path made absolute (~/…, worktree-relative, absolute kept)", () => {
+  expect(filePath("~/x/a.js", "/r/app", "/Users/me")).toBe("/Users/me/x/a.js");
+  expect(filePath("src/a.js", "/r/app/", "/Users/me")).toBe("/r/app/src/a.js");
+  expect(filePath("/etc/hosts", "/r/app", "/Users/me")).toBe("/etc/hosts");
+  expect(filePath("a.js", null, "/Users/me")).toBe("a.js");
+});
+
+test("filePreview: the first lines of a file, cut at lines or characters; binary refused", () => {
+  expect(filePreview("a\nb\nc\n", 2, 100)).toEqual({ text: "a\nb", more: true });
+  expect(filePreview("a\nb\n", 2, 100)).toEqual({ text: "a\nb", more: false });
+  expect(filePreview("x".repeat(50), 10, 20)).toEqual({ text: "x".repeat(20), more: true });
+  expect(filePreview("", 10, 20)).toEqual({ text: "", more: false });
+  expect(filePreview("PNG\0\0", 10, 20).error).toBe("Not a text file.");
 });
