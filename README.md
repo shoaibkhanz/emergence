@@ -42,7 +42,8 @@ switches the view. Click an agent to jump to it, a PR to review it.
 Click a sub-agent (or ↵) for **what it did**:
 - **Overview**: tool calls (and how many failed), how long it ran, tokens and model, cost, the kinds of work it did, its task and its result.
 - **Steps**: every tool call on a timeline with how long it took, failures in red. Runs of the same kind fold, and Space opens one to show its command and the start of its output.
-- **Files**: what it edited (uncommitted marked) and what it read.
+- **Files**: what it edited (uncommitted marked) and what it read. Space or a click opens a file to its first 400
+  lines, as it is now.
 
 It refreshes every 5 s while the sub-agent runs; **Go to agent** (↵) jumps to the agent that started it. Transcripts
 are read when you open them and never stored; Claude Code keeps them about 30 days. When an agent ends, its sub-agents

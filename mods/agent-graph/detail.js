@@ -3,18 +3,20 @@
 //   Overview: four stat tiles (calls, time, tokens, cost), the mix of work it did, its task, its result;
 //   Steps: every tool call on a timeline (runs of one kind folded, failures never), one opened with Space for its
 //          input and the start of its output (read then, never kept);
-//   Files: what it edited (uncommitted marked) and what it read.
+//   Files: what it edited (uncommitted marked) and what it read, one opened with Space for its first lines (read
+//          then, as the file is now, never kept).
 // ←/→ switch tabs, ↑/↓ move, Space opens, ↵ goes to its agent (the one filled button), Esc closes. subagents.py reads
 // the transcript when this opens and every 5 s while the sub-agent runs; nothing is cached.
 
 import { div } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, TextView } from "gpui-base";
 import { run, exec, props, closeOverlay, theme, setShared, appHome, home } from "herdr";
-import { subState, groupSteps, toolMix, stepKind, stepTarget, groupTarget, offset, took, tokens, costLabel, own, modelName, DIALOG, foldMarkdown } from "./lib.js";
+import { subState, groupSteps, toolMix, stepKind, stepTarget, groupTarget, offset, took, tokens, costLabel, own, modelName, DIALOG, foldMarkdown, filePath, filePreview } from "./lib.js";
 
 const TABS = ["overview", "steps", "files"];
 const FOLD = { task: 1200, result: 1600 }; // characters shown (whole lines, fences closed: lib foldMarkdown) until Space shows the rest
 const LIVE_MS = 5000;
+const FILE = { lines: 400, chars: 100000 }; // an opened file's start
 const WORD = { read: "Read", edit: "Edit", run: "Run", search: "Search", web: "Web", agent: "Sub-agent", other: "Other" };
 const PY = () => `${appHome()}/mods/agent-graph/subagents.py`;
 const alpha = (c, a) => c.slice(0, 7) + Math.round(a * 255).toString(16).padStart(2, "0");
@@ -37,6 +39,7 @@ export class Detail {
     this.sel = { overview: "task", steps: null, files: null }; // per tab, by id (a refresh keeps it)
     this.open = new Set(); // ids shown whole: task, result, a step group, a step
     this.stepInfo = {}; // call -> { input, output, ok } | "loading" | { error }
+    this.fileInfo = {}; // file row id -> { text, more } | "loading" | { error }
     this.followed = true; // Steps follows the newest call while it runs, until you move
     this.scroll = { overview: ScrollHandle.new(), steps: ScrollHandle.new(), files: ScrollHandle.new() };
     this.kids = {}; // tab -> the id of each child of its scroll list, in order (null: not a row), for scroll_to_item
@@ -105,6 +108,20 @@ export class Detail {
     const call = !was && this.tab === "steps" && !id.startsWith("g:") ? id : null;
     const info = call && this.stepInfo[call];
     if (call && (!info || info.error || (info !== "loading" && info.output == null))) this.loadStep(call, cx); // again while it ran
+    if (!was && this.tab === "files") this.loadFile(id, cx); // read again each time: it may have changed
+  }
+
+  // id: e:<absolute path> or r:<path as subagents.py gave it>. head, not readTextFile: that reads past 1 MiB as empty.
+  loadFile(id, cx) {
+    this.fileInfo = { ...this.fileInfo, [id]: "loading" };
+    cx.spawn(async (cx) => {
+      const path = filePath(id.slice(2), props().detail?.top, home());
+      const r = await exec("head", ["-n", String(FILE.lines + 1), "--", path], { timeout: 5000 }).catch((e) => ({ code: 1, stderr: String(e) }));
+      if (this.closed) return;
+      const why = (r.stderr || "").trim().split("\n").pop().replace(/^head: /, "").replace(`${path}: `, "");
+      this.fileInfo = { ...this.fileInfo, [id]: r.code ? { error: `Couldn't read it: ${why || "head failed"}` } : filePreview(r.stdout ?? "", FILE.lines, FILE.chars) };
+      cx.notify();
+    });
   }
 
   loadStep(call, cx) {
@@ -217,11 +234,15 @@ export class Detail {
     return [row, ...(info ? [this.stepOpen(t, s, info)] : [])];
   }
 
-  stepOpen(t, s, info) {
-    // A fenced block in Herdr's markdown view: its code font, selectable (a longer fence than any in the text).
-    const box = (title, body) => v_flex().gap(4).child(div().text_size(11).text_color(t.dim).child(title))
-      .child(TextView.markdown(`so-${s.call}-${title}`, `${"`".repeat(6)}\n${body ?? ""}\n${"`".repeat(6)}`).selectable(true).scrollable(false)
+  // A fenced block in Herdr's markdown view: its code font, selectable (a longer fence than any in the text).
+  code(t, key, title, body, lang = "") {
+    return v_flex().gap(4).child(div().text_size(11).text_color(t.dim).child(title))
+      .child(TextView.markdown(key, `${"`".repeat(6)}${lang}\n${body ?? ""}\n${"`".repeat(6)}`).selectable(true).scrollable(false)
         .w_full().text_size(12).text_color(t.foreground));
+  }
+
+  stepOpen(t, s, info) {
+    const box = (title, body) => this.code(t, `so-${s.call}-${title}`, title, body);
     return v_flex().id(`so-${s.call}`).flex_none().ml(62).mr(8).mb(6).gap(8)
       .child(info === "loading" ? div().text_size(12).text_color(t.dim).child("Reading…")
         : info.error ? div().text_size(12).text_color(t.muted).child(info.error)
@@ -243,11 +264,23 @@ export class Detail {
 
   fileRow(t, id, p, dirty, dim) {
     const cut = p.lastIndexOf("/"), dir = stepTarget({ tool: "Read", target: p }); // its last two folders; the whole path on hover
-    return h_flex().id(`df-${id}`).h(28).flex_none().px(8).gap(8).items_center().rounded(4).when(this.selected() === id, (el) => el.bg(t.hover)).tooltip(p)
+    return h_flex().id(`df-${id}`).h(28).flex_none().px(8).gap(8).items_center().rounded(4).cursor_pointer().tooltip(p)
+      .when(this.selected() === id, (el) => el.bg(t.hover)).hover((st) => st.bg(t.hover))
+      .on_click((_e, cx) => { this.sel = { ...this.sel, files: id }; this.toggle(id, cx); cx.notify(); })
       .child(div().size(6).flex_none().rounded(3).when(dirty, (el) => el.bg(t.accent)))
       .child(div().flex_none().max_w(320).truncate().text_color(dim ? t.muted : t.foreground).child(p.slice(cut + 1)))
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(dir))
-      .when(dirty, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child("uncommitted")));
+      .when(dirty, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child("uncommitted")))
+      .child(div().flex_none().w(10).text_size(11).text_color(t.dim).child(this.open.has(id) ? "▾" : "▸"));
+  }
+
+  fileOpen(t, id, info) {
+    const lang = /\.(\w+)$/.exec(id)?.[1] ?? ""; // a fence's language, from the extension
+    return v_flex().id(`fo-${id}`).flex_none().ml(22).mr(8).mb(6)
+      .child(info === "loading" ? div().text_size(12).text_color(t.dim).child("Reading…")
+        : info.error ? div().text_size(12).text_color(t.muted).child(info.error)
+        : !info.text ? div().text_size(12).text_color(t.dim).child("Empty.")
+        : this.code(t, `fo-${id}-${info.text.length}`, info.more ? `As it is now · its first ${FILE.lines} lines` : "As it is now", info.text, lang));
   }
 
   files(t, d) {
@@ -255,10 +288,11 @@ export class Detail {
     if (!edited.length && !read.length) return div().text_color(t.dim).child(this.loading ? "Reading its transcript…" : "It touched no files.");
     // One scrolling card, its rows its children (scroll_to_item counts them), each list headed inside it.
     const head = (title, n, first) => h_flex().h(28).flex_none().px(8).items_center().when(!first, (el) => el.mt(8)).child(this.label(t, title, String(n)));
+    const row = (id, ...a) => [[id, this.fileRow(t, id, ...a)], ...(this.open.has(id) && this.fileInfo[id] ? [[null, this.fileOpen(t, id, this.fileInfo[id])]] : [])];
     const rows = [...(edited.length ? [[null, head("Edited", edited.length, true)]] : []),
-      ...edited.map((e) => [`e:${e.path}`, this.fileRow(t, `e:${e.path}`, e.rel ?? e.path.replace(home(), "~"), e.dirty, false)]),
+      ...edited.flatMap((e) => row(`e:${e.path}`, e.rel ?? e.path.replace(home(), "~"), e.dirty, false)),
       ...(read.length ? [[null, head("Read", read.length, !edited.length)]] : []),
-      ...read.map((r) => [`r:${r}`, this.fileRow(t, `r:${r}`, r, false, true)])];
+      ...read.flatMap((r) => row(`r:${r}`, r, false, true))];
     this.kids.files = rows.map(([k]) => k);
     return v_flex().id("dt-files").flex_1().min_h(0).p(4).rounded(8).bg(t.surface).border_1().border_color(t.border)
       .overflow_y_scrollbar().track_scroll(this.scroll.files).children(rows.map(([, el]) => el));

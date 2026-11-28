@@ -561,3 +561,17 @@ export function foldMarkdown(body, fold) {
   }
   return { text: lines.slice(0, n).join("\n") + (fence ? `\n${fence}` : ""), more: lines.length - n };
 }
+
+// A Files row's path made absolute: subagents.py gives edits absolute and reads as its agent's top-relative or ~/….
+export function filePath(p, top, home) {
+  if (p.startsWith("~/")) return home + p.slice(1);
+  return p.startsWith("/") || !top ? p : `${top.replace(/\/$/, "")}/${p}`;
+}
+
+// The start of a file, for its opened row in Files: `lines` lines at most, `chars` characters at most (a minified file
+// is one long line); a NUL means it isn't text.
+export function filePreview(raw, lines, chars) {
+  if (raw.includes("\0")) return { error: "Not a text file." };
+  const all = raw.replace(/\s+$/, "").split("\n"), text = all.slice(0, lines).join("\n");
+  return { text: text.slice(0, chars), more: all.length > lines || text.length > chars };
+}
